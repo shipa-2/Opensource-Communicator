@@ -1,0 +1,23 @@
+# Proprietary upstream artifacts (local analysis only, do not publish)
+/extracted/
+/reverse-engineered/
+/screenshots/
+*.dmg
+*.msi
+*.exe
+*.asar
+*.pkg
+
+# Qt client build artifacts
+/client/build/
+/client/CMakeUserPresets.json
+/client/*.user
+/client/*.autosave
+/client/compile_commands.json
+/client/.cache/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+*~
