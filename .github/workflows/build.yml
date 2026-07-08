@@ -51,9 +51,8 @@ jobs:
           cmake -S /tmp/libdatachannel -B /tmp/libdatachannel/build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX="$PREFIX" \
-            -DCMAKE_C_FLAGS=-Wno-error \
-            -DCMAKE_CXX_FLAGS=-Wno-error \
             -DBUILD_SHARED_LIBS=OFF \
+            -DENABLE_WARNINGS_AS_ERRORS=OFF \
             -DUSE_GNUTLS=OFF \
             -DUSE_MBEDTLS=OFF \
             -DUSE_NICE=OFF \
