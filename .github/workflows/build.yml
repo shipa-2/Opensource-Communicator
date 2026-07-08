@@ -52,6 +52,7 @@ jobs:
           cmake -S /tmp/libdatachannel -B /tmp/libdatachannel/build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+            -DBUILD_SHARED_LIBS=OFF \
             -DUSE_GNUTLS=OFF \
             -DUSE_MBEDTLS=OFF \
             -DUSE_NICE=OFF \
@@ -81,12 +82,9 @@ jobs:
           cp client/build-win64/opensource-communicator.exe "$STAGE/"
           windeployqt6 --no-translations --no-system-d3d-compiler --no-opengl-sw \
             "$STAGE/opensource-communicator.exe"
-          cp "$PREFIX/bin/"libdatachannel*.dll "$STAGE/"
           cp /ucrt64/bin/libopus-0.dll "$STAGE/"
-          for binary in "$STAGE/opensource-communicator.exe" "$PREFIX/bin/libdatachannel.dll"; do
-            ldd "$binary" | awk '/\/ucrt64\/|\/tmp\/osc-deps\// {print $3}' | while read -r dll; do
-              cp -n "$dll" "$STAGE/" 2>/dev/null || true
-            done
+          ldd "$STAGE/opensource-communicator.exe" | awk '/\/ucrt64\// {print $3}' | while read -r dll; do
+            cp -n "$dll" "$STAGE/" 2>/dev/null || true
           done
           (cd "$STAGE" && zip -r9 "$GITHUB_WORKSPACE/dist/OpenSource-Communicator-${VERSION}-win64.zip" .)
 

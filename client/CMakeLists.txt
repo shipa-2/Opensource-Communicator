@@ -108,6 +108,10 @@ target_link_libraries(opensource-communicator PRIVATE
     ${OPUS_LIBRARIES}
 )
 
+if(WIN32)
+    target_link_libraries(opensource-communicator PRIVATE ws2_32)
+endif()
+
 install(TARGETS opensource-communicator RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 set(PACKAGING_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../packaging/linux")
