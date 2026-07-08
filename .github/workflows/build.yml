@@ -26,13 +26,13 @@ jobs:
             libopus-dev libssl-dev \
             qt6-base-dev qt6-websockets-dev qt6-multimedia-dev \
             libglib2.0-dev libpulse-dev libgl1-mesa-dev libxkbcommon-dev \
-            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libpcap-dev \
-            libxcb-cursor0 qt6-tools-dev squashfs-tools \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libpcap-dev libsrtp2-dev \
+            libxcb-cursor-dev qt6-tools-dev squashfs-tools \
             libfuse2 file wget curl ca-certificates
 
       - name: Build libdatachannel
         run: |
-          git clone --depth 1 --branch "${LIBDATACHANNEL_VERSION}" --recurse-submodules \
+          git clone --branch "${LIBDATACHANNEL_VERSION}" --recurse-submodules \
             https://github.com/paullouisageneau/libdatachannel.git /tmp/libdatachannel
           cmake -S /tmp/libdatachannel -B /tmp/libdatachannel/build \
             -DCMAKE_BUILD_TYPE=Release \
@@ -40,6 +40,7 @@ jobs:
             -DUSE_GNUTLS=0 \
             -DUSE_MBEDTLS=0 \
             -DUSE_NICE=0 \
+            -DUSE_SYSTEM_SRTP=ON \
             -DNO_EXAMPLES=1 \
             -DNO_TESTS=1
           cmake --build /tmp/libdatachannel/build -j"$(nproc)"
@@ -62,6 +63,17 @@ jobs:
         run: |
           chmod +x packaging/linux/build-appimage.sh
           packaging/linux/build-appimage.sh
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build-logs
+          path: |
+            /tmp/libdatachannel/build/CMakeFiles/CMakeOutput.log
+            client/build-release/CMakeFiles/CMakeOutput.log
+            client/build-release/CMakeFiles/CMakeError.log
+          if-no-files-found: ignore
 
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4
@@ -91,6 +103,7 @@ jobs:
             mingw-w64-ucrt-x86_64-opus
             mingw-w64-ucrt-x86_64-openssl
             mingw-w64-ucrt-x86_64-libpcap
+            mingw-w64-ucrt-x86_64-libsrtp
             zip
 
       - name: Build libdatachannel
@@ -100,7 +113,7 @@ jobs:
           export PATH=/ucrt64/bin:$PATH
           export PKG_CONFIG_PATH=/ucrt64/lib/pkgconfig
           PREFIX="/tmp/osc-deps"
-          git clone --depth 1 --branch "${LIBDATACHANNEL_VERSION}" --recurse-submodules \
+          git clone --branch "${LIBDATACHANNEL_VERSION}" --recurse-submodules \
             https://github.com/paullouisageneau/libdatachannel.git /tmp/libdatachannel
           cmake -S /tmp/libdatachannel -B /tmp/libdatachannel/build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
@@ -108,6 +121,7 @@ jobs:
             -DUSE_GNUTLS=0 \
             -DUSE_MBEDTLS=0 \
             -DUSE_NICE=0 \
+            -DUSE_SYSTEM_SRTP=ON \
             -DNO_EXAMPLES=1 \
             -DNO_TESTS=1
           cmake --build /tmp/libdatachannel/build
@@ -142,6 +156,16 @@ jobs:
           cp /ucrt64/bin/libopus-0.dll "$STAGE/"
           cp /ucrt64/bin/libssl-3*.dll /ucrt64/bin/libcrypto-3*.dll "$STAGE/" 2>/dev/null || true
           (cd "$STAGE" && zip -r9 "$GITHUB_WORKSPACE/dist/OpenSource-Communicator-${VERSION}-win64.zip" .)
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build-logs
+          path: |
+            client/build-win64/CMakeFiles/CMakeOutput.log
+            client/build-win64/CMakeFiles/CMakeError.log
+          if-no-files-found: ignore
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
