@@ -49,7 +49,13 @@ cd "$CLIENT/build-appimage"
     --plugin qt \
     --output appimage
 
-mv -f OpenSource*.AppImage "$OUTPUT" 2>/dev/null || mv -f *.AppImage "$OUTPUT" 2>/dev/null || true
+mv -f ./*.AppImage "$OUTPUT" 2>/dev/null || true
+if [[ ! -f "$OUTPUT" ]]; then
+  found="$(find . -maxdepth 1 -name '*.AppImage' -print -quit)"
+  if [[ -n "$found" ]]; then
+    mv -f "$found" "$OUTPUT"
+  fi
+fi
 if [[ ! -f "$OUTPUT" ]]; then
     echo "AppImage build failed: $OUTPUT not found" >&2
     exit 1

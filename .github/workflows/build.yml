@@ -27,6 +27,8 @@ jobs:
             libopus-dev libssl-dev \
             qt6-base-dev qt6-websockets-dev qt6-multimedia-dev \
             libglib2.0-dev libpulse-dev libgl1-mesa-dev libxkbcommon-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            libxcb-cursor0 qt6-tools-dev squashfs-tools \
             libfuse2 file wget curl ca-certificates
 
       - name: Build libdatachannel
@@ -48,8 +50,10 @@ jobs:
         run: |
           cmake -S client -B client/build-release \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$HOME/deps"
+            -DCMAKE_PREFIX_PATH="$HOME/deps" \
+            -DCMAKE_BUILD_RPATH="$HOME/deps/lib"
           cmake --build client/build-release -j"$(nproc)"
+          ldd client/build-release/opensource-communicator || true
 
       - name: Build AppImage
         env:
@@ -92,6 +96,7 @@ jobs:
         run: |
           set -euo pipefail
           export PATH=/ucrt64/bin:$PATH
+          export PKG_CONFIG_PATH=/ucrt64/lib/pkgconfig
           PREFIX="$GITHUB_WORKSPACE/deps/prefix"
           git clone --depth 1 --branch "${LIBDATACHANNEL_VERSION}" --recurse-submodules \
             https://github.com/paullouisageneau/libdatachannel.git /tmp/libdatachannel
@@ -111,10 +116,11 @@ jobs:
         run: |
           set -euo pipefail
           export PATH=/ucrt64/bin:$PATH
+          export PKG_CONFIG_PATH=/ucrt64/lib/pkgconfig
           PREFIX="$GITHUB_WORKSPACE/deps/prefix"
           cmake -S client -B client/build-win64 -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$PREFIX;/ucrt64"
+            "-DCMAKE_PREFIX_PATH=${PREFIX}:/ucrt64"
           cmake --build client/build-win64
 
       - name: Package portable ZIP
