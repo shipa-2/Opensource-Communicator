@@ -45,11 +45,19 @@ if [[ ! -x "$BINARY" ]]; then
 fi
 
 rm -rf "$APPDIR"
-mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/scalable/apps"
+mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications"
 
 install -m755 "$BINARY" "$APPDIR/usr/bin/"
 install -m644 "$ROOT/packaging/linux/opensource-communicator.desktop" "$APPDIR/usr/share/applications/"
-install -m644 "$ROOT/packaging/linux/opensource-communicator.svg" "$APPDIR/usr/share/icons/hicolor/scalable/apps/"
+for _icon_size in 16 32 48 64 128 256 512; do
+    _icon_dir="$APPDIR/usr/share/icons/hicolor/${_icon_size}x${_icon_size}/apps"
+    mkdir -p "$_icon_dir"
+    install -m644 "$ROOT/packaging/linux/icons/opensource-communicator-${_icon_size}.png" \
+        "$_icon_dir/opensource-communicator.png"
+done
+# Top-level icon used by linuxdeploy for the AppImage thumbnail
+install -m644 "$ROOT/packaging/linux/icons/opensource-communicator-256.png" \
+    "$APPDIR/opensource-communicator.png"
 
 export QMAKE="$(command -v qmake6 || command -v qmake)"
 export VERSION

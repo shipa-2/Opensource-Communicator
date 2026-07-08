@@ -120,7 +120,11 @@ install(FILES
     "${PACKAGING_DIR}/opensource-communicator.desktop"
     DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
 )
-install(FILES
-    "${PACKAGING_DIR}/opensource-communicator.svg"
-    DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
-)
+
+foreach(_icon_size 16 32 48 64 128 256 512)
+    install(FILES
+        "${PACKAGING_DIR}/icons/opensource-communicator-${_icon_size}.png"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${_icon_size}x${_icon_size}/apps"
+        RENAME opensource-communicator.png
+    )
+endforeach()

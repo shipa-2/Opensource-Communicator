@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="client/resources/logo.png" alt="OpenSource Communicator" width="128" height="128">
+</p>
+
 # OpenSource Communicator
 
 Совместимый open-source клиент для **ITooLabs Communicator** (Megafon PBX, virtual-ats и др.) на **Qt 6**.
