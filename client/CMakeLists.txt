@@ -14,6 +14,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets WebSockets Network Multimedia)
+find_package(OpenSSL REQUIRED)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(OPUS REQUIRED opus)
