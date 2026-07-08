@@ -1,0 +1,148 @@
+/* Palette-aware styles for modal windows only (not the main window). */
+QWidget {
+    background: transparent;
+    color: palette(text);
+}
+
+QDialog {
+    background: palette(window);
+    font-family: "Segoe UI", "Noto Sans", sans-serif;
+    font-size: 13px;
+    color: palette(text);
+}
+
+QLabel {
+    color: palette(text);
+    background: transparent;
+}
+
+QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox {
+    color: palette(text);
+    background: palette(base);
+    border: 1px solid palette(mid);
+    border-radius: 4px;
+    padding: 4px 8px;
+    selection-color: palette(highlightedText);
+    selection-background-color: palette(highlight);
+}
+
+QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QSpinBox:focus {
+    border: 2px solid palette(highlight);
+    padding: 3px 7px;
+}
+
+QComboBox {
+    color: palette(text);
+    background: palette(base);
+    border: 1px solid palette(mid);
+    border-radius: 4px;
+    padding: 2px 8px;
+}
+
+QComboBox QAbstractItemView {
+    color: palette(text);
+    background: palette(base);
+    selection-color: palette(highlightedText);
+    selection-background-color: palette(highlight);
+}
+
+QListWidget {
+    color: palette(text);
+    background: palette(base);
+}
+
+QListWidget::item {
+    color: palette(text);
+}
+
+QDialog#settingsDialog, QDialog#addContactDialog, QDialog#conferenceDialog {
+    background: palette(base);
+}
+
+QLabel#noteHint {
+    color: palette(mid);
+    font-size: 12px;
+}
+
+QLabel#loginTitle {
+    font-size: 20px;
+    font-weight: bold;
+    color: palette(text);
+    background: transparent;
+}
+
+QLabel#loginSubtitle {
+    font-size: 13px;
+    color: palette(text);
+    background: transparent;
+    margin-bottom: 12px;
+}
+
+QDialog#loginDialog {
+    background: palette(window);
+    color: palette(text);
+}
+
+QDialog#loginDialog QLabel {
+    color: palette(text);
+    background: transparent;
+}
+
+QDialog#loginDialog QLineEdit {
+    color: palette(text);
+    background: palette(base);
+    border: 1px solid palette(mid);
+}
+
+QDialog#loginDialog QLineEdit:focus {
+    border: 2px solid palette(highlight);
+    padding: 3px 7px;
+}
+
+QLabel#callAvatar {
+    background: palette(midlight);
+    border-radius: 36px;
+    font-size: 32px;
+    border: 2px solid palette(highlight);
+}
+
+QLabel#callNameLabel {
+    font-size: 16px;
+    font-weight: bold;
+    color: palette(text);
+}
+
+QLabel#callDetailLabel {
+    color: palette(link);
+}
+
+QDialog#helpDialog {
+    background: palette(base);
+}
+
+QDialog#callWindow {
+    background: palette(base);
+}
+
+QWidget#callToolbar {
+    background: palette(alternateBase);
+    border-top: 1px solid palette(mid);
+}
+
+QLabel#callStatusActive {
+    color: palette(highlight);
+    font-weight: bold;
+}
+
+QLabel#callStatusIncoming {
+    color: palette(text);
+}
+
+QLineEdit#dialEdit {
+    border: 1px solid palette(mid);
+    border-radius: 6px;
+    padding: 8px;
+    font-size: 16px;
+    color: palette(text);
+    background: palette(base);
+}

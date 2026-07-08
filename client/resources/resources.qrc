@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/">
+        <file>communicator-dialogs.qss</file>
+        <file>help.jpg</file>
+    </qresource>
+</RCC>
