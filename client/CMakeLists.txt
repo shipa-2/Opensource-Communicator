@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.16)
 project(opensource-communicator VERSION 0.1.0 LANGUAGES CXX)
 
+include(GNUInstallDirs)
+
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set(CMAKE_INSTALL_PREFIX "/opt/opensource-communicator" CACHE PATH "Install prefix" FORCE)
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
@@ -102,4 +108,14 @@ target_link_libraries(opensource-communicator PRIVATE
     ${OPUS_LIBRARIES}
 )
 
-install(TARGETS opensource-communicator RUNTIME DESTINATION bin)
+install(TARGETS opensource-communicator RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+set(PACKAGING_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../packaging/linux")
+install(FILES
+    "${PACKAGING_DIR}/opensource-communicator.desktop"
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
+)
+install(FILES
+    "${PACKAGING_DIR}/opensource-communicator.svg"
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
+)

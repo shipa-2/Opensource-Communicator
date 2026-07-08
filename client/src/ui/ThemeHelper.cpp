@@ -44,9 +44,11 @@ ThemeWatcher::ThemeWatcher(QObject *parent)
 
 void ThemeWatcher::connectStyleHints()
 {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
   if (QStyleHints *hints = QApplication::styleHints()) {
     connect(hints, &QStyleHints::colorSchemeChanged, this, []() { refreshApplicationTheme(); });
   }
+#endif
 }
 
 bool ThemeWatcher::eventFilter(QObject *watched, QEvent *event)

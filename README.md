@@ -43,13 +43,26 @@
 - Демо-режим (`demo` / `demo`) без подключения к серверу
 - Без телеметрии Amplitude/Sentry
 
-## Сборка
+## Сборка (Linux)
 
 ```bash
 cd client
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-./build/opensource-communicator
+sudo cmake --install build
+```
+
+По умолчанию установка идёт в `/opt/opensource-communicator`:
+
+- бинарник: `/opt/opensource-communicator/bin/opensource-communicator`
+- `.desktop`: `/opt/opensource-communicator/share/applications/opensource-communicator.desktop`
+
+Другой префикс:
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
+cmake --build build
+sudo cmake --install build
 ```
 
 ### Зависимости (Arch)
@@ -59,21 +72,15 @@ cmake --build build
 - `libdatachannel`
 - `opus`
 
-### Готовые сборки
+### Windows (готовая сборка)
 
-Сборки AppImage (Linux) и portable ZIP (Windows) выполняются в **GitHub Actions**:
+Portable ZIP для Windows собирается в **GitHub Actions**:
 
-1. Откройте [Actions → Build releases](https://github.com/shipa-2/Opensource-Communicator/actions/workflows/build.yml)
-2. **Run workflow** → выберите ветку `main`
-3. Скачайте артефакты `linux-appimage` и `windows-portable` после завершения
+1. [Actions → Build releases](https://github.com/shipa-2/Opensource-Communicator/actions/workflows/build.yml)
+2. **Run workflow** → ветка `main`
+3. Скачайте артефакт `windows-portable`
 
-При push тега `v*` (например `v0.1.0`) создаётся GitHub Release с обоими файлами.
-
-Локальная сборка AppImage (опционально):
-
-```bash
-./packaging/linux/build-appimage.sh
-```
+При push тега `v*` создаётся GitHub Release с ZIP для Windows.
 
 ## Использование
 

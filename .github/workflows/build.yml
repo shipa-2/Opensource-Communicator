@@ -13,76 +13,6 @@ env:
   LIBDATACHANNEL_VERSION: v0.24.5
 
 jobs:
-  linux-appimage:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential cmake pkg-config git \
-            libopus-dev libssl-dev \
-            qt6-base-dev qt6-websockets-dev qt6-multimedia-dev \
-            libglib2.0-dev libpulse-dev libgl1-mesa-dev libxkbcommon-dev \
-            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-            libxcb-cursor-dev qt6-tools-dev squashfs-tools \
-            libfuse2 file wget curl ca-certificates
-
-      - name: Build libdatachannel
-        run: |
-          git clone --branch "${LIBDATACHANNEL_VERSION}" --recurse-submodules \
-            https://github.com/paullouisageneau/libdatachannel.git /tmp/libdatachannel
-          cmake -S /tmp/libdatachannel -B /tmp/libdatachannel/build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX="$HOME/deps" \
-            -DUSE_GNUTLS=OFF \
-            -DUSE_MBEDTLS=OFF \
-            -DUSE_NICE=OFF \
-            -DNO_EXAMPLES=ON \
-            -DNO_TESTS=ON
-          cmake --build /tmp/libdatachannel/build -j"$(nproc)"
-          cmake --install /tmp/libdatachannel/build
-
-      - name: Build application
-        run: |
-          cmake -S client -B client/build-release \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$HOME/deps" \
-            -DCMAKE_BUILD_RPATH="$HOME/deps/lib" \
-            -DCMAKE_EXE_LINKER_FLAGS="-Wl,-rpath,$HOME/deps/lib"
-          cmake --build client/build-release -j"$(nproc)"
-          ldd client/build-release/opensource-communicator
-
-      - name: Build AppImage
-        env:
-          SKIP_BUILD: 1
-          APPIMAGE_EXTRACT_AND_RUN: 1
-        run: |
-          export CMAKE_PREFIX_PATH="$HOME/deps"
-          export CMAKE_BUILD_RPATH="$HOME/deps/lib"
-          chmod +x packaging/linux/build-appimage.sh
-          packaging/linux/build-appimage.sh
-
-      - name: Upload build logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-build-logs
-          path: |
-            /tmp/libdatachannel/build/CMakeFiles/CMakeOutput.log
-            client/build-release/CMakeFiles/CMakeOutput.log
-            client/build-release/CMakeFiles/CMakeError.log
-          if-no-files-found: ignore
-
-      - name: Upload AppImage artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-appimage
-          path: dist/*.AppImage
-          if-no-files-found: error
-
   windows-portable:
     runs-on: windows-latest
     defaults:
@@ -128,7 +58,6 @@ jobs:
             -DNO_TESTS=ON
           cmake --build /tmp/libdatachannel/build
           cmake --install /tmp/libdatachannel/build
-          ls -la "$PREFIX/lib/cmake/LibDataChannel" "$PREFIX/bin"
 
       - name: Build application
         run: |
@@ -139,7 +68,6 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             "-DCMAKE_PREFIX_PATH=${PREFIX}:/ucrt64"
           cmake --build client/build-win64
-          ls -la client/build-win64
 
       - name: Package portable ZIP
         run: |
@@ -159,17 +87,6 @@ jobs:
             done
           done
           (cd "$STAGE" && zip -r9 "$GITHUB_WORKSPACE/dist/OpenSource-Communicator-${VERSION}-win64.zip" .)
-          ls -la dist
-
-      - name: Upload build logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-build-logs
-          path: |
-            client/build-win64/CMakeFiles/CMakeOutput.log
-            client/build-win64/CMakeFiles/CMakeError.log
-          if-no-files-found: ignore
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
@@ -180,7 +97,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux-appimage, windows-portable]
+    needs: [windows-portable]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4
@@ -190,7 +107,5 @@ jobs:
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            artifacts/linux-appimage/*
-            artifacts/windows-portable/*
+          files: artifacts/windows-portable/*
           generate_release_notes: true
