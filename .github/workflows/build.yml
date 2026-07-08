@@ -26,7 +26,7 @@ jobs:
             libopus-dev libssl-dev \
             qt6-base-dev qt6-websockets-dev qt6-multimedia-dev \
             libglib2.0-dev libpulse-dev libgl1-mesa-dev libxkbcommon-dev \
-            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libpcap-dev libsrtp2-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             libxcb-cursor-dev qt6-tools-dev squashfs-tools \
             libfuse2 file wget curl ca-certificates
 
@@ -37,12 +37,11 @@ jobs:
           cmake -S /tmp/libdatachannel -B /tmp/libdatachannel/build \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX="$HOME/deps" \
-            -DUSE_GNUTLS=0 \
-            -DUSE_MBEDTLS=0 \
-            -DUSE_NICE=0 \
-            -DUSE_SYSTEM_SRTP=ON \
-            -DNO_EXAMPLES=1 \
-            -DNO_TESTS=1
+            -DUSE_GNUTLS=OFF \
+            -DUSE_MBEDTLS=OFF \
+            -DUSE_NICE=OFF \
+            -DNO_EXAMPLES=ON \
+            -DNO_TESTS=ON
           cmake --build /tmp/libdatachannel/build -j"$(nproc)"
           cmake --install /tmp/libdatachannel/build
 
@@ -52,15 +51,17 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$HOME/deps" \
             -DCMAKE_BUILD_RPATH="$HOME/deps/lib" \
-            -DCMAKE_INSTALL_RPATH="$HOME/deps/lib" \
             -DCMAKE_EXE_LINKER_FLAGS="-Wl,-rpath,$HOME/deps/lib"
           cmake --build client/build-release -j"$(nproc)"
-          ldd client/build-release/opensource-communicator || true
+          ldd client/build-release/opensource-communicator
 
       - name: Build AppImage
         env:
+          SKIP_BUILD: 1
           APPIMAGE_EXTRACT_AND_RUN: 1
         run: |
+          export CMAKE_PREFIX_PATH="$HOME/deps"
+          export CMAKE_BUILD_RPATH="$HOME/deps/lib"
           chmod +x packaging/linux/build-appimage.sh
           packaging/linux/build-appimage.sh
 
@@ -84,6 +85,12 @@ jobs:
 
   windows-portable:
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    env:
+      LIBDATACHANNEL_VERSION: v0.24.5
+      PREFIX: /tmp/osc-deps
     steps:
       - uses: actions/checkout@v4
 
@@ -102,60 +109,57 @@ jobs:
             mingw-w64-ucrt-x86_64-qt6-tools
             mingw-w64-ucrt-x86_64-opus
             mingw-w64-ucrt-x86_64-openssl
-            mingw-w64-ucrt-x86_64-libpcap
-            mingw-w64-ucrt-x86_64-libsrtp
             zip
 
       - name: Build libdatachannel
-        shell: msys2 {0}
         run: |
           set -euo pipefail
           export PATH=/ucrt64/bin:$PATH
-          export PKG_CONFIG_PATH=/ucrt64/lib/pkgconfig
-          PREFIX="/tmp/osc-deps"
-          git clone --branch "${LIBDATACHANNEL_VERSION}" --recurse-submodules \
+          rm -rf /tmp/libdatachannel "$PREFIX"
+          git clone --branch "$LIBDATACHANNEL_VERSION" --recurse-submodules \
             https://github.com/paullouisageneau/libdatachannel.git /tmp/libdatachannel
           cmake -S /tmp/libdatachannel -B /tmp/libdatachannel/build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX="$PREFIX" \
-            -DUSE_GNUTLS=0 \
-            -DUSE_MBEDTLS=0 \
-            -DUSE_NICE=0 \
-            -DUSE_SYSTEM_SRTP=ON \
-            -DNO_EXAMPLES=1 \
-            -DNO_TESTS=1
+            -DUSE_GNUTLS=OFF \
+            -DUSE_MBEDTLS=OFF \
+            -DUSE_NICE=OFF \
+            -DNO_EXAMPLES=ON \
+            -DNO_TESTS=ON
           cmake --build /tmp/libdatachannel/build
           cmake --install /tmp/libdatachannel/build
+          ls -la "$PREFIX/lib/cmake/LibDataChannel" "$PREFIX/bin"
 
       - name: Build application
-        shell: msys2 {0}
         run: |
           set -euo pipefail
           export PATH=/ucrt64/bin:$PATH
           export PKG_CONFIG_PATH=/ucrt64/lib/pkgconfig
-          PREFIX="/tmp/osc-deps"
           cmake -S client -B client/build-win64 -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="${PREFIX}:/ucrt64"
-          cmake --build client/build-win64 --verbose
+            "-DCMAKE_PREFIX_PATH=${PREFIX}:/ucrt64"
+          cmake --build client/build-win64
+          ls -la client/build-win64
 
       - name: Package portable ZIP
-        shell: msys2 {0}
         run: |
           set -euo pipefail
           export PATH=/ucrt64/bin:$PATH
           VERSION="$(grep -m1 'project(opensource-communicator VERSION' client/CMakeLists.txt | sed -E 's/.*VERSION ([0-9.]+).*/\1/')"
-          PREFIX="/tmp/osc-deps"
           STAGE="$GITHUB_WORKSPACE/client/build-win64/portable"
           mkdir -p dist "$STAGE"
-          test -f client/build-win64/opensource-communicator.exe
           cp client/build-win64/opensource-communicator.exe "$STAGE/"
           windeployqt6 --no-translations --no-system-d3d-compiler --no-opengl-sw \
             "$STAGE/opensource-communicator.exe"
           cp "$PREFIX/bin/"libdatachannel*.dll "$STAGE/"
           cp /ucrt64/bin/libopus-0.dll "$STAGE/"
-          cp /ucrt64/bin/libssl-3*.dll /ucrt64/bin/libcrypto-3*.dll "$STAGE/" 2>/dev/null || true
+          for binary in "$STAGE/opensource-communicator.exe" "$PREFIX/bin/libdatachannel.dll"; do
+            ldd "$binary" | awk '/\/ucrt64\/|\/tmp\/osc-deps\// {print $3}' | while read -r dll; do
+              cp -n "$dll" "$STAGE/" 2>/dev/null || true
+            done
+          done
           (cd "$STAGE" && zip -r9 "$GITHUB_WORKSPACE/dist/OpenSource-Communicator-${VERSION}-win64.zip" .)
+          ls -la dist
 
       - name: Upload build logs on failure
         if: failure()

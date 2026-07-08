@@ -22,13 +22,32 @@ if [[ ! -x "$TOOLS/linuxdeploy-plugin-qt-x86_64.AppImage" ]]; then
     chmod +x "$TOOLS/linuxdeploy-plugin-qt-x86_64.AppImage"
 fi
 
-cmake -S "$CLIENT" -B "$CLIENT/build-release" -DCMAKE_BUILD_TYPE=Release
-cmake --build "$CLIENT/build-release" -j"$(nproc)"
+CMAKE_ARGS=(-DCMAKE_BUILD_TYPE=Release)
+if [[ -n "${CMAKE_PREFIX_PATH:-}" ]]; then
+    CMAKE_ARGS+=(-DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH")
+fi
+if [[ -n "${CMAKE_BUILD_RPATH:-}" ]]; then
+    CMAKE_ARGS+=(-DCMAKE_BUILD_RPATH="$CMAKE_BUILD_RPATH")
+fi
+if [[ -n "${CMAKE_EXE_LINKER_FLAGS:-}" ]]; then
+    CMAKE_ARGS+=(-DCMAKE_EXE_LINKER_FLAGS="$CMAKE_EXE_LINKER_FLAGS")
+fi
+
+if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
+    cmake -S "$CLIENT" -B "$CLIENT/build-release" "${CMAKE_ARGS[@]}"
+    cmake --build "$CLIENT/build-release" -j"$(nproc)"
+fi
+
+BINARY="$CLIENT/build-release/opensource-communicator"
+if [[ ! -x "$BINARY" ]]; then
+    echo "Binary not found: $BINARY" >&2
+    exit 1
+fi
 
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/scalable/apps"
 
-install -m755 "$CLIENT/build-release/opensource-communicator" "$APPDIR/usr/bin/"
+install -m755 "$BINARY" "$APPDIR/usr/bin/"
 install -m644 "$ROOT/packaging/linux/opensource-communicator.desktop" "$APPDIR/usr/share/applications/"
 install -m644 "$ROOT/packaging/linux/opensource-communicator.svg" "$APPDIR/usr/share/icons/hicolor/scalable/apps/"
 
@@ -40,16 +59,16 @@ export APPIMAGE_EXTRACT_AND_RUN=1
 export LINUXDEPLOY_PLUGIN_DIR="$TOOLS"
 export OUTPUT="$DIST/OpenSource-Communicator-${VERSION}-x86_64.AppImage"
 
-if [[ -d "$HOME/deps/lib" ]]; then
-  export LD_LIBRARY_PATH="$HOME/deps/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+if [[ -n "${CMAKE_PREFIX_PATH:-}" ]]; then
+    export LD_LIBRARY_PATH="${CMAKE_PREFIX_PATH}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 fi
 
 LIB_ARGS=()
 while IFS= read -r lib_path; do
-  if [[ -f "$lib_path" ]]; then
-    LIB_ARGS+=(--library "$lib_path")
-  fi
-done < <(ldd "$CLIENT/build-release/opensource-communicator" | awk '/libdatachannel|libopus/ {print $3}')
+    if [[ -f "$lib_path" ]]; then
+        LIB_ARGS+=(--library "$lib_path")
+    fi
+done < <(ldd "$BINARY" | awk '/libdatachannel|libopus/ {print $3}')
 
 cd "$CLIENT/build-appimage"
 "$TOOLS/linuxdeploy-x86_64.AppImage" \
@@ -62,10 +81,10 @@ cd "$CLIENT/build-appimage"
 
 mv -f ./*.AppImage "$OUTPUT" 2>/dev/null || true
 if [[ ! -f "$OUTPUT" ]]; then
-  found="$(find . -maxdepth 1 -name '*.AppImage' -print -quit)"
-  if [[ -n "$found" ]]; then
-    mv -f "$found" "$OUTPUT"
-  fi
+    found="$(find . -maxdepth 1 -name '*.AppImage' -print -quit)"
+    if [[ -n "$found" ]]; then
+        mv -f "$found" "$OUTPUT"
+    fi
 fi
 if [[ ! -f "$OUTPUT" ]]; then
     echo "AppImage build failed: $OUTPUT not found" >&2

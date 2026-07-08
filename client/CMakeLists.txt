@@ -87,6 +87,10 @@ add_executable(opensource-communicator
 
 target_include_directories(opensource-communicator PRIVATE src ${OPUS_INCLUDE_DIRS})
 
+if(OPUS_LIBRARY_DIRS)
+    target_link_directories(opensource-communicator PRIVATE ${OPUS_LIBRARY_DIRS})
+endif()
+
 target_link_libraries(opensource-communicator PRIVATE
     Qt6::Core
     Qt6::Gui
