@@ -1,0 +1,6 @@
+/src/
+/pkg/
+/opensource-communicator/
+*.pkg.tar.zst
+*.pkg.tar.xz
+*.log

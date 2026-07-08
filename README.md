@@ -43,6 +43,16 @@
 - Демо-режим (`demo` / `demo`) без подключения к серверу
 - Без телеметрии Amplitude/Sentry
 
+## Установка (Arch Linux / AUR)
+
+```bash
+cd packaging/aur
+makepkg -si
+```
+
+Пакет `opensource-communicator-git` собирает клиент из ветки `main` и ставит его
+в `/usr`. Подробности и инструкция по публикации в AUR — в `packaging/aur/README.md`.
+
 ## Сборка (Linux)
 
 ```bash
