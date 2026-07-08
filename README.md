@@ -2,6 +2,14 @@
   <img src="client/resources/logo.png" alt="OpenSource Communicator" width="128" height="128">
 </p>
 
+<p align="center">
+  <sub>
+    На логотипе изображён спортсмен на роликах, размахивающий руками.
+    Логотип не является ассоциацией, товарным знаком или пародией на «Мегафон»
+    и не связан с ним.
+  </sub>
+</p>
+
 # OpenSource Communicator
 
 Совместимый open-source клиент для **ITooLabs Communicator** (Megafon PBX, virtual-ats и др.) на **Qt 6**.
