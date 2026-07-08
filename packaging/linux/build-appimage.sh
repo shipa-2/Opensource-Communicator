@@ -37,15 +37,26 @@ export VERSION
 export ARCH=x86_64
 export NO_STRIP=1
 export APPIMAGE_EXTRACT_AND_RUN=1
+export LINUXDEPLOY_PLUGIN_DIR="$TOOLS"
 export OUTPUT="$DIST/OpenSource-Communicator-${VERSION}-x86_64.AppImage"
+
+if [[ -d "$HOME/deps/lib" ]]; then
+  export LD_LIBRARY_PATH="$HOME/deps/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
+
+LIB_ARGS=()
+while IFS= read -r lib_path; do
+  if [[ -f "$lib_path" ]]; then
+    LIB_ARGS+=(--library "$lib_path")
+  fi
+done < <(ldd "$CLIENT/build-release/opensource-communicator" | awk '/libdatachannel|libopus/ {print $3}')
 
 cd "$CLIENT/build-appimage"
 "$TOOLS/linuxdeploy-x86_64.AppImage" \
     --appdir "$APPDIR" \
     --desktop-file "$APPDIR/usr/share/applications/opensource-communicator.desktop" \
     --executable "$APPDIR/usr/bin/opensource-communicator" \
-    --library "$(ldd "$APPDIR/usr/bin/opensource-communicator" | awk '/libdatachannel/ {print $3}')" \
-    --library "$(ldd "$APPDIR/usr/bin/opensource-communicator" | awk '/libopus/ {print $3}')" \
+    "${LIB_ARGS[@]}" \
     --plugin qt \
     --output appimage
 

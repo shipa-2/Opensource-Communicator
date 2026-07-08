@@ -3,7 +3,6 @@ name: Build releases
 on:
   workflow_dispatch:
   push:
-    branches: [main]
     tags:
       - 'v*'
 
@@ -27,7 +26,7 @@ jobs:
             libopus-dev libssl-dev \
             qt6-base-dev qt6-websockets-dev qt6-multimedia-dev \
             libglib2.0-dev libpulse-dev libgl1-mesa-dev libxkbcommon-dev \
-            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libpcap-dev \
             libxcb-cursor0 qt6-tools-dev squashfs-tools \
             libfuse2 file wget curl ca-certificates
 
@@ -51,7 +50,9 @@ jobs:
           cmake -S client -B client/build-release \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$HOME/deps" \
-            -DCMAKE_BUILD_RPATH="$HOME/deps/lib"
+            -DCMAKE_BUILD_RPATH="$HOME/deps/lib" \
+            -DCMAKE_INSTALL_RPATH="$HOME/deps/lib" \
+            -DCMAKE_EXE_LINKER_FLAGS="-Wl,-rpath,$HOME/deps/lib"
           cmake --build client/build-release -j"$(nproc)"
           ldd client/build-release/opensource-communicator || true
 
@@ -89,6 +90,7 @@ jobs:
             mingw-w64-ucrt-x86_64-qt6-tools
             mingw-w64-ucrt-x86_64-opus
             mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-libpcap
             zip
 
       - name: Build libdatachannel
@@ -97,7 +99,7 @@ jobs:
           set -euo pipefail
           export PATH=/ucrt64/bin:$PATH
           export PKG_CONFIG_PATH=/ucrt64/lib/pkgconfig
-          PREFIX="$GITHUB_WORKSPACE/deps/prefix"
+          PREFIX="/tmp/osc-deps"
           git clone --depth 1 --branch "${LIBDATACHANNEL_VERSION}" --recurse-submodules \
             https://github.com/paullouisageneau/libdatachannel.git /tmp/libdatachannel
           cmake -S /tmp/libdatachannel -B /tmp/libdatachannel/build -G Ninja \
@@ -117,11 +119,11 @@ jobs:
           set -euo pipefail
           export PATH=/ucrt64/bin:$PATH
           export PKG_CONFIG_PATH=/ucrt64/lib/pkgconfig
-          PREFIX="$GITHUB_WORKSPACE/deps/prefix"
+          PREFIX="/tmp/osc-deps"
           cmake -S client -B client/build-win64 -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            "-DCMAKE_PREFIX_PATH=${PREFIX}:/ucrt64"
-          cmake --build client/build-win64
+            -DCMAKE_PREFIX_PATH="${PREFIX}:/ucrt64"
+          cmake --build client/build-win64 --verbose
 
       - name: Package portable ZIP
         shell: msys2 {0}
@@ -129,9 +131,10 @@ jobs:
           set -euo pipefail
           export PATH=/ucrt64/bin:$PATH
           VERSION="$(grep -m1 'project(opensource-communicator VERSION' client/CMakeLists.txt | sed -E 's/.*VERSION ([0-9.]+).*/\1/')"
-          PREFIX="$GITHUB_WORKSPACE/deps/prefix"
+          PREFIX="/tmp/osc-deps"
           STAGE="$GITHUB_WORKSPACE/client/build-win64/portable"
           mkdir -p dist "$STAGE"
+          test -f client/build-win64/opensource-communicator.exe
           cp client/build-win64/opensource-communicator.exe "$STAGE/"
           windeployqt6 --no-translations --no-system-d3d-compiler --no-opengl-sw \
             "$STAGE/opensource-communicator.exe"
