@@ -7,7 +7,13 @@
 *.asar
 *.pkg
 
-# Qt client build artifacts
+# Release artifacts
+/dist/
+/packaging/tools/
+/packaging/msys2/
+/client/build-release/
+/client/build-win64/
+/client/build-appimage/
 /client/build/
 /client/CMakeUserPresets.json
 /client/*.user

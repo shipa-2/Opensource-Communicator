@@ -57,6 +57,23 @@ cmake --build build
 - `qt6-base` `qt6-websockets` `qt6-multimedia`
 - `cmake`
 - `libdatachannel`
+- `opus`
+
+### Готовые сборки
+
+Сборки AppImage (Linux) и portable ZIP (Windows) выполняются в **GitHub Actions**:
+
+1. Откройте [Actions → Build releases](https://github.com/shipa-2/Opensource-Communicator/actions/workflows/build.yml)
+2. **Run workflow** → выберите ветку `main`
+3. Скачайте артефакты `linux-appimage` и `windows-portable` после завершения
+
+При push тега `v*` (например `v0.1.0`) создаётся GitHub Release с обоими файлами.
+
+Локальная сборка AppImage (опционально):
+
+```bash
+./packaging/linux/build-appimage.sh
+```
 
 ## Использование
 

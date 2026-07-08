@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=OpenSource Communicator
+Comment=ITooLabs / Megafon PBX compatible VoIP client
+Exec=opensource-communicator
+Icon=opensource-communicator
+Categories=Network;InstantMessaging;Telephony;
+Terminal=false
+StartupWMClass=opensource-communicator

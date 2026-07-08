@@ -1,0 +1,153 @@
+name: Build releases
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  LIBDATACHANNEL_VERSION: v0.24.5
+
+jobs:
+  linux-appimage:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake pkg-config git \
+            libopus-dev libssl-dev \
+            qt6-base-dev qt6-websockets-dev qt6-multimedia-dev \
+            libfuse2 file wget
+
+      - name: Build libdatachannel
+        run: |
+          git clone --depth 1 --branch "${LIBDATACHANNEL_VERSION}" \
+            https://github.com/paullouisageneau/libdatachannel.git /tmp/libdatachannel
+          cmake -S /tmp/libdatachannel -B /tmp/libdatachannel/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$HOME/deps" \
+            -DUSE_GNUTLS=0 \
+            -DUSE_MBEDTLS=0 \
+            -DUSE_NICE=0 \
+            -DNO_EXAMPLES=1 \
+            -DNO_TESTS=1
+          cmake --build /tmp/libdatachannel/build -j"$(nproc)"
+          cmake --install /tmp/libdatachannel/build
+
+      - name: Build application
+        run: |
+          cmake -S client -B client/build-release \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$HOME/deps"
+          cmake --build client/build-release -j"$(nproc)"
+
+      - name: Build AppImage
+        run: |
+          chmod +x packaging/linux/build-appimage.sh
+          packaging/linux/build-appimage.sh
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: dist/*.AppImage
+          if-no-files-found: error
+
+  windows-portable:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-qt6-base
+            mingw-w64-ucrt-x86_64-qt6-websockets
+            mingw-w64-ucrt-x86_64-qt6-multimedia
+            mingw-w64-ucrt-x86_64-opus
+            mingw-w64-ucrt-x86_64-openssl
+            zip
+
+      - name: Build libdatachannel
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          export PATH=/ucrt64/bin:$PATH
+          PREFIX="$GITHUB_WORKSPACE/deps/prefix"
+          git clone --depth 1 --branch "${LIBDATACHANNEL_VERSION}" \
+            https://github.com/paullouisageneau/libdatachannel.git /tmp/libdatachannel
+          cmake -S /tmp/libdatachannel -B /tmp/libdatachannel/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+            -DUSE_GNUTLS=0 \
+            -DUSE_MBEDTLS=0 \
+            -DUSE_NICE=0 \
+            -DNO_EXAMPLES=1 \
+            -DNO_TESTS=1
+          cmake --build /tmp/libdatachannel/build
+          cmake --install /tmp/libdatachannel/build
+
+      - name: Build application
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          export PATH=/ucrt64/bin:$PATH
+          PREFIX="$GITHUB_WORKSPACE/deps/prefix"
+          cmake -S client -B client/build-win64 -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$PREFIX;/ucrt64"
+          cmake --build client/build-win64
+
+      - name: Package portable ZIP
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          export PATH=/ucrt64/bin:$PATH
+          VERSION="$(grep -m1 'project(opensource-communicator VERSION' client/CMakeLists.txt | sed -E 's/.*VERSION ([0-9.]+).*/\1/')"
+          PREFIX="$GITHUB_WORKSPACE/deps/prefix"
+          STAGE="$GITHUB_WORKSPACE/client/build-win64/portable"
+          mkdir -p dist "$STAGE"
+          cp client/build-win64/opensource-communicator.exe "$STAGE/"
+          windeployqt6 --no-translations --no-system-d3d-compiler --no-opengl-sw \
+            "$STAGE/opensource-communicator.exe"
+          cp "$PREFIX/bin/libdatachannel.dll" "$STAGE/"
+          cp /ucrt64/bin/libopus-0.dll "$STAGE/"
+          (cd "$STAGE" && zip -r9 "$GITHUB_WORKSPACE/dist/OpenSource-Communicator-${VERSION}-win64.zip" .)
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-portable
+          path: dist/*.zip
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux-appimage, windows-portable]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/linux-appimage/*
+            artifacts/windows-portable/*
+          generate_release_notes: true

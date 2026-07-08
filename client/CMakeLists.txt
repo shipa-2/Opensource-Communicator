@@ -8,8 +8,21 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets WebSockets Network Multimedia)
+
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(OPUS REQUIRED opus)
+
+find_package(LibDataChannel CONFIG QUIET)
+if(LibDataChannel_FOUND)
+    set(DATACHANNEL_LIB LibDataChannel::LibDataChannel)
+else()
+    find_library(DATACHANNEL_LIBRARY NAMES datachannel libdatachannel REQUIRED)
+    if(NOT TARGET datachannel)
+        add_library(datachannel UNKNOWN IMPORTED)
+        set_target_properties(datachannel PROPERTIES IMPORTED_LOCATION "${DATACHANNEL_LIBRARY}")
+    endif()
+    set(DATACHANNEL_LIB datachannel)
+endif()
 
 add_executable(opensource-communicator
     resources/resources.qrc
@@ -81,7 +94,7 @@ target_link_libraries(opensource-communicator PRIVATE
     Qt6::WebSockets
     Qt6::Network
     Qt6::Multimedia
-    datachannel
+    ${DATACHANNEL_LIB}
     ${OPUS_LIBRARIES}
 )
 
