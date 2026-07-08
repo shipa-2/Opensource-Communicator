@@ -31,8 +31,10 @@ LoginDialog::LoginDialog(itl::CommunicatorClient *client, QWidget *parent)
 
   auto *form = itl::createDialogForm();
   m_loginEdit = new QLineEdit;
+  m_loginEdit->setPlaceholderText(QStringLiteral("demo"));
   m_passwordEdit = new QLineEdit;
   m_passwordEdit->setEchoMode(QLineEdit::Password);
+  m_passwordEdit->setPlaceholderText(QStringLiteral("demo"));
   form->addRow(tr("Логин"), m_loginEdit);
   form->addRow(tr("Пароль"), m_passwordEdit);
   layout->addLayout(form);

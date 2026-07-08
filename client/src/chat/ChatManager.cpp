@@ -240,22 +240,24 @@ void ChatManager::handleResponse(int requestId, const QJsonObject &response)
 
 int ChatManager::sendMessage(const QString &peer, const QString &text)
 {
-  if (!m_api) {
+  if (!m_api && !m_demoMode) {
     return -1;
   }
 
   const QString normalized = normalizePeer(peer);
   int reqId = -1;
 
-  if (isPhonePeer(normalized)) {
-    if (m_smsFromNumber.isEmpty()) {
-      qCWarning(lcChat) << "SMS sender number is not configured";
-      return -1;
+  if (!m_demoMode) {
+    if (isPhonePeer(normalized)) {
+      if (m_smsFromNumber.isEmpty()) {
+        qCWarning(lcChat) << "SMS sender number is not configured";
+        return -1;
+      }
+      const QString to = phoneFromPeer(normalized);
+      m_api->sendSms(m_smsFromNumber, to, text);
+    } else {
+      reqId = m_api->sendIm(normalized, text);
     }
-    const QString to = phoneFromPeer(normalized);
-    m_api->sendSms(m_smsFromNumber, to, text);
-  } else {
-    reqId = m_api->sendIm(normalized, text);
   }
 
   InstantMessage im;
@@ -266,6 +268,31 @@ int ChatManager::sendMessage(const QString &peer, const QString &text)
   m_messages[normalized].append(im);
   emit messageReceived(im);
   return reqId;
+}
+
+void ChatManager::setDemoMode(bool enabled)
+{
+  m_demoMode = enabled;
+  if (!enabled) {
+    clearDemoMessages();
+  }
+}
+
+void ChatManager::clearDemoMessages()
+{
+  m_messages.clear();
+  m_unreadByPeer.clear();
+}
+
+void ChatManager::addDemoMessage(const QString &peer, const QString &text, bool incoming)
+{
+  const QString normalized = normalizePeer(peer);
+  InstantMessage im;
+  im.peer = normalized;
+  im.body = text;
+  im.incoming = incoming;
+  im.timestamp = QDateTime::currentDateTime();
+  m_messages[normalized].append(im);
 }
 
 void ChatManager::sendSeen(const QString &peer, const QStringList &origIds)
@@ -279,7 +306,7 @@ void ChatManager::sendSeen(const QString &peer, const QStringList &origIds)
 
 void ChatManager::loadHistory(const QString &lastKnownId)
 {
-  if (!m_api) {
+  if (m_demoMode || !m_api) {
     return;
   }
   m_historyRequestId = m_api->loadImHistory(lastKnownId);

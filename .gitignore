@@ -1,7 +1,6 @@
 # Proprietary upstream artifacts (local analysis only, do not publish)
 /extracted/
 /reverse-engineered/
-/screenshots/
 *.dmg
 *.msi
 *.exe

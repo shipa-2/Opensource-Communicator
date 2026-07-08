@@ -34,6 +34,9 @@ public:
 
     bool isSmsPeer(const QString &peer) const;
     int sendMessage(const QString &peer, const QString &text);
+    void setDemoMode(bool enabled);
+    void clearDemoMessages();
+    void addDemoMessage(const QString &peer, const QString &text, bool incoming);
     void sendSeen(const QString &peer, const QStringList &origIds);
     void loadHistory(const QString &lastKnownId = {});
 
@@ -60,6 +63,7 @@ private:
     QHash<QString, QStringList> m_unreadByPeer;
     int m_historyRequestId = -1;
     int m_smsTelnumsRequestId = -1;
+    bool m_demoMode = false;
 };
 
 } // namespace itl

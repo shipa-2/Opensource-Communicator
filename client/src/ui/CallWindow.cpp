@@ -106,12 +106,6 @@ void CallWindow::buildUi()
   m_transferBtn->setToolTip(tr("Перевод"));
   tb->addWidget(m_transferBtn);
 
-  auto *dialpadBtn = new QPushButton(QStringLiteral("▦"));
-  dialpadBtn->setObjectName(QStringLiteral("callCtrlBtn"));
-  dialpadBtn->setToolTip(tr("Клавиши"));
-  dialpadBtn->setEnabled(false);
-  tb->addWidget(dialpadBtn);
-
   tb->addStretch();
 
   m_answerBtn = new QPushButton(QStringLiteral("📞"));

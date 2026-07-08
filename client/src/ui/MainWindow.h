@@ -4,6 +4,10 @@
 #include <QMainWindow>
 #include <QString>
 
+namespace itl {
+struct CallHistoryEntry;
+}
+
 class PresenceSelector;
 class QLabel;
 class QButtonGroup;
@@ -89,6 +93,10 @@ private:
     void recordCallForPeer(const QString &peer);
     void rebuildHistoryList();
     void updateFilterButtonStyles();
+    void enterDemoInterface();
+    void exitDemoInterface();
+    void stopDemoCallSimulation();
+    void startDemoCallSimulation(const QString &peer, const QString &displayName, const QString &detail);
     void beginCallTracking(const QString &leg, const QString &peer, const QString &displayName, bool incoming);
     void markCallConnected(const QString &leg);
     void finalizeCallHistory(const QString &leg, const QString &state);
@@ -127,6 +135,9 @@ private:
     QString m_activeLeg;
     bool m_onHold = false;
     bool m_online = false;
+    bool m_demoMode = false;
     ContactSortMode m_sortMode = ContactSortMode::All;
     QHash<QString, CallTracking> m_callTracking;
+    QString m_demoCallLeg;
+    QList<itl::CallHistoryEntry> m_demoCallHistory;
 };

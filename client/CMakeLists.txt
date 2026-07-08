@@ -38,6 +38,8 @@ add_executable(opensource-communicator
     src/settings/UserDataStore.h
     src/chat/ChatManager.cpp
     src/chat/ChatManager.h
+    src/demo/DemoData.cpp
+    src/demo/DemoData.h
     src/ui/MainWindow.cpp
     src/ui/MainWindow.h
     src/ui/ContactRowWidget.cpp

@@ -71,6 +71,10 @@ QString CommunicatorClient::buildWebSocketUrl() const
 
 void CommunicatorClient::login()
 {
+  if (m_demoMode) {
+    return;
+  }
+
   if (m_credentials.login.size() <= 2) {
     emit statusMessage(tr("Укажите логин и домен"));
     return;
@@ -88,10 +92,44 @@ void CommunicatorClient::login()
 
 void CommunicatorClient::logout()
 {
+  if (m_demoMode) {
+    leaveDemoMode();
+    return;
+  }
+
   if (m_api.appState() == AppState::Online) {
     m_api.sendBye();
   }
   m_api.disconnect();
+  emit stateChanged(AppState::Offline);
+  emit statusMessage(tr("Отключено"));
+}
+
+void CommunicatorClient::enterDemoMode()
+{
+  if (m_demoMode) {
+    leaveDemoMode();
+  }
+
+  if (m_credentials.domain.isEmpty()) {
+    m_credentials.domain = m_credentials.login.section(QLatin1Char('@'), 1);
+  }
+
+  m_demoMode = true;
+  m_chat->setDomain(m_credentials.domain);
+  m_chat->setDemoMode(true);
+  emit stateChanged(AppState::Online);
+  emit statusMessage(tr("В сети"));
+}
+
+void CommunicatorClient::leaveDemoMode()
+{
+  if (!m_demoMode) {
+    return;
+  }
+
+  m_demoMode = false;
+  m_chat->setDemoMode(false);
   emit stateChanged(AppState::Offline);
   emit statusMessage(tr("Отключено"));
 }

@@ -12,6 +12,7 @@
 #include "ChatDialog.h"
 #include "PresenceSelector.h"
 #include "calls/CallManager.h"
+#include "demo/DemoData.h"
 #include "protocol/CommunicatorClient.h"
 #include "settings/UserDataStore.h"
 #include <QJsonArray>
@@ -523,7 +524,8 @@ QString MainWindow::formatHistoryTime(qint64 ms)
 void MainWindow::rebuildHistoryList()
 {
   m_historyList->clear();
-  const QList<itl::CallHistoryEntry> history = m_client->appSettings().callHistory();
+  const QList<itl::CallHistoryEntry> history =
+      m_demoMode ? m_demoCallHistory : m_client->appSettings().callHistory();
   if (history.isEmpty()) {
     auto *placeholder = new QListWidgetItem(tr("История звонков пуста"));
     placeholder->setFlags(Qt::NoItemFlags);
@@ -596,6 +598,15 @@ void MainWindow::finalizeCallHistory(const QString &leg, const QString &state)
     entry.result = QStringLiteral("unanswered");
   }
 
+  if (m_demoMode) {
+    m_demoCallHistory.prepend(entry);
+    while (m_demoCallHistory.size() > 50) {
+      m_demoCallHistory.removeLast();
+    }
+    rebuildHistoryList();
+    return;
+  }
+
   m_client->appSettings().addCallHistoryEntry(entry);
   recordCallForPeer(tracking.peer);
   rebuildHistoryList();
@@ -623,18 +634,122 @@ void MainWindow::onNotesFromRow(const QString &peer)
 
 void MainWindow::onLogin()
 {
+  if (m_demoMode) {
+    exitDemoInterface();
+  }
+
   LoginDialog dlg(m_client, this);
   m_client->loadSettings();
   dlg.loadFromClient();
-  if (dlg.exec() == QDialog::Accepted) {
-    m_contacts.clear();
-    m_contactItems.clear();
-    m_contactsList->clear();
-    m_client->login();
+  if (dlg.exec() != QDialog::Accepted) {
+    return;
   }
+
+  m_contacts.clear();
+  m_contactItems.clear();
+  m_contactsList->clear();
+
+  const itl::LoginCredentials cred = m_client->credentials();
+  if (itl::DemoData::isDemoCredentials(cred.login, cred.password)) {
+    itl::LoginCredentials demoCred = cred;
+    demoCred.login = QStringLiteral("demo@") + itl::DemoData::demoDomain();
+    demoCred.password = QStringLiteral("demo");
+    demoCred.domain = itl::DemoData::demoDomain();
+    demoCred.authDomain.clear();
+    m_client->setCredentials(demoCred);
+    m_client->enterDemoMode();
+    enterDemoInterface();
+    return;
+  }
+
+  m_client->login();
 }
 
-void MainWindow::onLogout() { m_client->logout(); setOnlineUi(false); m_callWindow->closeCall(); }
+void MainWindow::enterDemoInterface()
+{
+  m_demoMode = true;
+  m_demoCallHistory = itl::DemoData::callHistory();
+  m_contacts.clear();
+
+  for (const itl::DemoData::DemoContact &contact : itl::DemoData::contacts()) {
+    ContactEntry entry;
+    entry.name = contact.name;
+    entry.ext = contact.ext;
+    entry.phone = contact.phone;
+    entry.presence = contact.presence;
+    entry.login = contact.peer.section(QLatin1Char('@'), 0, 0);
+    entry.isSelf = contact.isSelf;
+    if (contact.isSelf) {
+      m_selfPeer = contact.peer;
+      m_selfName = contact.name;
+    }
+    m_contacts.insert(contact.peer, entry);
+  }
+
+  itl::DemoData::seedChatMessages(m_client->chat());
+  updateSelfHeader();
+  rebuildContactList();
+  rebuildHistoryList();
+  setOnlineUi(true);
+}
+
+void MainWindow::exitDemoInterface()
+{
+  stopDemoCallSimulation();
+  m_demoMode = false;
+  m_demoCallHistory.clear();
+  m_contacts.clear();
+  m_contactItems.clear();
+  m_contactsList->clear();
+  m_selfPeer.clear();
+  m_selfName.clear();
+  m_client->leaveDemoMode();
+  m_callWindow->closeCall();
+  updateSelfHeader();
+  rebuildHistoryList();
+  setOnlineUi(false);
+}
+
+void MainWindow::stopDemoCallSimulation()
+{
+  m_demoCallLeg.clear();
+}
+
+void MainWindow::startDemoCallSimulation(const QString &peer, const QString &displayName, const QString &detail)
+{
+  stopDemoCallSimulation();
+  m_demoCallLeg = QStringLiteral("demo-call");
+  m_activeLeg = m_demoCallLeg;
+  m_activeIncomingLeg.clear();
+  loadCallNotes(peer);
+  m_callWindow->showOutgoing(peer, displayName, detail);
+  beginCallTracking(m_demoCallLeg, peer, displayName, false);
+
+  QTimer::singleShot(1200, this, [this, displayName]() {
+    if (!m_demoMode || m_activeLeg != m_demoCallLeg) {
+      return;
+    }
+    m_callWindow->updateState(QStringLiteral("ringing"), {});
+    QTimer::singleShot(1800, this, [this, displayName]() {
+      if (!m_demoMode || m_activeLeg != m_demoCallLeg) {
+        return;
+      }
+      m_callWindow->updateState(QStringLiteral("connected"), displayName);
+      markCallConnected(m_demoCallLeg);
+    });
+  });
+}
+
+void MainWindow::onLogout()
+{
+  if (m_demoMode) {
+    exitDemoInterface();
+    return;
+  }
+  m_client->logout();
+  setOnlineUi(false);
+  m_callWindow->closeCall();
+}
 
 void MainWindow::onSettings()
 {
@@ -689,6 +804,14 @@ void MainWindow::onConference()
     return;
   }
 
+  if (m_demoMode) {
+    const QList<itl::ConferenceParticipant> participants = dlg.participants();
+    const QString subject = dlg.subject();
+    startDemoCallSimulation(subject.isEmpty() ? tr("Конференция") : subject, subject.isEmpty() ? tr("Конференция") : subject,
+                            tr("%1 участников").arg(participants.size()));
+    return;
+  }
+
   const QList<itl::ConferenceParticipant> participants = dlg.participants();
   const QString subject = dlg.subject();
   m_activeLeg = m_calls->startConferenceCall(subject, participants);
@@ -717,6 +840,12 @@ void MainWindow::onCallFromRow(const QString &peer)
   if (!m_online) {
     return;
   }
+
+  if (m_demoMode) {
+    startDemoCallSimulation(peer, displayNameForPeer(peer), detailForPeer(peer));
+    return;
+  }
+
   m_activeLeg = m_calls->startOutgoingCall(peer);
   m_activeIncomingLeg.clear();
   loadCallNotes(peer);
@@ -730,6 +859,19 @@ void MainWindow::onChatFromRow(const QString &peer)
 
 void MainWindow::onHangup()
 {
+  if (m_demoMode) {
+    const QString leg = m_activeLeg;
+    stopDemoCallSimulation();
+    m_activeLeg.clear();
+    m_activeIncomingLeg.clear();
+    m_onHold = false;
+    if (!leg.isEmpty()) {
+      finalizeCallHistory(leg, QStringLiteral("ended"));
+    }
+    m_callWindow->closeCall();
+    return;
+  }
+
   m_calls->hangupAll();
   m_activeLeg.clear();
   m_activeIncomingLeg.clear();
@@ -747,10 +889,18 @@ void MainWindow::onAnswer()
 
 void MainWindow::onHold()
 {
-  if (!m_activeLeg.isEmpty()) {
-    m_onHold = !m_onHold;
-    m_calls->setHold(m_activeLeg, m_onHold);
+  if (m_activeLeg.isEmpty()) {
+    return;
   }
+
+  if (m_demoMode) {
+    m_onHold = !m_onHold;
+    m_callWindow->updateState(m_onHold ? QStringLiteral("hold") : QStringLiteral("resumed"), {});
+    return;
+  }
+
+  m_onHold = !m_onHold;
+  m_calls->setHold(m_activeLeg, m_onHold);
 }
 
 void MainWindow::onTransfer(const QString &target)
@@ -765,7 +915,7 @@ void MainWindow::onTransfer(const QString &target)
 
 void MainWindow::onPresenceChanged(int index)
 {
-  if (!m_online || index < 0) {
+  if (!m_online || index < 0 || m_demoMode) {
     return;
   }
   m_client->api()->setOwnPresence(m_presenceSelector->currentStatus());
@@ -785,6 +935,9 @@ void MainWindow::onContactSelected()
 
 void MainWindow::onStatusMessage(const QString &message)
 {
+  if (m_demoMode) {
+    return;
+  }
   if (message.contains(tr("В сети"))) {
     setOnlineUi(true);
   }

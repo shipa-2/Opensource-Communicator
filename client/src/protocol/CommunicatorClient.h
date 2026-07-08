@@ -38,6 +38,9 @@ public:
 
     void login();
     void logout();
+    void enterDemoMode();
+    void leaveDemoMode();
+    bool isDemoMode() const { return m_demoMode; }
 
     QString buildWebSocketUrl() const;
 
@@ -64,6 +67,7 @@ private:
     LoginCredentials m_credentials;
     AppSettings m_appSettings;
     QSettings m_settings;
+    bool m_demoMode = false;
 };
 
 } // namespace itl
