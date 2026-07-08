@@ -1,0 +1,293 @@
+#include "ChatManager.h"
+
+#include "protocol/WsApiClient.h"
+
+#include <QJsonArray>
+#include <QLoggingCategory>
+
+Q_LOGGING_CATEGORY(lcChat, "itl.chat")
+
+namespace itl {
+
+namespace {
+bool charIsDialable(QChar ch)
+{
+  return ch.isDigit() || ch == QLatin1Char('+') || ch == QLatin1Char('*') || ch == QLatin1Char('#');
+}
+} // namespace
+
+ChatManager::ChatManager(WsApiClient *api, QObject *parent)
+    : QObject(parent)
+    , m_api(api)
+{
+}
+
+void ChatManager::setDomain(const QString &domain)
+{
+  m_domain = domain;
+  loadSmsTelnums();
+}
+
+bool ChatManager::looksLikePhone(QString value)
+{
+  value = value.trimmed();
+  if (value.isEmpty()) {
+    return false;
+  }
+
+  const int atPos = value.indexOf(QLatin1Char('@'));
+  if (atPos > 0) {
+    value = value.left(atPos);
+  }
+
+  for (const QChar ch : value) {
+    if (!charIsDialable(ch) && ch != QLatin1Char('-') && ch != QLatin1Char(' ')
+        && ch != QLatin1Char('(') && ch != QLatin1Char(')')) {
+      return false;
+    }
+  }
+
+  QString digitsOnly = value;
+  digitsOnly.remove(QLatin1Char('+'));
+  digitsOnly.remove(QLatin1Char('-'));
+  digitsOnly.remove(QLatin1Char(' '));
+  digitsOnly.remove(QLatin1Char('('));
+  digitsOnly.remove(QLatin1Char(')'));
+  return !digitsOnly.isEmpty() && digitsOnly.length() <= 21;
+}
+
+bool ChatManager::isPhonePeer(QString peer)
+{
+  return looksLikePhone(peer);
+}
+
+QString ChatManager::phoneFromPeer(QString peer)
+{
+  const int atPos = peer.indexOf(QLatin1Char('@'));
+  if (atPos > 0 && looksLikePhone(peer.left(atPos))) {
+    return peer.left(atPos);
+  }
+  return peer;
+}
+
+QString ChatManager::normalizePeer(QString peer) const
+{
+  if (isPhonePeer(peer)) {
+    return phoneFromPeer(peer);
+  }
+  if (!peer.contains(QLatin1Char('@')) && !m_domain.isEmpty()) {
+    peer += QLatin1Char('@') + m_domain;
+  }
+  return peer;
+}
+
+bool ChatManager::isSmsPeer(const QString &peer) const
+{
+  return isPhonePeer(peer);
+}
+
+void ChatManager::loadSmsTelnums()
+{
+  if (!m_api) {
+    return;
+  }
+  m_smsTelnumsRequestId = m_api->getSmsTelnums();
+}
+
+void ChatManager::handleSmsTelnumsResponse(const QJsonObject &response)
+{
+  m_smsFromNumber.clear();
+  const QJsonObject inner = response.value(QString::fromUtf8(kEmptyKey)).toObject();
+  const QJsonValue responseValue = inner.value(QStringLiteral("response"));
+  if (!responseValue.isArray()) {
+    return;
+  }
+
+  for (const QJsonValue &value : responseValue.toArray()) {
+    const QString tn = value.toObject().value(QStringLiteral("tn")).toString();
+    if (!tn.isEmpty()) {
+      m_smsFromNumber = tn;
+      break;
+    }
+  }
+}
+
+InstantMessage ChatManager::parseMessage(const QJsonObject &msg) const
+{
+  InstantMessage im;
+  im.id = msg.value(QStringLiteral("id")).toString();
+  im.origId = msg.value(QStringLiteral("origId")).toString(msg.value(QStringLiteral("remoteId")).toString());
+  if (im.origId.isEmpty()) {
+    im.origId = im.id;
+  }
+
+  im.peer = normalizePeer(msg.value(QStringLiteral("from")).toString());
+  im.incoming = true;
+
+  if (msg.contains(QStringLiteral("to"))) {
+    im.peer = normalizePeer(msg.value(QStringLiteral("to")).toString());
+    im.incoming = false;
+  }
+
+  const QString type = msg.value(QStringLiteral("type")).toString();
+  if (type == QStringLiteral("typing")) {
+    return im;
+  }
+  if (type == QStringLiteral("seen") || type == QStringLiteral("state")) {
+    return {};
+  }
+
+  if (msg.value(QStringLiteral("body")).isObject()) {
+    im.body = msg.value(QStringLiteral("body")).toObject().value(QString::fromUtf8(kEmptyKey)).toString();
+  } else {
+    im.body = msg.value(QStringLiteral("body")).toString();
+  }
+
+  if (msg.contains(QStringLiteral("timestamp"))) {
+    im.timestamp = QDateTime::fromMSecsSinceEpoch(msg.value(QStringLiteral("timestamp")).toVariant().toLongLong());
+  } else {
+    im.timestamp = QDateTime::currentDateTime();
+  }
+
+  return im;
+}
+
+void ChatManager::handlePayload(const QJsonObject &payload)
+{
+  const QString what = payload.value(QStringLiteral("What")).toString();
+
+  if (what == QStringLiteral("[IM]")) {
+    const QJsonObject raw = payload.value(QStringLiteral("message")).toObject();
+    if (raw.value(QStringLiteral("type")).toString() == QStringLiteral("typing")) {
+      emit typingReceived(normalizePeer(raw.value(QStringLiteral("from")).toString()));
+      return;
+    }
+
+    const InstantMessage im = parseMessage(raw);
+    if (im.body.isEmpty() || im.id == QStringLiteral("0")) {
+      return;
+    }
+
+    m_messages[im.peer].append(im);
+    if (im.incoming && !im.origId.isEmpty()) {
+      m_unreadByPeer[im.peer].append(im.origId);
+    }
+    emit messageReceived(im);
+    return;
+  }
+
+  if (what == QStringLiteral("[IM_HIST]")) {
+    if (payload.contains(QStringLiteral("error"))) {
+      qCWarning(lcChat) << "IM history error:" << payload.value(QStringLiteral("error")).toString();
+      return;
+    }
+
+    const QJsonArray messages = payload.value(QStringLiteral("messages")).toArray();
+    QString chatPeer = payload.value(QStringLiteral("chatId")).toString();
+    for (const auto &value : messages) {
+      const InstantMessage im = parseMessage(value.toObject());
+      if (im.body.isEmpty()) {
+        continue;
+      }
+      chatPeer = im.peer;
+      m_messages[im.peer].append(im);
+      emit messageReceived(im);
+    }
+    if (!chatPeer.isEmpty()) {
+      emit historyLoaded(chatPeer);
+    }
+    return;
+  }
+
+  if (what == QStringLiteral("[IM_CONTACTS]")) {
+    const QJsonObject contacts = payload.value(QStringLiteral("contacts")).toObject();
+    for (auto it = contacts.begin(); it != contacts.end(); ++it) {
+      const QString peer = normalizePeer(it.key());
+      const QJsonArray unseen = it.value().toObject().value(QStringLiteral("unseen")).toArray();
+      QStringList ids;
+      for (const auto &id : unseen) {
+        if (id.toString() != QStringLiteral("0")) {
+          ids.append(id.toString());
+        }
+      }
+      if (!ids.isEmpty()) {
+        m_unreadByPeer.insert(peer, ids);
+      }
+    }
+  }
+}
+
+void ChatManager::handleResponse(int requestId, const QJsonObject &response)
+{
+  if (requestId == m_smsTelnumsRequestId) {
+    m_smsTelnumsRequestId = -1;
+    handleSmsTelnumsResponse(response);
+    return;
+  }
+
+  if (requestId != m_historyRequestId) {
+    return;
+  }
+  m_historyRequestId = -1;
+
+  const QJsonObject inner = response.value(QString::fromUtf8(kEmptyKey)).toObject();
+  QJsonObject hist = inner.value(QStringLiteral("response")).toObject();
+  hist.insert(QStringLiteral("What"), QStringLiteral("[IM_HIST]"));
+  if (!hist.isEmpty()) {
+    handlePayload(hist);
+  }
+}
+
+int ChatManager::sendMessage(const QString &peer, const QString &text)
+{
+  if (!m_api) {
+    return -1;
+  }
+
+  const QString normalized = normalizePeer(peer);
+  int reqId = -1;
+
+  if (isPhonePeer(normalized)) {
+    if (m_smsFromNumber.isEmpty()) {
+      qCWarning(lcChat) << "SMS sender number is not configured";
+      return -1;
+    }
+    const QString to = phoneFromPeer(normalized);
+    m_api->sendSms(m_smsFromNumber, to, text);
+  } else {
+    reqId = m_api->sendIm(normalized, text);
+  }
+
+  InstantMessage im;
+  im.peer = normalized;
+  im.body = text;
+  im.incoming = false;
+  im.timestamp = QDateTime::currentDateTime();
+  m_messages[normalized].append(im);
+  emit messageReceived(im);
+  return reqId;
+}
+
+void ChatManager::sendSeen(const QString &peer, const QStringList &origIds)
+{
+  if (!m_api || origIds.isEmpty()) {
+    return;
+  }
+  m_api->sendIm(normalizePeer(peer), origIds, QStringLiteral("seen"));
+  m_unreadByPeer.remove(normalizePeer(peer));
+}
+
+void ChatManager::loadHistory(const QString &lastKnownId)
+{
+  if (!m_api) {
+    return;
+  }
+  m_historyRequestId = m_api->loadImHistory(lastKnownId);
+}
+
+QList<InstantMessage> ChatManager::messagesForPeer(const QString &peer) const
+{
+  return m_messages.value(normalizePeer(peer));
+}
+
+} // namespace itl
