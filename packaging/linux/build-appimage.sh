@@ -36,6 +36,7 @@ export QMAKE="$(command -v qmake6 || command -v qmake)"
 export VERSION
 export ARCH=x86_64
 export NO_STRIP=1
+export APPIMAGE_EXTRACT_AND_RUN=1
 export OUTPUT="$DIST/OpenSource-Communicator-${VERSION}-x86_64.AppImage"
 
 cd "$CLIENT/build-appimage"

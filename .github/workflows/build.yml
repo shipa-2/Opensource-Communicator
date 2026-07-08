@@ -26,11 +26,12 @@ jobs:
             build-essential cmake pkg-config git \
             libopus-dev libssl-dev \
             qt6-base-dev qt6-websockets-dev qt6-multimedia-dev \
-            libfuse2 file wget
+            libglib2.0-dev libpulse-dev libgl1-mesa-dev libxkbcommon-dev \
+            libfuse2 file wget curl ca-certificates
 
       - name: Build libdatachannel
         run: |
-          git clone --depth 1 --branch "${LIBDATACHANNEL_VERSION}" \
+          git clone --depth 1 --branch "${LIBDATACHANNEL_VERSION}" --recurse-submodules \
             https://github.com/paullouisageneau/libdatachannel.git /tmp/libdatachannel
           cmake -S /tmp/libdatachannel -B /tmp/libdatachannel/build \
             -DCMAKE_BUILD_TYPE=Release \
@@ -51,6 +52,8 @@ jobs:
           cmake --build client/build-release -j"$(nproc)"
 
       - name: Build AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
         run: |
           chmod +x packaging/linux/build-appimage.sh
           packaging/linux/build-appimage.sh
@@ -79,6 +82,7 @@ jobs:
             mingw-w64-ucrt-x86_64-qt6-base
             mingw-w64-ucrt-x86_64-qt6-websockets
             mingw-w64-ucrt-x86_64-qt6-multimedia
+            mingw-w64-ucrt-x86_64-qt6-tools
             mingw-w64-ucrt-x86_64-opus
             mingw-w64-ucrt-x86_64-openssl
             zip
@@ -89,7 +93,7 @@ jobs:
           set -euo pipefail
           export PATH=/ucrt64/bin:$PATH
           PREFIX="$GITHUB_WORKSPACE/deps/prefix"
-          git clone --depth 1 --branch "${LIBDATACHANNEL_VERSION}" \
+          git clone --depth 1 --branch "${LIBDATACHANNEL_VERSION}" --recurse-submodules \
             https://github.com/paullouisageneau/libdatachannel.git /tmp/libdatachannel
           cmake -S /tmp/libdatachannel -B /tmp/libdatachannel/build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
@@ -125,8 +129,9 @@ jobs:
           cp client/build-win64/opensource-communicator.exe "$STAGE/"
           windeployqt6 --no-translations --no-system-d3d-compiler --no-opengl-sw \
             "$STAGE/opensource-communicator.exe"
-          cp "$PREFIX/bin/libdatachannel.dll" "$STAGE/"
+          cp "$PREFIX/bin/"libdatachannel*.dll "$STAGE/"
           cp /ucrt64/bin/libopus-0.dll "$STAGE/"
+          cp /ucrt64/bin/libssl-3*.dll /ucrt64/bin/libcrypto-3*.dll "$STAGE/" 2>/dev/null || true
           (cd "$STAGE" && zip -r9 "$GITHUB_WORKSPACE/dist/OpenSource-Communicator-${VERSION}-win64.zip" .)
 
       - name: Upload Windows artifact
