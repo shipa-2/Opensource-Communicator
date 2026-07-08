@@ -58,12 +58,11 @@
 ## Установка (Arch Linux / AUR)
 
 ```bash
-cd packaging/aur
-makepkg -si
+yay -S opensource-communicator-git
 ```
 
-Пакет `opensource-communicator-git` собирает клиент из ветки `main` и ставит его
-в `/usr`. Подробности и инструкция по публикации в AUR — в `packaging/aur/README.md`.
+Пакет [`opensource-communicator-git`](https://aur.archlinux.org/packages/opensource-communicator-git)
+собирает клиент из ветки `main` и ставит его в `/usr`.
 
 ## Сборка (Linux)
 
