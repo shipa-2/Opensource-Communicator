@@ -1,5 +1,6 @@
 #include "WsConnection.h"
 
+#include <QAbstractSocket>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLoggingCategory>
@@ -43,7 +44,12 @@ void WsConnection::connectToServer(const QUrl &url, const QString &ssoLogin)
   connect(m_socket, &QWebSocket::connected, this, &WsConnection::onSocketConnected);
   connect(m_socket, &QWebSocket::textMessageReceived, this, &WsConnection::onSocketTextMessage);
   connect(m_socket, &QWebSocket::disconnected, this, &WsConnection::onSocketDisconnected);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
   connect(m_socket, &QWebSocket::errorOccurred, this, &WsConnection::onSocketError);
+#else
+  connect(m_socket, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error),
+          this, &WsConnection::onSocketError);
+#endif
 
   qCInfo(lcWs) << "Connecting to" << url;
   m_socket->open(url);
