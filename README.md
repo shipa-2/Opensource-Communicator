@@ -14,6 +14,8 @@
 
 Совместимый open-source клиент для **ITooLabs Communicator** (Megafon PBX, virtual-ats и др.) на **Qt 6**.
 
+**[⬇ Установка (Arch Linux / AUR)](#установка-arch-linux--aur)**
+
 ## Скриншоты
 
 ### Вход
