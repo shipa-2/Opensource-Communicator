@@ -18,7 +18,6 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets WebSockets Network Multime
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(OPUS REQUIRED opus)
 
-find_package(libSRTP CONFIG QUIET)
 find_package(LibDataChannel CONFIG QUIET)
 if(LibDataChannel_FOUND)
     set(DATACHANNEL_LIB LibDataChannel::LibDataChannel)
