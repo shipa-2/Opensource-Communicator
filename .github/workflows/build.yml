@@ -39,6 +39,7 @@ jobs:
             mingw-w64-ucrt-x86_64-qt6-tools
             mingw-w64-ucrt-x86_64-opus
             mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-libsrtp
             zip
 
       - name: Build libdatachannel
@@ -54,6 +55,7 @@ jobs:
             -DUSE_GNUTLS=OFF \
             -DUSE_MBEDTLS=OFF \
             -DUSE_NICE=OFF \
+            -DUSE_SYSTEM_SRTP=ON \
             -DNO_EXAMPLES=ON \
             -DNO_TESTS=ON
           cmake --build /tmp/libdatachannel/build
