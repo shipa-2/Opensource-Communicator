@@ -42,9 +42,9 @@ opensource-communicator/
 ├── client/                      # Всё приложение (CMake, C++17, Qt 6)
 │   ├── CMakeLists.txt           # Зависимости, install prefix, список исходников
 │   ├── resources/
-│   │   ├── resources.qrc        # logo.png, help.jpg, QSS для диалогов
+│   │   ├── resources.qrc        # logo.png, help.png, QSS для диалогов
 │   │   ├── logo.png             # Иконка окна и README
-│   │   ├── help.jpg             # Картинка в HelpDialog
+│   │   ├── help.png             # Картинка в HelpDialog
 │   │   └── communicator-dialogs.qss
 │   └── src/
 │       ├── main.cpp             # Точка входа: CommunicatorClient + CallManager + MainWindow
@@ -167,7 +167,7 @@ opensource-communicator/
 | SMS | API и чат-окно для SMS-peer | Нет отдельного «SMS-центра», списков рассылок |
 | История чата | `loadImHistory` / `[IM_HIST]` | Нет полного офлайн-архива как в толстом клиенте |
 | Контакты | Сервер + локальные | Нет синхронизации локальных контактов на сервер |
-| Справка | Статичная картинка `help.jpg` | Нет интерактивной базы знаний |
+| Справка | Статичная картинка `help.png` | Нет интерактивной базы знаний |
 
 ### Не реализовано (на v0.1)
 

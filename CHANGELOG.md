@@ -20,6 +20,7 @@
 
 - **Звук в звонках** — устранены тишина и задержка аудио на Megafon PBX (отложенная WebRTC-negotiation, RTP timestamps, `disableAutoNegotiation`).
 - **Конференция** — корректные флаги `muted` для слушателей.
+- **Помощь на Windows** — картинка справки переведена в PNG (JPEG не открывался без плагина `qjpeg` в portable-сборке).
 
 ### Изменено
 

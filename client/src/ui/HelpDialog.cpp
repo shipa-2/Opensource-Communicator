@@ -22,11 +22,14 @@ HelpDialog::HelpDialog(QWidget *parent)
   layout->setSpacing(10);
 
   auto *image = new QLabel;
-  QPixmap pixmap(QStringLiteral(":/help.jpg"));
+  QPixmap pixmap(QStringLiteral(":/help.png"));
   if (!pixmap.isNull() && pixmap.width() > kMaxImageWidth) {
     pixmap = pixmap.scaledToWidth(kMaxImageWidth, Qt::SmoothTransformation);
   }
   image->setPixmap(pixmap);
+  if (pixmap.isNull()) {
+    image->setText(tr("Не удалось загрузить изображение справки."));
+  }
   image->setAlignment(Qt::AlignCenter);
   layout->addWidget(image);
 

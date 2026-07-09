@@ -1,7 +1,7 @@
 <RCC>
     <qresource prefix="/">
         <file>communicator-dialogs.qss</file>
-        <file>help.jpg</file>
+        <file>help.png</file>
         <file>logo.png</file>
     </qresource>
 </RCC>
