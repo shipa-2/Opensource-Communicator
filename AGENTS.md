@@ -248,7 +248,7 @@ sudo cmake --install build   # по умолчанию /opt/opensource-communica
 | `linux-build` | Ubuntu 24.04, системные Qt6/opus/openssl, libdatachannel из исходников (нет в apt), кэш | `linux-build-Release`, `linux-build-Debug` (tar.gz от `install`) |
 
 - Триггер: push в `main`, `workflow_dispatch` или тег `v*`.
-- Job `release` (только на тег `v*`) прикрепляет к GitHub Release **только Release**-артефакты (pattern `*-Release`).
+- Job `release` после успешной сборки `main` / тега `v*` / `workflow_dispatch` прикрепляет **только Release**-артефакты (pattern `*-Release`) к GitHub Release `vX.Y.Z` из версии в `CMakeLists.txt`.
 - Локально Windows: `packaging/windows/build-windows.sh` (поддерживает `BUILD_TYPE=Debug`).
 
 ### Install prefix

@@ -82,7 +82,7 @@ Portable ZIP для Windows и tar.gz для Linux публикуются в [Gi
 
 Для отладки в [Actions](https://github.com/shipa-2/Opensource-Communicator/actions/workflows/build.yml) доступны артефакты `*-Debug` — сборка с окном консоли и полными логами протокола/звонков.
 
-При push тега `v*` CI автоматически создаёт GitHub Release и прикрепляет **Release**-артефакты (Windows ZIP и Linux tar.gz).
+При push в `main` (и при теге `v*`) CI автоматически обновляет GitHub Release и прикрепляет **Release**-артефакты (Windows ZIP и Linux tar.gz). Debug-сборки остаются только в Actions.
 
 ## Сборка (Linux)
 
