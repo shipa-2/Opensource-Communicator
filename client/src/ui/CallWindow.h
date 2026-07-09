@@ -3,7 +3,6 @@
 #include <QDialog>
 
 class QLabel;
-class QLineEdit;
 class QPushButton;
 class QTextEdit;
 class QTimer;
@@ -32,7 +31,7 @@ signals:
     void answerRequested();
     void hangupRequested();
     void holdRequested();
-    void transferRequested(const QString &target);
+    void transferRequested();
     void notesChanged(const QString &peer, const QString &text);
 
 protected:
@@ -62,7 +61,6 @@ private:
     QPushButton *m_notesBtn = nullptr;
     QPushButton *m_transferBtn = nullptr;
     QTextEdit *m_notesEdit = nullptr;
-    QLineEdit *m_transferEdit = nullptr;
     QTimer *m_durationTimer = nullptr;
     int m_elapsedSeconds = 0;
     bool m_notesVisible = false;

@@ -26,3 +26,5 @@
 Thumbs.db
 *.swp
 *~
+
+/client/build-*/

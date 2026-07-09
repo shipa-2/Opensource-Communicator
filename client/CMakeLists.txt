@@ -85,6 +85,8 @@ add_executable(opensource-communicator
     src/ui/AddContactDialog.h
     src/ui/ConferenceDialog.cpp
     src/ui/ConferenceDialog.h
+    src/ui/TransferDialog.cpp
+    src/ui/TransferDialog.h
     src/ui/ProfileAvatarWidget.cpp
     src/ui/ProfileAvatarWidget.h
     src/ui/NotePopupDialog.cpp

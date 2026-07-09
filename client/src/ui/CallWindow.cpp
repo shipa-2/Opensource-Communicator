@@ -4,7 +4,6 @@
 
 #include <QHBoxLayout>
 #include <QLabel>
-#include <QLineEdit>
 #include <QPushButton>
 #include <QTextEdit>
 #include <QTimer>
@@ -74,11 +73,6 @@ void CallWindow::buildUi()
   infoRow->addLayout(statusCol);
   root->addLayout(infoRow);
 
-  m_transferEdit = new QLineEdit;
-  m_transferEdit->setPlaceholderText(tr("Номер для перевода"));
-  m_transferEdit->setVisible(false);
-  root->addWidget(m_transferEdit);
-
   m_notesEdit = new QTextEdit;
   m_notesEdit->setPlaceholderText(tr("Заметка по этому абоненту..."));
   m_notesEdit->setVisible(false);
@@ -130,19 +124,7 @@ void CallWindow::buildUi()
       emit notesChanged(m_peer, m_notesEdit->toPlainText());
     }
   });
-  connect(m_transferBtn, &QPushButton::clicked, this, [this]() {
-    if (m_transferEdit->isHidden()) {
-      m_transferEdit->setVisible(true);
-      m_transferEdit->setFocus();
-      return;
-    }
-    const QString target = m_transferEdit->text().trimmed();
-    if (!target.isEmpty()) {
-      emit transferRequested(target);
-      m_transferEdit->clear();
-      m_transferEdit->setVisible(false);
-    }
-  });
+  connect(m_transferBtn, &QPushButton::clicked, this, &CallWindow::transferRequested);
 }
 
 void CallWindow::setMode(Mode mode)
@@ -299,7 +281,6 @@ void CallWindow::updateState(const QString &state, const QString &detail)
 void CallWindow::closeCall()
 {
   stopTimer();
-  m_transferEdit->hide();
   setNotesVisible(false);
   hide();
   setMode(Mode::Hidden);

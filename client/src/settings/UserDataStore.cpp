@@ -75,6 +75,7 @@ void UserDataStore::load()
     entry.durationSec = obj.value(QStringLiteral("durationSec")).toInt();
     entry.answered = obj.value(QStringLiteral("answered")).toBool();
     entry.result = obj.value(QStringLiteral("result")).toString();
+    entry.transferTo = obj.value(QStringLiteral("transferTo")).toString();
     if (!entry.peer.isEmpty()) {
       m_callHistory.append(entry);
     }
@@ -109,6 +110,7 @@ void UserDataStore::save() const
         {QStringLiteral("durationSec"), entry.durationSec},
         {QStringLiteral("answered"), entry.answered},
         {QStringLiteral("result"), entry.result},
+        {QStringLiteral("transferTo"), entry.transferTo},
     });
   }
 

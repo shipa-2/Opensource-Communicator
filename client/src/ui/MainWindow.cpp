@@ -2,6 +2,7 @@
 
 #include "AddContactDialog.h"
 #include "ConferenceDialog.h"
+#include "TransferDialog.h"
 #include "ContactRowWidget.h"
 #include "HelpDialog.h"
 #include "LoginDialog.h"
@@ -536,7 +537,14 @@ void MainWindow::rebuildHistoryList()
   for (const itl::CallHistoryEntry &entry : history) {
     const QString arrow = entry.direction == QStringLiteral("incoming") ? QStringLiteral("↓") : QStringLiteral("↑");
     QString status;
-    if (entry.answered) {
+    if (entry.result == QStringLiteral("transferred") && !entry.transferTo.isEmpty()) {
+      if (entry.answered && entry.durationSec > 0) {
+        status = tr("%1 · переведён на %2")
+                     .arg(formatHistoryDuration(entry.durationSec), entry.transferTo);
+      } else {
+        status = tr("переведён на %1").arg(entry.transferTo);
+      }
+    } else if (entry.answered) {
       status = formatHistoryDuration(entry.durationSec);
     } else if (entry.direction == QStringLiteral("incoming")) {
       status = tr("пропущ.");
@@ -574,7 +582,7 @@ void MainWindow::markCallConnected(const QString &leg)
   m_callTracking[leg].connectedAtMs = QDateTime::currentMSecsSinceEpoch();
 }
 
-void MainWindow::finalizeCallHistory(const QString &leg, const QString &state)
+void MainWindow::finalizeCallHistory(const QString &leg, const QString &state, const QString &transferTo)
 {
   if (!m_callTracking.contains(leg)) {
     return;
@@ -592,7 +600,13 @@ void MainWindow::finalizeCallHistory(const QString &leg, const QString &state)
   entry.durationSec = entry.answered ? static_cast<int>((entry.endedAtMs - entry.connectedAtMs) / 1000) : 0;
   entry.result = state;
 
-  if (!entry.answered && tracking.incoming) {
+  if (state == QStringLiteral("transferred")) {
+    entry.result = QStringLiteral("transferred");
+    entry.transferTo = transferTo;
+    if (entry.transferTo.isEmpty()) {
+      entry.transferTo = tr("контакт");
+    }
+  } else if (!entry.answered && tracking.incoming) {
     entry.result = QStringLiteral("missed");
   } else if (!entry.answered) {
     entry.result = QStringLiteral("unanswered");
@@ -903,14 +917,47 @@ void MainWindow::onHold()
   m_calls->setHold(m_activeLeg, m_onHold);
 }
 
-void MainWindow::onTransfer(const QString &target)
+void MainWindow::onTransfer()
 {
-  if (!m_activeLeg.isEmpty()) {
-    const QString peer = resolvePeer(target);
-    if (!peer.isEmpty()) {
-      m_calls->blindTransfer(m_activeLeg, peer);
-    }
+  if (m_activeLeg.isEmpty() || !m_online) {
+    return;
   }
+
+  QHash<QString, QString> peerNames;
+  for (auto it = m_contacts.cbegin(); it != m_contacts.cend(); ++it) {
+    if (it.value().isSelf) {
+      continue;
+    }
+    const QString name = it.value().name.isEmpty() ? displayNameForPeer(it.key()) : it.value().name;
+    peerNames.insert(it.key(), name);
+  }
+
+  const QString excludePeer = m_callWindow ? m_callWindow->peer() : QString();
+  TransferDialog dlg(peerNames, m_selfPeer, excludePeer, this);
+  if (dlg.exec() != QDialog::Accepted) {
+    return;
+  }
+
+  const QString peer = dlg.selectedPeer();
+  if (peer.isEmpty()) {
+    return;
+  }
+
+  const QString transferName = dlg.selectedDisplayName().isEmpty()
+                                   ? displayNameForPeer(peer)
+                                   : dlg.selectedDisplayName();
+  const QString leg = m_activeLeg;
+
+  if (m_demoMode) {
+    finalizeCallHistory(leg, QStringLiteral("transferred"), transferName);
+    m_activeLeg.clear();
+    m_activeIncomingLeg.clear();
+    m_onHold = false;
+    m_callWindow->closeCall();
+    return;
+  }
+
+  m_calls->blindTransfer(leg, peer);
 }
 
 void MainWindow::onPresenceChanged(int index)
@@ -1069,6 +1116,18 @@ void MainWindow::onCallStateChanged(const QString &leg, const QString &state, co
       || state == QStringLiteral("hold") || state == QStringLiteral("resumed")) {
     m_activeLeg = leg;
     m_callWindow->updateState(state, detail);
+    return;
+  }
+  if (state == QStringLiteral("transferred")) {
+    const QString transferName = detail.isEmpty() ? tr("контакт") : displayNameForPeer(detail);
+    finalizeCallHistory(leg, QStringLiteral("transferred"),
+                        transferName.isEmpty() ? detail : transferName);
+    if (m_activeLeg == leg || m_activeIncomingLeg == leg || m_activeLeg.isEmpty()) {
+      m_activeLeg.clear();
+      m_activeIncomingLeg.clear();
+      m_onHold = false;
+    }
+    m_callWindow->closeCall();
     return;
   }
   if (state == QStringLiteral("ended") || state == QStringLiteral("rejected")

@@ -48,7 +48,7 @@ private slots:
     void onNotesFromRow(const QString &peer);
     void onHangup();
     void onHold();
-    void onTransfer(const QString &target);
+    void onTransfer();
     void onAnswer();
     void onPresenceChanged(int index);
     void onSearchChanged(const QString &text);
@@ -99,7 +99,7 @@ private:
     void startDemoCallSimulation(const QString &peer, const QString &displayName, const QString &detail);
     void beginCallTracking(const QString &leg, const QString &peer, const QString &displayName, bool incoming);
     void markCallConnected(const QString &leg);
-    void finalizeCallHistory(const QString &leg, const QString &state);
+    void finalizeCallHistory(const QString &leg, const QString &state, const QString &transferTo = {});
     static QString formatHistoryDuration(int seconds);
     static QString formatHistoryTime(qint64 ms);
 

@@ -19,6 +19,7 @@ struct CallHistoryEntry {
     int durationSec = 0;
     bool answered = false;
     QString result;
+    QString transferTo; // display name or peer when result == "transferred"
 };
 
 class UserDataStore : public QObject {
