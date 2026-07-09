@@ -1,7 +1,7 @@
 # Maintainer: shipa-2 <aurahag2@gmail.com>
 pkgname=opensource-communicator-git
 _pkgname=opensource-communicator
-pkgver=0.2.0.r0
+pkgver=0.2.0.r31.gc96d6ee
 pkgrel=1
 pkgdesc="Open-source ITooLabs/Megafon PBX compatible VoIP & IM client (Qt6)"
 arch=('x86_64')
