@@ -193,14 +193,13 @@ jobs:
           if-no-files-found: error
 
   release:
-    # Publish Release builds to GitHub Releases on every successful main/tag/manual run,
-    # so downloads live under Releases instead of only Actions artifacts.
+    # Publish Release builds to a date-tagged GitHub Release (DDMMYYYY)
+    # after every successful main / manual run.
     if: >-
       always() &&
       needs.windows-portable.result == 'success' &&
       needs.linux-build.result == 'success' &&
       (github.ref == 'refs/heads/main' ||
-       startsWith(github.ref, 'refs/tags/v') ||
        github.event_name == 'workflow_dispatch')
     needs: [windows-portable, linux-build]
     runs-on: ubuntu-24.04
@@ -217,26 +216,25 @@ jobs:
         id: meta
         run: |
           set -euo pipefail
-          VERSION="$(grep -m1 'project(opensource-communicator VERSION' client/CMakeLists.txt | sed -E 's/.*VERSION ([0-9.]+).*/\1/')"
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            TAG="${GITHUB_REF_NAME}"
-            VERSION="${TAG#v}"
-          else
-            TAG="v${VERSION}"
-          fi
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          # Tag / release title: DDMMYYYY (UTC date of the run).
+          TAG="$(date -u +%d%m%Y)"
+          APP_VERSION="$(grep -m1 'project(opensource-communicator VERSION' client/CMakeLists.txt | sed -E 's/.*VERSION ([0-9.]+).*/\1/')"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "name=${TAG}" >> "$GITHUB_OUTPUT"
 
-          awk -v ver="$VERSION" '
-            /^## \[/ {
-              if (found) exit
-              if ($0 ~ "\\[" ver "\\]") found = 1
-            }
-            found { print }
-          ' CHANGELOG.md > release-notes.md
-          if [ ! -s release-notes.md ]; then
-            echo "Release ${TAG}" > release-notes.md
-          fi
+          {
+            echo "## ${TAG}"
+            echo
+            echo "Сборка приложения **${APP_VERSION}** от ${TAG:0:2}.${TAG:2:2}.${TAG:4:4} (UTC)."
+            echo
+            awk -v ver="$APP_VERSION" '
+              /^## \[/ {
+                if (found) exit
+                if ($0 ~ "\\[" ver "\\]") found = 1
+              }
+              found { print }
+            ' CHANGELOG.md
+          } > release-notes.md
 
           echo "Publishing assets to ${TAG}:"
           find artifacts -type f -print
@@ -245,7 +243,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
-          name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.name }}
           files: artifacts/**/*
           body_path: release-notes.md
           generate_release_notes: false

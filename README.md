@@ -75,14 +75,14 @@ yay -S opensource-communicator-git
 
 Portable ZIP для Windows и tar.gz для Linux публикуются в [GitHub Releases](https://github.com/shipa-2/Opensource-Communicator/releases):
 
-1. Откройте страницу релиза (например, [v0.2.0](https://github.com/shipa-2/Opensource-Communicator/releases/latest))
+1. Откройте страницу релиза (например, [последний](https://github.com/shipa-2/Opensource-Communicator/releases/latest))
 2. Скачайте `OpenSource-Communicator-*-win64.zip` (Windows) или `OpenSource-Communicator-*-linux-x86_64.tar.gz` (Linux)
 
 Распакуйте архив в любую папку и запустите `opensource-communicator` / `opensource-communicator.exe`. Установщик (MSI) не нужен.
 
 Для отладки в [Actions](https://github.com/shipa-2/Opensource-Communicator/actions/workflows/build.yml) доступны артефакты `*-Debug` — сборка с окном консоли и полными логами протокола/звонков.
 
-При push в `main` (и при теге `v*`) CI автоматически обновляет GitHub Release и прикрепляет **Release**-артефакты (Windows ZIP и Linux tar.gz). Debug-сборки остаются только в Actions.
+При push в `main` CI автоматически создаёт/обновляет GitHub Release с тегом **ДДММГГГГ** (дата сборки) и прикрепляет **Release**-артефакты (Windows ZIP и Linux tar.gz). Debug-сборки остаются только в Actions.
 
 ## Сборка (Linux)
 
