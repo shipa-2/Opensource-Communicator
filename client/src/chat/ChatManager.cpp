@@ -4,6 +4,7 @@
 
 #include <QJsonArray>
 #include <QLoggingCategory>
+#include <QRegularExpression>
 
 #include <algorithm>
 
@@ -210,6 +211,16 @@ void ChatManager::handlePayload(const QJsonObject &payload)
       return;
     }
 
+    if (im.incoming && isColorAdvertisement(im.body)) {
+      const QString color = extractColor(im.body);
+      if (!color.isEmpty()) {
+        m_peerColors[im.peer] = color;
+        qCDebug(lcChat) << "Color advertisement from" << im.peer << ":" << color;
+        emit peerColorReceived(im.peer, color);
+      }
+      return;
+    }
+
     // Outgoing copyToSelf echoes the optimistic local insert — merge, don't re-emit.
     if (!storeMessage(im, /*replaceOptimisticOutgoing=*/true)) {
       return;
@@ -237,6 +248,15 @@ void ChatManager::handlePayload(const QJsonObject &payload)
         continue;
       }
       chatPeer = im.peer;
+      if (isColorAdvertisement(im.body)) {
+        const QString color = extractColor(im.body);
+        if (!color.isEmpty()) {
+          m_peerColors[im.peer] = color;
+          qCDebug(lcChat) << "Color advertisement from" << im.peer << ":" << color;
+          emit peerColorReceived(im.peer, color);
+        }
+        continue;
+      }
       // History is applied to the store only; UI reloads via historyLoaded.
       storeMessage(im, /*replaceOptimisticOutgoing=*/true);
     }
@@ -401,6 +421,35 @@ QList<InstantMessage> ChatManager::messagesForPeer(const QString &peer) const
     return a.id < b.id;
   });
   return list;
+}
+
+bool ChatManager::isColorAdvertisement(const QString &body)
+{
+  static const QRegularExpression re(QStringLiteral("^\\*\\*#[0-9a-fA-F]{6}\\*\\*$"));
+  return re.match(body.trimmed()).hasMatch();
+}
+
+QString ChatManager::extractColor(const QString &body)
+{
+  const QString trimmed = body.trimmed();
+  if (trimmed.length() == 10 && trimmed.startsWith(QStringLiteral("**#")) && trimmed.endsWith(QStringLiteral("**"))) {
+    return trimmed.mid(2, 7);
+  }
+  return {};
+}
+
+void ChatManager::sendColorAdvertisement(const QString &color)
+{
+  if (m_demoMode || !m_api || color.isEmpty()) {
+    return;
+  }
+  const QString body = QStringLiteral("**%1**").arg(color);
+  m_api->sendIm(normalizePeer(QStringLiteral("__broadcast__")), body);
+}
+
+QString ChatManager::peerColor(const QString &peer) const
+{
+  return m_peerColors.value(normalizePeer(peer));
 }
 
 } // namespace itl

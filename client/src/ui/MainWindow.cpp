@@ -16,10 +16,12 @@
 #include "calls/CallManager.h"
 #include "chat/ChatManager.h"
 #include "audio/MessageNotifyPlayer.h"
+#include "audio/AudioDeviceUtils.h"
 #include "demo/DemoData.h"
 #include "protocol/CommunicatorClient.h"
 #include "protocol/CallHistoryParser.h"
 #include "protocol/ProtocolTypes.h"
+#include "settings/AppSettings.h"
 #include "settings/UserDataStore.h"
 #include <QJsonArray>
 #include <QJsonObject>
@@ -142,6 +144,7 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
 
   auto *profileRow = new QHBoxLayout;
   m_headerAvatar = new ProfileAvatarWidget(&m_client->appSettings());
+  m_headerAvatar->setMenuEnabled(false);
   profileRow->addWidget(m_headerAvatar);
 
   auto *profileText = new QVBoxLayout;
@@ -311,13 +314,23 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   m_viewMenu = new QMenu(viewBtn);
   m_viewChatAction = m_viewMenu->addAction(tr("Кнопка сообщений"));
   m_viewChatAction->setCheckable(true);
+  m_viewCallAction = m_viewMenu->addAction(tr("Кнопка позвонить"));
+  m_viewCallAction->setCheckable(true);
   connect(m_viewMenu, &QMenu::aboutToShow, this, [this]() {
     if (m_viewChatAction) {
       m_viewChatAction->setChecked(m_client->appSettings().showChatButtons());
     }
+    if (m_viewCallAction) {
+      m_viewCallAction->setChecked(m_client->appSettings().showCallButtons());
+    }
   });
   connect(m_viewChatAction, &QAction::triggered, this, [this](bool checked) {
     m_client->appSettings().setShowChatButtons(checked);
+    m_client->saveSettings();
+    applyContactViewSettings();
+  });
+  connect(m_viewCallAction, &QAction::triggered, this, [this](bool checked) {
+    m_client->appSettings().setShowCallButtons(checked);
     m_client->saveSettings();
     applyContactViewSettings();
   });
@@ -363,6 +376,11 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   connect(m_client->chat(), &itl::ChatManager::unreadChanged, this, [this](const QString &) {
     updateUnreadIndicators();
   });
+  connect(m_client->chat(), &itl::ChatManager::peerColorReceived, this, [this](const QString &peer, const QString &color) {
+    if (ContactRowWidget *row = rowWidgetForPeer(peer)) {
+      row->setPeerColor(color);
+    }
+  });
   connect(m_client, &itl::CommunicatorClient::callEvent, this, &MainWindow::onCallEvent);
   connect(m_client->api(), &itl::WsApiClient::domainContactsLoaded, this, &MainWindow::onContactsLoaded);
   connect(m_client->api(), &itl::WsApiClient::historyLoaded, this, &MainWindow::onServerHistoryLoaded);
@@ -373,6 +391,9 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   connect(m_calls, &itl::CallManager::remoteAudioStarted, this, [this](const QString &leg) {
     markCallConnected(leg);
     m_callWindow->beginConversationTimer();
+  });
+  connect(m_calls, &itl::CallManager::remoteAudioLevel, this, [this](float level) {
+    m_callWindow->updateRemoteAudioLevel(level);
   });
 
   m_client->loadSettings();
@@ -622,9 +643,16 @@ void MainWindow::addOrUpdateContactRow(const QString &peer)
                                   entry.isCustom);
   if (!entry.isSelf) {
     row->setCallNumbers(callNumbersForPeer(peer));
+  } else {
+    row->setPhones(entry.phone, entry.personalPhone);
   }
   row->setChatButtonVisible(m_client->appSettings().showChatButtons());
+  row->setCallButtonVisible(m_client->appSettings().showCallButtons());
   row->setUnreadBlink(m_client->appSettings().showChatButtons() && m_client->chat()->hasUnread(peer));
+  const QString peerColor = m_client->chat()->peerColor(peer);
+  if (!peerColor.isEmpty()) {
+    row->setPeerColor(peerColor);
+  }
   auto *item = new QListWidgetItem;
   item->setData(Qt::UserRole, peer);
   item->setSizeHint(QSize(0, entry.ext.isEmpty() && entry.phone.isEmpty() ? 48 : 56));
@@ -642,6 +670,9 @@ void MainWindow::addOrUpdateContactRow(const QString &peer)
   connect(row, &ContactRowWidget::notesRequested, this, &MainWindow::onNotesFromRow);
   connect(row, &ContactRowWidget::deleteRequested, this, &MainWindow::onDeleteContactFromRow);
   connect(row, &ContactRowWidget::exportRequested, this, &MainWindow::onExportContactFromRow);
+  connect(row, &ContactRowWidget::copyNumberRequested, this, [](const QString &number) {
+    QApplication::clipboard()->setText(number);
+  });
 }
 
 QVector<ContactRowWidget::CallNumber> MainWindow::callNumbersForPeer(const QString &peer) const
@@ -1722,6 +1753,7 @@ void MainWindow::startDemoCallSimulation(const QString &peer, const QString &dis
   m_activeIncomingLeg.clear();
   loadCallNotes(peer);
   m_callWindow->showOutgoing(peer, displayName, detail);
+  m_callWindow->setAvatarColor(m_client->chat()->peerColor(peer));
   beginCallTracking(m_demoCallLeg, peer, displayName, false);
 
   QTimer::singleShot(1200, this, [this, displayName]() {
@@ -1753,24 +1785,34 @@ void MainWindow::onLogout()
 
 void MainWindow::onSettings()
 {
-  SettingsDialog dlg(m_client, m_calls, this);
+  SettingsDialog dlg(m_client, m_calls, m_selfName, this);
   const int result = dlg.exec();
   m_messageNotify->applySettings(&m_client->appSettings());
-  if (result == 2) {
+  if (result == QDialog::Accepted) {
+    const QString newName = dlg.displayName();
+    if (!newName.isEmpty() && newName != m_selfName) {
+      m_selfName = newName;
+      m_headerName->setText(m_selfName);
+      m_headerAvatar->setLetter(m_selfName.left(1).toUpper());
+    }
+    m_headerAvatar->refreshFromSettings();
+  } else if (result == 3) {
     onLogin();
   }
 }
 
 void MainWindow::applyContactViewSettings()
 {
-  const bool show = m_client->appSettings().showChatButtons();
+  const bool showChat = m_client->appSettings().showChatButtons();
+  const bool showCall = m_client->appSettings().showCallButtons();
   for (ContactRowWidget *row : findChildren<ContactRowWidget *>()) {
-    row->setChatButtonVisible(show);
-    if (!show) {
+    row->setChatButtonVisible(showChat);
+    row->setCallButtonVisible(showCall);
+    if (!showChat) {
       row->setUnreadBlink(false);
     }
   }
-  if (show) {
+  if (showChat) {
     updateUnreadIndicators();
   }
 }
@@ -1830,31 +1872,12 @@ void MainWindow::onIncomingChatMessage(const QString &peer, const QString &text,
 void MainWindow::setupDragDrop()
 {
   setAcceptDrops(true);
-  if (QWidget *central = centralWidget()) {
-    registerDropTarget(central);
-  }
-  if (m_tabs) {
-    registerDropTarget(m_tabs);
-    for (int i = 0; i < m_tabs->count(); ++i) {
-      registerDropTarget(m_tabs->widget(i));
-    }
-  }
-  if (m_dialPage) {
-    registerDropTarget(m_dialPage);
-  }
-  if (m_contactsList) {
-    registerDropTarget(m_contactsList);
-  }
   qApp->installEventFilter(this);
 }
 
 void MainWindow::registerDropTarget(QWidget *widget)
 {
-  if (!widget) {
-    return;
-  }
-  widget->setAcceptDrops(true);
-  widget->installEventFilter(this);
+  Q_UNUSED(widget)
 }
 
 bool MainWindow::isTelUri(const QString &text) const
@@ -2188,6 +2211,15 @@ void MainWindow::dragEnterEvent(QDragEnterEvent *event)
   QMainWindow::dragEnterEvent(event);
 }
 
+void MainWindow::dragMoveEvent(QDragMoveEvent *event)
+{
+  if (canAcceptDrag(event->mimeData())) {
+    event->acceptProposedAction();
+    return;
+  }
+  QMainWindow::dragMoveEvent(event);
+}
+
 void MainWindow::dropEvent(QDropEvent *event)
 {
   if (handleDroppedMimeData(event->mimeData(), true)) {
@@ -2199,7 +2231,7 @@ void MainWindow::dropEvent(QDropEvent *event)
 
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
-  if (event->type() == QEvent::DragEnter) {
+  if (event->type() == QEvent::DragEnter || event->type() == QEvent::DragMove) {
     auto *dragEvent = static_cast<QDragEnterEvent *>(event);
     if (canAcceptDrag(dragEvent->mimeData())) {
       dragEvent->acceptProposedAction();
@@ -2314,6 +2346,7 @@ void MainWindow::onConference()
   }
   m_callWindow->showOutgoing(subject.isEmpty() ? tr("Конференция") : subject, tr("Конференция"),
                              tr("%1 участников").arg(participants.size()));
+  m_callWindow->setAvatarColor({});
 }
 void MainWindow::onHelp()
 {
@@ -2344,6 +2377,7 @@ void MainWindow::onCallFromRow(const QString &peer)
   m_activeIncomingLeg.clear();
   loadCallNotes(peer);
   m_callWindow->showOutgoing(peer, displayNameForPeer(peer), detailForPeer(peer));
+  m_callWindow->setAvatarColor(m_client->chat()->peerColor(peer));
 }
 
 void MainWindow::onChatFromRow(const QString &peer)
@@ -2540,6 +2574,8 @@ void MainWindow::onContactsLoaded(const QJsonObject &contacts)
   refreshServerHistory();
   prefetchCompanyHistory();
   prefetchInternalHistory();
+
+  m_client->chat()->sendColorAdvertisement(m_client->appSettings().profileAvatarColor());
 }
 
 void MainWindow::onAddressBookChanged()
@@ -2600,6 +2636,7 @@ void MainWindow::onCallStateChanged(const QString &leg, const QString &state, co
     }
     beginCallTracking(leg, incomingPeer, detail, true);
     m_callWindow->showIncoming(incomingPeer, detail, {});
+    m_callWindow->setAvatarColor(m_client->chat()->peerColor(incomingPeer));
     return;
   }
   if (state == QStringLiteral("connecting") || state == QStringLiteral("dialing")

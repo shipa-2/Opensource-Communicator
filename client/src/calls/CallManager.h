@@ -68,6 +68,7 @@ signals:
     void callStateChanged(const QString &leg, const QString &state, const QString &detail);
     void callRecordingFinished(const QString &path);
     void remoteAudioStarted(const QString &leg);
+    void remoteAudioLevel(float level);
 
 public slots:
     void handleServerCallEvent(const QString &leg, const QString &what, const QJsonObject &payload);

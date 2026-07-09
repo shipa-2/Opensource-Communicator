@@ -70,11 +70,16 @@ public:
     bool showChatButtons() const { return m_showChatButtons; }
     void setShowChatButtons(bool show);
 
+    bool showCallButtons() const { return m_showCallButtons; }
+    void setShowCallButtons(bool show);
+
     bool recordingDualTrack() const { return m_recordingDualTrack; }
+    bool recordingCombinedTrack() const { return m_recordingCombinedTrack; }
     QString recordingFilenameTemplate() const { return m_recordingFilenameTemplate; }
     bool recordingEnabled() const { return m_recordingEnabled; }
     QString recordingDirectory() const { return m_recordingDirectory; }
     void setRecordingDualTrack(bool dual);
+    void setRecordingCombinedTrack(bool combined);
     void setRecordingFilenameTemplate(const QString &templateText);
     void setRecordingEnabled(bool enabled);
     void setRecordingDirectory(const QString &directory);
@@ -113,7 +118,9 @@ private:
     QString m_profileAvatarPath;
     QString m_profileAvatarColor = QStringLiteral("#5a9e2f");
     bool m_showChatButtons = true;
+    bool m_showCallButtons = true;
     bool m_recordingDualTrack = false;
+    bool m_recordingCombinedTrack = false;
     bool m_recordingEnabled = true;
     QString m_recordingFilenameTemplate = QStringLiteral("%dmy_%h-%m-%s_%name");
     QString m_recordingDirectory;

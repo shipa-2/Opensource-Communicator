@@ -23,7 +23,10 @@ public:
     void updatePresence(const QString &presence);
     void updateName(const QString &name);
     void setCallNumbers(const QVector<CallNumber> &numbers);
+    void setPhones(const QString &phone, const QString &personalPhone);
     void setChatButtonVisible(bool visible);
+    void setCallButtonVisible(bool visible);
+    void setPeerColor(const QString &color);
     void setUnreadBlink(bool enabled);
     void setSelected(bool selected);
     void refreshAppearance();
@@ -41,6 +44,7 @@ signals:
     void notesRequested(const QString &peer);
     void deleteRequested(const QString &peer);
     void exportRequested(const QString &peer);
+    void copyNumberRequested(const QString &number);
 
 private:
     void refreshAvatarStyle();
@@ -52,6 +56,9 @@ private:
 
     QString m_peer;
     QString m_presence;
+    QString m_phone;
+    QString m_personalPhone;
+    QString m_peerColor;
     bool m_isSelf = false;
     bool m_canDelete = false;
     QVector<CallNumber> m_numbers;

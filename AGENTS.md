@@ -1,6 +1,10 @@
 # AGENTS.md — справка для AI-агентов
 
-Документ для работы с репозиторием **OpenSource Communicator** вне постоянного рабочего окружения (например, с флешки, в другой машине или в новой сессии агента). Читайте его **до** правок кода.
+Документ для работы с репозиторием **OpenSource Communicator** вне постоянного рабочего окружения (например, с флешки, в другой машине или в новой сессии агента). **Читайте его до правок кода.**
+
+Последнее крупное обновление документа: **2026-07-09**, после коммита `1ce754b` (*Sync server contacts, improve manual dial UX, and timestamp pre-releases*).
+
+---
 
 ## Что это за проект
 
@@ -15,23 +19,53 @@
 
 Логотип (роликовый спортсмен) — намеренно **не** пародия на бренд «Мегафон».
 
-Репозиторий: `https://github.com/shipa-2/Opensource-Communicator`  
-Версия приложения: **0.2.0** (`client/CMakeLists.txt`, `main.cpp`).
+| | |
+|---|---|
+| Репозиторий | `https://github.com/shipa-2/Opensource-Communicator` |
+| Ветка разработки | `main` |
+| Версия приложения | **0.2.0** (`client/CMakeLists.txt`, `main.cpp`) |
+| Протокол (реверс) | `PROTOCOL.md` (ориентир v3.13.11) |
+
+---
+
+## Состояние на момент передачи (handoff)
+
+### Что сделано в последней сессии (до `1ce754b`)
+
+1. **Личные контакты на сервере ВАТС** — модуль `AddressBookManager`, RPC `createcontact` / `deletecontact` / `uploadcontacts`, подписка на push `[CONTACTS]`. Контакты синхронизируются между машинами после входа под тем же аккаунтом.
+2. **Миграция локальных контактов** — при первом входе после обновления `customContacts` из QSettings один раз уходят на сервер через `uploadcontacts`; после успеха локальный список в QSettings очищается.
+3. **Drag-and-drop** — перетаскивание vCard/CSV/текста в окно добавляет контакты (с диалогом подтверждения).
+4. **Обработка `tel:`** — single-instance через `QLocalServer`; второй процесс передаёт URI работающему; поле набора на вкладке «Набрать вручную» заполняется; `.desktop` регистрирует `x-scheme-handler/tel`.
+5. **Вкладка «Набрать вручную»** — цифровой кейпад `DialKeypadWidget`, стили кнопок под тему, кнопка «Позвонить» с явными цветами через `updateDialCallButtonStyle()`.
+6. **Удержание ⌫ на кейпаде** — 1 с очищает весь номер; визуальный индикатор: 0–0.5 с акцент → сброс → 0.5–1 с плавное заполнение акцентом.
+7. **UI-подписи** — см. таблицу «Актуальные строки UI» ниже.
+8. **CI** — после push в `main` публикуется **pre-release** с тегом `DDMMYYYY-HHMM` (UTC, время коммита).
+
+### Что НЕ делать без запроса пользователя
+
+- **Коммиты и push** — только по явной просьбе.
+- **Телеметрия** — не добавлять.
+- **Коммитить** `extracted/`, `reverse-engineered/`, `dist/`, `client/build*/`.
+
+### Известные ограничения / незавершённое
+
+- `CHANGELOG.md` частично устарел по UI-строкам истории и CI (в AGENTS.md актуальнее).
+- Скриншоты в `screenshots/` могут не отражать кейпад и новые подписи.
+- AppImage в CI не собирается (только локально `packaging/linux/build-appimage.sh`).
+- Теги `v*` запускают сборку, но job `release` **не** публикует релиз (только `main` / `workflow_dispatch`).
 
 ---
 
 ## Контекст «флешки»
 
-Если вы открыли **только эту директорию** на съёмном носителе:
+Если открыта **только эта директория** на съёмном носителе:
 
 | Ситуация | Что делать |
 |----------|------------|
 | Есть весь git-клон | Работайте как обычно; `client/`, `packaging/`, `PROTOCOL.md` — источник истины |
-| Рядом лежат `extracted/`, `reverse-engineered/`, `.dmg`/`.exe` | Это **локальные артефакты разбора** официального клиента; в `.gitignore`, **не коммитить** |
-| Нет собранного бинарника | Linux: собрать из `client/`; Windows: скачать ZIP из GitHub Actions (см. README) |
-| Нет интернета | Демо-режим `demo`/`demo` работает без сервера; для реальной ВАТС нужен `wss://` |
-
-Публикуемое содержимое репозитория — **только** open-source код и документация. Материалы реверса хранятся локально для справки при реализации протокола.
+| Рядом лежат `extracted/`, `reverse-engineered/`, `.dmg`/`.exe` | Локальные артефакты разбора официального клиента; в `.gitignore`, **не коммитить** |
+| Нет собранного бинарника | Linux: собрать из `client/`; Windows: ZIP из GitHub Releases (pre-release) |
+| Нет интернета | Демо `demo`/`demo` без сервера; для реальной ВАТС нужен `wss://` |
 
 ---
 
@@ -39,32 +73,44 @@
 
 ```
 opensource-communicator/
-├── client/                      # Всё приложение (CMake, C++17, Qt 6)
-│   ├── CMakeLists.txt           # Зависимости, install prefix, список исходников
+├── client/                          # Всё приложение (CMake, C++17, Qt 6)
+│   ├── CMakeLists.txt               # Зависимости, VERSION, список исходников
 │   ├── resources/
-│   │   ├── resources.qrc        # logo.png, help.png, QSS для диалогов
-│   │   ├── logo.png             # Иконка окна и README
-│   │   ├── help.png             # Картинка в HelpDialog
+│   │   ├── resources.qrc            # logo.png, help.png, QSS
+│   │   ├── logo.png
+│   │   ├── help.png                 # HelpDialog (PNG — важно для Windows portable)
 │   │   └── communicator-dialogs.qss
 │   └── src/
-│       ├── main.cpp             # Точка входа: CommunicatorClient + CallManager + MainWindow
-│       ├── protocol/            # WebSocket, RPC, сессия
-│       ├── calls/               # WebRTC (libdatachannel), звонки, конференции
-│       ├── chat/                # BindIM, IM, SMS
-│       ├── audio/               # Opus, микрофон/динамик, рингтоны
-│       ├── settings/            # QSettings + user-data.json
-│       ├── demo/                # Офлайн-демо без сервера
-│       └── ui/                  # Окна и виджеты
-├── PROTOCOL.md                  # Реверс протокола ITooLabs WS (из v3.13.11)
-├── README.md                    # Пользовательская документация
-├── AGENTS.md                    # Этот файл
-├── screenshots/                 # Скриншоты для README
+│       ├── main.cpp                 # Single-instance, tel: IPC, MainWindow
+│       ├── protocol/
+│       │   ├── WsConnection.*       # WebSocket, seq/ack, reconnect
+│       │   ├── WsApiClient.*        # RPC-обёртки команд
+│       │   ├── CommunicatorClient.* # Сессия, login, маршрутизация событий
+│       │   ├── AddressBookManager.* # Личные контакты на сервере [CONTACTS]
+│       │   └── CallHistoryParser.*  # Разбор серверной истории звонков
+│       ├── calls/                   # CallManager, AudioBridge, WebRTC
+│       ├── chat/                    # ChatManager, BindIM, SMS
+│       ├── audio/
+│       │   ├── Opus, рингтоны...
+│       │   └── MessageNotifyPlayer.* # Звук уведомления о сообщении
+│       ├── settings/                # AppSettings (QSettings), UserDataStore (JSON)
+│       ├── demo/                    # DemoData — офлайн-режим
+│       └── ui/
+│           ├── MainWindow.*         # Главное окно, контакты, история, dial, DnD
+│           ├── DialKeypadWidget.*   # Кейпад вкладки «Набрать вручную»
+│           ├── AppInstance.*        # QLocalServer single-instance + tel: forward
+│           └── ...                  # диалоги, ContactRowWidget, ThemeHelper...
+├── PROTOCOL.md
+├── README.md                        # Пользовательская документация (серверные контакты, tel:)
+├── CHANGELOG.md                     # История версий (может отставать от UI)
+├── AGENTS.md                        # Этот файл
+├── screenshots/
 ├── packaging/
-│   ├── aur/                     # PKGBUILD для AUR (opensource-communicator-git)
-│   ├── linux/                   # .desktop, иконки hicolor, build-appimage.sh (опционально)
-│   └── windows/                 # build-windows.sh (справочный локальный скрипт)
-├── .github/workflows/build.yml  # CI: Windows ZIP + Linux tar.gz (Release+Debug)
-└── .gitignore                   # extracted/, reverse-engineered/, dist/, build-*/
+│   ├── aur/
+│   ├── linux/
+│   │   └── opensource-communicator.desktop  # MimeType=x-scheme-handler/tel; Exec=... %u
+│   └── windows/
+└── .github/workflows/build.yml      # CI + pre-release job
 ```
 
 ### Ключевые модули (куда смотреть при задаче)
@@ -73,12 +119,18 @@ opensource-communicator/
 |--------|--------|
 | Подключение, login, URL | `CommunicatorClient.cpp`, `WsConnection.cpp` |
 | Команды API (Bind, Call, SMS…) | `WsApiClient.cpp`, `WsApiClient.h` |
+| **Личные контакты на сервере** | `AddressBookManager.cpp`, `CommunicatorClient.cpp`, `MainWindow::mergeCustomContacts` |
 | Звонки, SDP, WebRTC | `CallManager.cpp`, `AudioBridge.cpp` |
 | Чат и SMS | `ChatManager.cpp`, `ChatDialog.cpp` |
-| Главный UI, контакты, история | `MainWindow.cpp` |
+| Главный UI, контакты, история | `MainWindow.cpp`, `MainWindow.h` |
+| **Кейпад набора** | `DialKeypadWidget.cpp`, `MainWindow::updateDialCallButtonStyle` |
+| **`tel:` / второй экземпляр** | `AppInstance.cpp`, `main.cpp`, `MainWindow::handleIncomingTelUri` |
+| **Drag-and-drop контактов** | `MainWindow::setupDragDrop`, `handleDroppedMimeData`, `importContactsFromPath` |
+| История звонков (сервер) | `CallHistoryParser.cpp`, `MainWindow::refreshServerHistory` |
 | Настройки, заметки, аватар | `AppSettings.cpp`, `UserDataStore.cpp`, `SettingsDialog.cpp` |
-| Демо без сервера | `DemoData.cpp`, ветки `m_demoMode` в `MainWindow.cpp` |
+| Демо без сервера | `DemoData.cpp`, ветки `m_demoMode` / `useServerContacts()` |
 | Тема светлая/тёмная | `ThemeHelper.cpp` (`#if QT_VERSION >= 6.5` для `colorSchemeChanged`) |
+| Уведомление о сообщении | `MessageNotifyPlayer.cpp` |
 | Совместимость Qt 6.4 | `WsConnection.cpp` (`errorOccurred` vs `error`) |
 
 ---
@@ -90,29 +142,169 @@ opensource-communicator/
 │  MainWindow │◄────────────────►│ CommunicatorClient│
 └──────┬──────┘                  └────────┬─────────┘
        │                                  │
-       │                          ┌───────▼────────┐
-       │                          │   WsApiClient    │
-       │                          └───────┬────────┘
-       │                                  │
-       │                          ┌───────▼────────┐
-       │                          │   WsConnection   │──► wss:// сервер ВАТС
-       │                          └──────────────────┘
+       │                    ┌─────────────┼─────────────┐
+       │                    │             │             │
+       │            ┌───────▼────────┐ ┌──▼──────────┐ ┌▼──────────────┐
+       │            │   WsApiClient    │ │AddressBook  │ │  ChatManager  │
+       │            └───────┬────────┘ │  Manager     │ └───────────────┘
+       │                    │          └──────────────┘
+       │            ┌───────▼────────┐
+       │            │   WsConnection   │──► wss:// сервер ВАТС
+       │            └──────────────────┘
        │
        ├────────► CallManager ──► libdatachannel (Opus audio)
        │
-       └────────► ChatManager ──► BindIM / sendsms
+       ├────────► DialKeypadWidget ──► m_dialInput (вкладка «Набрать вручную»)
+       │
+       └────────► AppInstance (QLocalServer) ◄── второй процесс / tel: из ОС
+
+main.cpp:
+  1) sendToRunningInstance(argv) → exit 0 если уже запущен
+  2) startServer() → handleIncomingTelUri / raise window
 ```
 
 **Слои:**
 
 1. **WsConnection** — WebSocket, seq/ack, keepalive (`noop`), handshake `Main` task, reconnect.
-2. **WsApiClient** — RPC (`What: request/response`), состояние `AppState`, обёртки команд протокола.
-3. **CommunicatorClient** — учётные данные, URL, демо-режим, маршрутизация presence и call events.
-4. **CallManager** — жизненный цикл вызова: `ProvisionCall` → SDP offer/answer → `StartCall`/`AcceptCall` → RTP через **libdatachannel** + **Opus** (`AudioBridge`).
-5. **ChatManager** — `BindIM`, история `[IM_HIST]`, исходящие IM, SMS через `smstelnums` + `sendsms`.
-6. **MainWindow** — список контактов, фильтры, набор номера, окно звонка, конференция, настройки.
+2. **WsApiClient** — RPC (`What: request/response`), состояние `AppState`, обёртки команд.
+3. **CommunicatorClient** — учётные данные, URL, демо, маршрутизация presence/call/chat/**address book**.
+4. **AddressBookManager** — in-memory кэш личных контактов с сервера; CRUD + `uploadcontacts`; push `[CONTACTS]`.
+5. **CallManager** — `ProvisionCall` → SDP → `StartCall`/`AcceptCall` → RTP (**libdatachannel** + **Opus**, PT **111**).
+6. **ChatManager** — `BindIM`, `[IM_HIST]`, SMS.
+7. **MainWindow** — контакты, фильтры, история, набор, звонок, конференция, DnD, `tel:`.
 
-Точка сборки зависимостей: `client/CMakeLists.txt` — Qt6 (Core, Gui, Widgets, WebSockets, Network, Multimedia), OpenSSL, opus, LibDataChannel.
+Зависимости сборки: `client/CMakeLists.txt` — Qt6 (Core, Gui, Widgets, WebSockets, Network, Multimedia), OpenSSL, opus, LibDataChannel.
+
+---
+
+## Личные контакты на сервере (`AddressBookManager`)
+
+### Назначение
+
+Контакты, добавленные через **Добавить → Контакт** или **Импорт**, хранятся в адресной книге **на сервере ВАТС**, а не только в QSettings. После входа с другого ПК подтягиваются автоматически.
+
+### Поток данных
+
+```
+login OK → CommunicatorClient::onLoginSuccess
+  → m_addressBook->setDomain(domain); clear()
+  → если AppSettings.customContacts не пуст → uploadLocalContacts()
+  → subscribeToAddressBook (как и раньше для доменных контактов)
+
+Push [CONTACTS] → AddressBookManager::handlePayload
+  → objects[]: новые/обновлённые контакты или deleted:true
+
+createcontact / deletecontact / uploadcontacts response
+  → AddressBookManager::handleResponse
+  → contactsChanged → MainWindow::onAddressBookChanged → mergeCustomContacts()
+```
+
+### Идентификация на сервере
+
+- `serverId` строится в `buildServerId(rawId, subId)`; `subId` нормализуется (`ab:` префикс, `~` для email/ext).
+- Поиск для удаления: `findServerIdForPeer(peer)` — по точному peer, ext@domain, телефону (`peersMatch`).
+- **Важно:** при удалении нельзя опираться только на UI-кэш без serverId — иначе «призрак» в списке и ошибка при повторном delete. Исправлено через `removeContactByServerId` и обработку `deleted` в `[CONTACTS]`.
+
+### Где в UI
+
+| Действие | Поведение при `useServerContacts()` (= online && !demo) |
+|----------|----------------------------------------------------------|
+| Добавить контакт | `addressBook()->createContact()` |
+| Импорт CSV/vCard | `importContactsFromPath` → batch create/upload на сервер |
+| Удалить (ПКМ) | `addressBook()->deleteContactByPeer(peer)` |
+| Список | `mergeCustomContacts()` берёт `addressBook()->contacts()`, не QSettings |
+
+### Демо-режим
+
+`useServerContacts()` возвращает `false` → контакты как раньше только в `AppSettings.customContacts` (локально).
+
+### Отладка
+
+```bash
+QT_LOGGING_RULES="itl.addressbook=true" opensource-communicator
+```
+
+Категория лога: `itl.addressbook` (`Q_LOGGING_CATEGORY` в `AddressBookManager.cpp`).
+
+### RPC в `WsApiClient`
+
+- `createContact(QJsonObject)` — поля `phones`, `emails`, `name` (см. `contactToServerJson`)
+- `deleteContact(contactId)` — server id
+- `uploadContacts(QJsonArray)` — массовая загрузка при миграции
+
+Сверяйте с `PROTOCOL.md` при расширении полей контакта.
+
+---
+
+## `tel:`-ссылки и single-instance (`AppInstance`)
+
+### Зачем
+
+Клик по `tel:+7...` в браузере или повторный запуск с URI не должен открывать второе окно — номер попадает в поле набора.
+
+### Реализация
+
+| Компонент | Роль |
+|-----------|------|
+| `AppInstance::serverName()` | `"opensource-communicator-v1"` |
+| `main.cpp` | Сначала `sendToRunningInstance(args)`; иначе `startServer` + `MainWindow` |
+| `handleIncomingTelUri` | `applyTelUriToDial` + raise/focus |
+| `applyTelUriToDial` | Парсит `tel:`, percent-encoding, обрезает `;param` |
+| `opensource-communicator.desktop` | `MimeType=x-scheme-handler/tel;`, `Exec=... %u` |
+
+### Вставка `tel:` из буфера
+
+`MainWindow::eventFilter` перехватывает paste глобально (кроме модальных окон и `ChatDialog`), если текст — `tel:` URI.
+
+### Drag-and-drop
+
+`setupDragDrop()` — `setAcceptDrops` на central widget, вкладки, список контактов, dial page; `eventFilter` для `DragEnter`/`Drop`. Поддерживаются URL, текст, файлы `.vcf`/`.csv`. При drop показывается диалог; импорт идёт через те же пути, что и меню **Импорт**.
+
+---
+
+## Вкладка «Набрать вручную» и `DialKeypadWidget`
+
+### UI (актуальные строки)
+
+| Элемент | Текст |
+|---------|--------|
+| Заголовок поля | «Набрать номер или внутренний код:» |
+| Placeholder | «702, ivan или +7...» |
+| Вкладка | «Набрать вручную» |
+| Кнопка | «Позвонить» |
+| Меню «Добавить» | «Контакт», «Импорт» (без «...») |
+
+Поле **без** `setClearButtonEnabled` — очистка через кейпад.
+
+### Кейпад
+
+Сетка 1–9, 0, `#`, ⌫. Стили: круглые кнопки, hover — акцентная обводка без заливки, pressed — акцент.
+
+### Удержание ⌫ (константы в `DialKeypadWidget.cpp`)
+
+| Фаза | Время | Поведение |
+|------|-------|-----------|
+| SolidAccent | 0–500 мс | Кнопка полностью акцентного цвета |
+| Filling | 500–1000 мс | Цвет сброшен, плавный переход base → accent (индикатор) |
+| Timeout | 1000 мс | `m_edit->clear()`, флаг `m_backspaceHoldClearDone` |
+| Короткий клик | < 1000 мс | Один символ назад (`onBackspace`) |
+
+Таймеры: `m_backspaceHoldTimer` (1000 мс), `m_backspaceHoldPhaseTimer` (500 мс), `m_backspaceHoldProgressTimer` (16 мс tick).
+
+### Кнопка «Позвонить»
+
+`MainWindow::updateDialCallButtonStyle()` — явный QSS с цветами палитры; текст на акценте через `textOnAccentBackground()`. Вызывается при смене темы (`refreshTheme`).
+
+---
+
+## Вкладка «История» (актуальные строки UI)
+
+| Элемент | Текст |
+|---------|--------|
+| Период | «Показать за:» + ссылка-кнопка (меню периода) |
+| Фильтр направления | «Все», «Входящие», **«Без ответа»**, «Исходящие» |
+
+Парсинг серверных записей: `CallHistoryParser.cpp`. Локальная история — по-прежнему в `UserDataStore` (до 50 записей).
 
 ---
 
@@ -120,108 +312,86 @@ opensource-communicator/
 
 Полное описание: **`PROTOCOL.md`**.
 
-- Транспорт: **WebSocket** `wss://<auth-domain>/ws/?_domain=<domain>` (Megafon) или `wss://<domain>/ws`.
-- После handshake — `login`, затем `Bind` (телефония) и `BindIM` (чат).
-- Сообщения с полем `""` = команда; RPC через `What: "request"` / `"response"` и `id`.
-- Звонки: `ProvisionCall`, `StartCall`, `AcceptCall`, `DisconnectCall`, `UpdateCall` (re-INVITE для hold), `Transfer` (слепой перевод).
-- Контакты: `subscribetoaddressbook`, `listaccounts`, presence через `SetPresence` и push-события.
+- Транспорт: `wss://<auth-domain>/ws/?_domain=<domain>` (Megafon) или `wss://<domain>/ws`.
+- После handshake: `login` → `Bind` (телефония) + `BindIM` (чат).
+- RPC: `What: "request"` / `"response"`, поле `id`.
+- Звонки: `ProvisionCall`, `StartCall`, `AcceptCall`, `DisconnectCall`, `UpdateCall` (hold), `Transfer`.
+- Контакты домена: `subscribetoaddressbook`, presence.
+- **Личные контакты:** `createcontact`, `deletecontact`, `uploadcontacts`, push `What: "[CONTACTS]"`.
 
-При добавлении команд сверяйтесь с `PROTOCOL.md` и при необходимости с локальным `reverse-engineered/` (не в git).
+При добавлении команд сверяйтесь с `PROTOCOL.md` и локальным `reverse-engineered/` (не в git).
 
 ---
 
-## Сравнение с официальным клиентом
+## Сравнение с официальным клиентом (v0.2)
 
-Официальный **ITooLabs / Megafon Communicator** — Electron, встроенная аналитика, автообновления, богатый UI. Ниже — практический паритет **этой** реализации (v0.1).
-
-### Реализовано (рабочий паритет)
+### Реализовано
 
 | Область | Детали |
 |---------|--------|
-| Авторизация | `login` по WS, partner `megafon`, домен / auth-домен |
+| Авторизация | `login`, partner `megafon`, домен / auth-домен |
 | Сессия | seq/ack, reconnect, `bye` |
-| Телефония | Исходящие/входящие звонки, ответ, сброс, гудки (ringback) |
-| Медиа | Аудио WebRTC, кодек **Opus**, выбор входа/выхода в настройках |
-| Удержание | Hold через SDP `sendonly` + `UpdateCall` |
-| Перевод | **Слепой** (`Transfer`) из окна звонка |
-| Конференция | UI выбора участников, JSON `conference` в `StartCall` |
-| Контакты | Адресная книга с сервера, presence, поиск, фильтры (все / недавние / внешние) |
-| Локальные контакты | Добавление вручную (`customContacts` в настройках) |
-| Чат IM | `BindIM`, отправка/приём, загрузка истории |
-| SMS | Каналы через `smstelnums`, отправка `sendsms` (если сервер выдал номер) |
-| Presence | Смена своего статуса (`SetPresence`) |
-| История звонков | Локальная (до 50 записей), вкладка «История» |
-| Заметки по абонентам | Локально, в окне звонка и popup |
-| Профиль | Аватар и цвет заголовка (локально) |
-| Звонки | Встроенные мелодии + свой файл (wav/mp3/ogg), превью в настройках |
-| Запись разговоров | После звонка WAV конвертируется в MP3 (`ffmpeg`/`lame`) |
-| Демо | `demo` / `demo` — UI и симуляция звонка без сети |
-| Приватность | Нет Amplitude, Sentry и прочей телеметрии |
-| UI | Нативный Qt, адаптация к тёмной/светлой теме ОС |
+| Телефония | Исходящие/входящие, ответ, сброс, ringback |
+| Медиа | WebRTC + **Opus**, выбор устройств |
+| Удержание / перевод / конференция | Hold, слепой `Transfer`, UI конференции |
+| Контакты | Домен + presence; **личные на сервере**; импорт/экспорт CSV/vCard |
+| **`tel:` / DnD** | Single-instance, handler в .desktop, drop файлов |
+| Чат / SMS / Presence | BindIM, sendsms, SetPresence |
+| История | Серверная вкладка + локальная; фильтры периода и направления |
+| Запись разговоров | WAV → MP3 (`ffmpeg`/`lame`) |
+| Демо | `demo`/`demo` без сети |
+| UI | Qt 6, тёмная/светлая тема, кейпад набора |
 
 ### Частично реализовано
 
-| Область | Что есть | Чего нет / ограничения |
-|---------|----------|-------------------------|
-| Конференция | Старт с несколькими участниками | Нет UI управления участниками в разговоре (mute/kick), как в Electron-клиенте |
-| Hold | Локальная смена SDP | Может расходиться с поведением официального клиента на сложных сценариях |
-| SMS | API и чат-окно для SMS-peer | Нет отдельного «SMS-центра», списков рассылок |
-| История чата | `loadImHistory` / `[IM_HIST]` | Нет полного офлайн-архива как в толстом клиенте |
-| Контакты | Сервер + локальные | Нет синхронизации локальных контактов на сервер |
-| Справка | Статичная картинка `help.png` | Нет интерактивной базы знаний |
+| Область | Что есть | Ограничения |
+|---------|----------|-------------|
+| Конференция | Старт с ролями | Нет mute/kick в разговоре |
+| Hold | Локальный SDP | Сложные сценарии могут отличаться от Electron |
+| SMS | API + чат-peer | Нет SMS-центра |
+| История чата | `loadImHistory` | Нет полного архива |
+| Справка | `help.png` | Статичная картинка |
 
-### Не реализовано (на v0.1)
+### Не реализовано
 
-Следующего **нет в коде** — не ищите зря; для фичи нужна новая разработка:
+Видео, attended transfer, DTMF, автообновление, MSI, CRM-интеграции, мобильные платформы, AppImage в CI, копия дизайна Megafon.
 
-- **Видеозвонки** и демонстрация экрана
-- **Консультативный (attended) перевод** — только `blindTransfer`
-- **DTMF** (тональный набор во время разговора)
-- **Встроенный видеофон / камера**
-- Автообновление приложения, MSI/installer (Windows только portable ZIP)
-- Интеграции официального клиента (календарь, CRM, deep links)
-- Мобильные платформы (только desktop Qt)
-- Готовый **AppImage** в GitHub (в CI собирается только tar.gz; AppImage — локально через `build-appimage.sh`)
-- Полная копия визуального дизайна Megafon Communicator
+### Команды API в `WsApiClient`
 
-При оценке «готово ли» сверяйте с таблицами выше, а не с полным списком команд в `PROTOCOL.md`: многие RPC описаны документально, но **не вызываются** из UI.
+Обёрнуты: `login`, `bind`, `bindIm`, `subscribeToAddressBook`, **`createContact`**, **`deleteContact`**, **`uploadContacts`**, `provisionCall`, `startCall`, `acceptCall`, `rejectCall`, `cancelCall`, `disconnectCall`, `ackAccept`, `updateCall`, `blindTransfer`, `setOwnPresence`, `sendSms`, `getDomainContacts`, `getHistory`, `getSmsTelnums`, `sendIm`, `loadImHistory`.
 
-### Команды API в коде (`WsApiClient`)
-
-Уже обёрнуты: `login`, `bind`, `bindIm`, `subscribeToAddressBook`, `provisionCall`, `startCall`, `acceptCall`, `rejectCall`, `cancelCall`, `disconnectCall`, `ackAccept`, `updateCall`, `blindTransfer`, `setOwnPresence`, `sendSms`, `getDomainContacts`, `getHistory`, `getSmsTelnums`, `sendIm`, `loadImHistory`.
-
-Не обёрнуты / не используются в UI — потенциальная работа на будущее (см. `PROTOCOL.md`): voicemail, call pickup, парковка, очереди, и т.д.
+Не в UI: voicemail, pickup, парковка, очереди — см. `PROTOCOL.md`.
 
 ---
 
 ## Демо-режим
 
-- Вход: логин и пароль **`demo`** (`DemoData::isDemoLogin`).
-- Не открывает WebSocket; подставляет фиктивный домен `demo.local`, контакты и историю из `DemoData.cpp`.
-- Звонок симулируется таймером в `MainWindow` (`startDemoCallSimulation`).
-- Выход из демо: обычный logout → `leaveDemoMode`.
-
-Используйте демо для UI/скриншотов без доступа к ВАТС.
+- Вход: **`demo`** / **`demo`** (`DemoData::isDemoLogin`).
+- WebSocket не открывается; домен `demo.local`, фиктивные контакты/история.
+- **Контакты только локально** (`AppSettings`), `useServerContacts() == false`.
+- Звонок: `startDemoCallSimulation` в `MainWindow`.
+- Выход: logout → `leaveDemoMode`.
 
 ---
 
-## Пользовательские данные и настройки
+## Пользовательские данные
 
-| Данные | Где хранятся |
-|--------|----------------|
-| Логин, пароль, домен, partner | `QSettings` — org/app `opensource-communicator` |
-| Аудиоустройства, рингтоны, custom contacts | `QSettings` через `AppSettings` |
-| Заметки, недавние звонки, история звонков | `QStandardPaths::CacheLocation/user-data.json` (`UserDataStore`) |
-| Аватар профиля | Путь к файлу в `QSettings` |
+| Данные | Где |
+|--------|-----|
+| Логин, пароль, домен, partner | `QSettings` (`opensource-communicator`) |
+| Аудио, рингтоны | `AppSettings` / QSettings |
+| **customContacts** | QSettings; используется в демо и до миграции; после успешного `uploadcontacts` **очищается** |
+| **Серверные личные контакты** | Кэш в `AddressBookManager` (runtime), источник — сервер |
+| Заметки, недавние, локальная история | `~/.cache/.../user-data.json` |
+| Аватар | Путь в QSettings |
 
-На Linux типичный cache: `~/.cache/opensource-communicator/opensource-communicator/`.  
-Пароль хранится в открытом виде в QSettings — как и во многих десктоп-клиентах; не усиливайте без запроса пользователя.
+Пароль в QSettings в открытом виде — не усиливать без запроса.
 
 ---
 
 ## Сборка, упаковка, CI
 
-### Linux (основной способ для разработчика)
+### Linux (разработчик)
 
 ```bash
 cd client
@@ -230,55 +400,64 @@ cmake --build build
 sudo cmake --install build   # по умолчанию /opt/opensource-communicator
 ```
 
-По умолчанию **Release**. **Debug** (`OSC_DEBUG_BUILD`): полные логи `itl.*`, на Windows — консольное окно. **Release** на Windows: `WIN32_EXECUTABLE` (без терминала), в лог попадают только warning/critical.
+- **Release** — без консоли на Windows, логи warning/critical.
+- **Debug** (`OSC_DEBUG_BUILD`) — полные логи `itl.*`, консоль на Windows.
 
 Зависимости: `qt6-base`, `qt6-websockets`, `qt6-multimedia`, `libdatachannel`, `opus`, `openssl`, `cmake`.
 
-**Arch / AUR:** `packaging/aur/PKGBUILD` → пакет `opensource-communicator-git`, установка в `/usr`.
+**AUR:** `packaging/aur/PKGBUILD` → `opensource-communicator-git`.
 
-**AppImage:** `packaging/linux/build-appimage.sh` — опционально, локально; в CI собирается tar.gz (не AppImage).
+**AppImage:** локально `packaging/linux/build-appimage.sh` (не в CI).
 
-### CI (GitHub Actions)
+### CI (`.github/workflows/build.yml`)
 
-`.github/workflows/build.yml` собирает **обе платформы** в матрице **Release + Debug**:
+Триггер: push `main`, `workflow_dispatch`, тег `v*` (сборка без auto-release для тегов).
 
-| Job | Платформа | Артефакты |
-|-----|-----------|-----------|
-| `windows-portable` | MSYS2 UCRT64, Qt 6.8, libdatachannel static | `windows-portable-Release` (без консоли), `windows-portable-Debug` (с консолью) |
-| `linux-build` | Ubuntu 24.04, системные Qt6/opus/openssl, libdatachannel из исходников (нет в apt), кэш | `linux-build-Release`, `linux-build-Debug` (tar.gz от `install`) |
+| Job | Артефакты |
+|-----|-----------|
+| `windows-portable` Release/Debug | ZIP portable |
+| `linux-build` Release/Debug | tar.gz install tree |
+| **`release`** | Только после успеха **обоих** jobs на `main` / manual |
 
-- Триггер: push в `main`, `workflow_dispatch` или тег `v*`.
-- Job `release` после успешной сборки `main` / `workflow_dispatch` прикрепляет **только Release**-артефакты (pattern `*-Release`) к GitHub Release с тегом **ДДММГГГГ** (UTC-дата сборки).
-- Локально Windows: `packaging/windows/build-windows.sh` (поддерживает `BUILD_TYPE=Debug`).
+**Публикация (`release` job):**
 
-### Install prefix
+- Скачивает артефакты `*-Release` (Windows ZIP + Linux tar.gz).
+- Тег и имя: **`DDMMYYYY-HHMM`** — UTC, **время коммита**:  
+  `TZ=UTC git log -1 --format=%cd --date=format:%d%m%Y-%H%M`
+- **`prerelease: true`**, **`make_latest: false`**
+- Описание: версия из `CMakeLists.txt` + фрагмент `CHANGELOG.md` для этой версии.
 
-`GNUInstallDirs`: бинарник, `.desktop`, иконки из `packaging/linux/icons/`. Переопределение: `-DCMAKE_INSTALL_PREFIX=...`.
+Пример тега: `09072026-1803` → в тексте релиза «09.07.2026 18:03 (UTC)».
+
+Windows локально: `packaging/windows/build-windows.sh`.
 
 ---
 
-## Советы агентам при разработке
+## Советы агентам
 
-1. **Минимальный diff** — проект небольшой; не раздувайте абстракции.
-2. **Сначала `PROTOCOL.md` и `WsApiClient`** — новая серверная фича почти всегда начинается с RPC.
-3. **Звонки** — любые изменения SDP/RTP проверяйте в `CallManager` и `AudioBridge`; payload type Opus = **111**.
-4. **Демо-режим** — при добавлении сетевых фич учитывайте ветки `m_demoMode` в `MainWindow`, `CommunicatorClient`, `ChatManager`.
-5. **Qt 6.4 vs 6.5+** — используйте `#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)` для новых API (`errorOccurred`, `colorSchemeChanged`). Ubuntu LTS может быть на 6.4.
-6. **Windows / libdatachannel** — bundled libsrtp ломается с `-Werror`; в CI уже `ENABLE_WARNINGS_AS_ERRORS=OFF`, static linking.
-7. **Не коммитьте** `extracted/`, `reverse-engineered/`, `dist/`, `client/build*/` — см. `.gitignore`.
-8. **Брендинг** — не использовать логотип/название Megafon; продукт — «OpenSource Communicator» / `opensource-communicator`.
-9. **Телеметрию не добавлять** без явного запроса пользователя.
-10. **Скриншоты** — обновляйте `screenshots/` при заметных UI-изменениях и README при необходимости.
+1. **Минимальный diff** — проект компактный; не раздувайте абстракции.
+2. **Серверная фича** → `PROTOCOL.md` → `WsApiClient` → менеджер/клиент → `MainWindow`.
+3. **Контакты** → всегда проверять ветки `useServerContacts()` и демо.
+4. **Звонки** → `CallManager` / `AudioBridge`; Opus PT = **111**.
+5. **Qt 6.4 vs 6.5+** → `#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)`.
+6. **Windows / libdatachannel** → `ENABLE_WARNINGS_AS_ERRORS=OFF` в CI.
+7. **Брендинг** — не Megafon; продукт «OpenSource Communicator».
+8. **Скриншоты/README** — по согласованию с пользователем после заметного UI.
+9. **Коммиты** — только по запросу.
 
-### Типичный порядок отладки звонка
+### Отладка звонка
 
-1. WS: `ProvisionCall` → ответ с SDP  
-2. WebRTC: create offer/answer в `CallManager`  
-3. WS: `StartCall` / `AcceptCall` с local SDP  
-4. ICE connected → `AudioBridge` шлёт Opus в `localAudioTrack`  
-5. Завершение: `DisconnectCall`, очистка `m_peers`
+1. WS: `ProvisionCall` → SDP  
+2. WebRTC offer/answer в `CallManager`  
+3. WS: `StartCall` / `AcceptCall`  
+4. ICE → `AudioBridge` → Opus  
+5. `DisconnectCall`, очистка peers  
 
-Логи: категории `itl.client`, `itl.call`, `itl.chat` (Qt logging).
+### Категории логов Qt
+
+`itl.client`, `itl.call`, `itl.chat`, **`itl.addressbook`**
+
+Release по умолчанию: только warning/critical. Debug: `itl.*.debug=true`.
 
 ---
 
@@ -286,18 +465,22 @@ sudo cmake --install build   # по умолчанию /opt/opensource-communica
 
 | Файл | Назначение |
 |------|------------|
-| `README.md` | Установка (AUR, Windows ZIP), быстрый старт, скриншоты |
-| `PROTOCOL.md` | Команды и форматы WS (реверс v3.13.11) |
-| `packaging/aur/README.md` | Публикация в AUR |
-| `.github/workflows/build.yml` | Автоматический билд: Windows + Linux, Release + Debug |
+| `README.md` | Установка, серверные контакты, `tel:` |
+| `PROTOCOL.md` | WS-команды (реверс) |
+| `CHANGELOG.md` | История версий |
+| `packaging/aur/README.md` | AUR |
+| `.github/workflows/build.yml` | CI и pre-release |
 
 ---
 
-## Краткий чеклист для новой сессии агента
+## Чеклист для новой сессии агента
 
-- [ ] Прочитать этот файл и при необходимости `PROTOCOL.md`
-- [ ] Понять задачу: протокол / UI / звук / упаковка / документация
-- [ ] Проверить, нужен ли демо-режим и обе платформы (Linux + Windows)
+- [ ] Прочитать этот файл; при задачах по WS — `PROTOCOL.md`
+- [ ] Уточнить: протокол / UI / звук / упаковка / CI
+- [ ] Учесть **демо** и **обе платформы** (Linux + Windows), если меняется поведение
+- [ ] Контакты: `AddressBookManager` + `useServerContacts()` + миграция QSettings
+- [ ] `tel:` / DnD: `AppInstance`, `main.cpp`, `.desktop`
+- [ ] Кейпад: `DialKeypadWidget` (тайминги hold в константах в .cpp)
 - [ ] Не трогать gitignored артефакты реверса
-- [ ] После UI-изменений — обновить скриншоты/README по согласованию с пользователем
-- [ ] Коммиты и PR — **только по явной просьбе** пользователя
+- [ ] Коммиты и push — **только по явной просьбе** пользователя
+- [ ] После UI-изменений — скриншоты/README по согласованию

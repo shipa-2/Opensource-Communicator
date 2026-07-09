@@ -134,8 +134,8 @@ QDialog#loginDialog QCheckBox {
 
 QLabel#callAvatar {
     background: palette(midlight);
-    border-radius: 36px;
-    font-size: 32px;
+    border-radius: 70px;
+    font-size: 64px;
     border: 2px solid palette(highlight);
 }
 
@@ -154,7 +154,7 @@ QDialog#helpDialog {
 }
 
 QDialog#callWindow {
-    background: palette(base);
+    background: palette(window);
 }
 
 QWidget#callToolbar {
@@ -186,4 +186,61 @@ QPushButton#dialCallBtn {
     font-weight: bold;
     border-radius: 8px;
     /* color/background are set from MainWindow::updateDialCallButtonStyle() */
+}
+
+QPushButton#logoutBtn {
+    background: palette(button);
+    color: #cc0000;
+    border: 1px solid #cc0000;
+    border-radius: 4px;
+    padding: 8px 16px;
+    font-weight: bold;
+}
+
+QPushButton#logoutBtn:hover {
+    background: #cc0000;
+    color: white;
+}
+
+QLabel#callStatusLabel {
+    color: palette(text);
+    font-size: 14px;
+}
+
+QLabel#callTimerLabel {
+    color: palette(highlight);
+    font-size: 14px;
+    font-weight: bold;
+}
+
+QPushButton#callActionBtn {
+    min-height: 36px;
+    padding: 6px 16px;
+}
+
+QPushButton#callHangupBtn {
+    min-height: 36px;
+    padding: 6px 16px;
+    background: palette(highlight);
+    color: palette(highlightedText);
+    border-radius: 4px;
+    font-weight: bold;
+}
+
+QPushButton#callHangupBtn:hover {
+    background: palette(highlight);
+    color: palette(highlightedText);
+}
+
+QPushButton#callAnswerBtn {
+    min-height: 36px;
+    padding: 6px 16px;
+    background: #5a9e2f;
+    color: white;
+    border-radius: 4px;
+    font-weight: bold;
+}
+
+QPushButton#callAnswerBtn:hover {
+    background: #4a8e1f;
 }

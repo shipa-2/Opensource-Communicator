@@ -197,6 +197,13 @@ void AudioBridge::decodeAndPlayOpus(const QByteArray &opus)
                             samples * channels * static_cast<int>(sizeof(qint16)));
   emit remotePcmFrameReady(pcmBytes);
 
+  float sum = 0;
+  for (int i = 0; i < samples; ++i) {
+    sum += static_cast<float>(qAbs(pcm[i]));
+  }
+  const float avgLevel = sum / samples / 32768.0f;
+  emit remoteAudioLevel(avgLevel);
+
   qint16 stereo[frameSize * 2];
   for (int i = 0; i < samples; ++i) {
     stereo[i * 2] = pcm[i];

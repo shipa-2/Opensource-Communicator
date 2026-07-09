@@ -48,6 +48,7 @@ public:
 
 protected:
     void dragEnterEvent(QDragEnterEvent *event) override;
+    void dragMoveEvent(QDragMoveEvent *event) override;
     void dropEvent(QDropEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
 
@@ -179,6 +180,7 @@ private:
     ChatDialog *m_chatDialog = nullptr;
     QMenu *m_viewMenu = nullptr;
     QAction *m_viewChatAction = nullptr;
+    QAction *m_viewCallAction = nullptr;
 
     QLabel *m_headerName = nullptr;
     ProfileAvatarWidget *m_headerAvatar = nullptr;

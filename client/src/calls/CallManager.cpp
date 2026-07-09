@@ -80,6 +80,7 @@ CallManager::CallManager(WsApiClient *api, AppSettings *settings, QObject *paren
       m_recorder.appendRemote(pcm);
     }
   });
+  connect(&m_audio, &AudioBridge::remoteAudioLevel, this, &CallManager::remoteAudioLevel);
   connect(&m_recorder, &CallRecorder::recordingFinished, this, &CallManager::callRecordingFinished);
 }
 

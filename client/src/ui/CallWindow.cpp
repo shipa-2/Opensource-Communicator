@@ -10,17 +10,13 @@
 #include <QVBoxLayout>
 #include <QSignalBlocker>
 
-namespace {
-constexpr int kCompactHeight = 200;
-} // namespace
-
 CallWindow::CallWindow(QWidget *parent)
     : QDialog(parent)
 {
   setObjectName(QStringLiteral("callWindow"));
   setWindowFlags(Qt::Dialog | Qt::WindowTitleHint | Qt::WindowCloseButtonHint);
   setModal(false);
-  resize(520, kCompactHeight);
+  resize(320, 480);
   buildUi();
 
   m_durationTimer = new QTimer(this);
@@ -38,87 +34,85 @@ void CallWindow::refreshAppearance()
 void CallWindow::buildUi()
 {
   auto *root = new QVBoxLayout(this);
-  root->setContentsMargins(12, 12, 12, 0);
-  root->setSpacing(8);
+  root->setContentsMargins(16, 16, 16, 16);
+  root->setSpacing(12);
 
-  auto *infoRow = new QHBoxLayout;
-  m_avatar = new QLabel(QStringLiteral("👤"));
-  m_avatar->setObjectName(QStringLiteral("callAvatar"));
-  m_avatar->setFixedSize(72, 72);
-  m_avatar->setAlignment(Qt::AlignCenter);
-  infoRow->addWidget(m_avatar);
-
-  auto *textCol = new QVBoxLayout;
   m_nameLabel = new QLabel;
   m_nameLabel->setObjectName(QStringLiteral("callNameLabel"));
-  textCol->addWidget(m_nameLabel);
+  m_nameLabel->setAlignment(Qt::AlignCenter);
+  QFont nameFont = m_nameLabel->font();
+  nameFont.setPixelSize(18);
+  nameFont.setBold(true);
+  m_nameLabel->setFont(nameFont);
+  root->addWidget(m_nameLabel);
 
   m_detailLabel = new QLabel;
   m_detailLabel->setObjectName(QStringLiteral("callDetailLabel"));
+  m_detailLabel->setAlignment(Qt::AlignCenter);
   m_detailLabel->setWordWrap(true);
-  textCol->addWidget(m_detailLabel);
-  textCol->addStretch();
-  infoRow->addLayout(textCol, 1);
+  root->addWidget(m_detailLabel);
 
-  auto *statusCol = new QVBoxLayout;
+  auto *avatarRow = new QHBoxLayout;
+  avatarRow->addStretch();
+  m_avatar = new QLabel(QStringLiteral("👤"));
+  m_avatar->setObjectName(QStringLiteral("callAvatar"));
+  m_avatar->setFixedSize(140, 140);
+  m_avatar->setAlignment(Qt::AlignCenter);
+  QFont avatarFont = m_avatar->font();
+  avatarFont.setPixelSize(64);
+  m_avatar->setFont(avatarFont);
+  avatarRow->addWidget(m_avatar);
+  avatarRow->addStretch();
+  root->addLayout(avatarRow);
+
   m_statusLabel = new QLabel;
-  m_statusLabel->setObjectName(QStringLiteral("callStatusIncoming"));
-  statusCol->addWidget(m_statusLabel, 0, Qt::AlignRight);
+  m_statusLabel->setObjectName(QStringLiteral("callStatusLabel"));
+  m_statusLabel->setAlignment(Qt::AlignCenter);
+  QFont statusFont = m_statusLabel->font();
+  statusFont.setPixelSize(14);
+  m_statusLabel->setFont(statusFont);
+  root->addWidget(m_statusLabel);
 
   m_timerLabel = new QLabel;
-  m_timerLabel->setObjectName(QStringLiteral("callStatusActive"));
-  m_timerLabel->setAlignment(Qt::AlignRight);
-  statusCol->addWidget(m_timerLabel);
-  statusCol->addStretch();
-  infoRow->addLayout(statusCol);
-  root->addLayout(infoRow);
+  m_timerLabel->setObjectName(QStringLiteral("callTimerLabel"));
+  m_timerLabel->setAlignment(Qt::AlignCenter);
+  QFont timerFont = m_timerLabel->font();
+  timerFont.setPixelSize(14);
+  m_timerLabel->setFont(timerFont);
+  root->addWidget(m_timerLabel);
 
   m_notesEdit = new QTextEdit;
   m_notesEdit->setPlaceholderText(tr("Заметка по этому абоненту..."));
-  m_notesEdit->setVisible(false);
+  m_notesEdit->setMinimumHeight(80);
   m_notesEdit->setMaximumHeight(120);
-  root->addWidget(m_notesEdit);
+  root->addWidget(m_notesEdit, 1);
 
-  m_toolbar = new QWidget;
-  m_toolbar->setObjectName(QStringLiteral("callToolbar"));
-  auto *tb = new QHBoxLayout(m_toolbar);
-  tb->setContentsMargins(12, 10, 12, 10);
+  auto *buttonRow = new QHBoxLayout;
+  buttonRow->setSpacing(8);
 
-  m_notesBtn = new QPushButton(QStringLiteral("📝"));
-  m_notesBtn->setObjectName(QStringLiteral("callCtrlBtn"));
-  m_notesBtn->setToolTip(tr("Заметки"));
-  m_notesBtn->setCheckable(true);
-  tb->addWidget(m_notesBtn);
+  m_transferBtn = new QPushButton(tr("Перевод"));
+  m_transferBtn->setObjectName(QStringLiteral("callActionBtn"));
+  m_transferBtn->setCheckable(false);
+  buttonRow->addWidget(m_transferBtn);
 
-  m_holdBtn = new QPushButton(QStringLiteral("⏸"));
-  m_holdBtn->setObjectName(QStringLiteral("callCtrlBtn"));
-  m_holdBtn->setToolTip(tr("Удержание"));
-  tb->addWidget(m_holdBtn);
-
-  m_transferBtn = new QPushButton(QStringLiteral("↪"));
-  m_transferBtn->setObjectName(QStringLiteral("callCtrlBtn"));
-  m_transferBtn->setToolTip(tr("Перевод"));
-  tb->addWidget(m_transferBtn);
-
-  tb->addStretch();
-
-  m_answerBtn = new QPushButton(QStringLiteral("📞"));
-  m_answerBtn->setObjectName(QStringLiteral("callAnswerBtn"));
-  m_answerBtn->setToolTip(tr("Ответить"));
-  tb->addWidget(m_answerBtn);
-
-  m_hangupBtn = new QPushButton(QStringLiteral("📴"));
+  m_hangupBtn = new QPushButton(tr("Сброс"));
   m_hangupBtn->setObjectName(QStringLiteral("callHangupBtn"));
-  m_hangupBtn->setToolTip(tr("Завершить"));
-  tb->addWidget(m_hangupBtn);
+  buttonRow->addWidget(m_hangupBtn);
 
-  root->addWidget(m_toolbar);
-  root->setSizeConstraint(QLayout::SetFixedSize);
+  m_holdBtn = new QPushButton(tr("Удержание"));
+  m_holdBtn->setObjectName(QStringLiteral("callActionBtn"));
+  buttonRow->addWidget(m_holdBtn);
+
+  root->addLayout(buttonRow);
+
+  m_answerBtn = new QPushButton(tr("Ответить"));
+  m_answerBtn->setObjectName(QStringLiteral("callAnswerBtn"));
+  m_answerBtn->setVisible(false);
+  root->addWidget(m_answerBtn);
 
   connect(m_hangupBtn, &QPushButton::clicked, this, &CallWindow::hangupRequested);
   connect(m_answerBtn, &QPushButton::clicked, this, &CallWindow::answerRequested);
   connect(m_holdBtn, &QPushButton::clicked, this, &CallWindow::holdRequested);
-  connect(m_notesBtn, &QPushButton::clicked, this, [this](bool checked) { setNotesVisible(checked); });
   connect(m_notesEdit, &QTextEdit::textChanged, this, [this]() {
     if (!m_peer.isEmpty()) {
       emit notesChanged(m_peer, m_notesEdit->toPlainText());
@@ -134,32 +128,6 @@ void CallWindow::setMode(Mode mode)
   m_holdBtn->setVisible(mode == Mode::Active || mode == Mode::IncomingAccepted);
   m_transferBtn->setVisible(mode == Mode::Active || mode == Mode::IncomingAccepted);
   m_timerLabel->setVisible(mode == Mode::Active || mode == Mode::IncomingAccepted);
-  m_notesBtn->setVisible(mode != Mode::Hidden && mode != Mode::Incoming);
-}
-
-void CallWindow::setNotesVisible(bool visible)
-{
-  if (m_notesVisible == visible) {
-    return;
-  }
-
-  m_notesVisible = visible;
-  m_notesBtn->setChecked(visible);
-  m_notesEdit->setVisible(visible);
-  m_notesEdit->setMaximumHeight(visible ? 120 : 0);
-
-  if (QLayout *rootLayout = layout()) {
-    rootLayout->invalidate();
-    rootLayout->activate();
-  }
-
-  const int windowWidth = width() > 0 ? width() : 520;
-  adjustSize();
-  resize(windowWidth, height());
-
-  if (visible) {
-    m_notesEdit->setFocus();
-  }
 }
 
 void CallWindow::reject()
@@ -183,6 +151,73 @@ QString CallWindow::notesText() const
   return m_notesEdit->toPlainText();
 }
 
+void CallWindow::setNotesVisible(bool visible)
+{
+  m_notesEdit->setVisible(visible);
+}
+
+void CallWindow::setAvatarColor(const QString &color)
+{
+  m_avatarBaseColor = color;
+  resetAudioLevel();
+  refreshAvatarBorder();
+}
+
+void CallWindow::resetAudioLevel()
+{
+  m_calibrationSamples = 0;
+  m_calibrationSum = 0;
+  m_calibrated = false;
+  m_speaking = false;
+  m_noiseFloor = 0.005f;
+  m_speechThreshold = 0.02f;
+}
+
+void CallWindow::refreshAvatarBorder()
+{
+  if (!m_avatar) {
+    return;
+  }
+  const QColor borderColor = m_speaking ? palette().color(QPalette::Highlight) : palette().color(QPalette::Mid);
+  const QString bg = m_avatarBaseColor.isEmpty() ? QStringLiteral("palette(midlight)") : m_avatarBaseColor;
+  const QString border = m_speaking ? borderColor.name() : borderColor.name();
+  m_avatar->setStyleSheet(
+      QStringLiteral("QLabel {"
+                     "  background-color: %1;"
+                     "  border-radius: 70px;"
+                     "  border: 3px solid %2;"
+                     "  font-size: 64px;"
+                     "}")
+          .arg(bg, border));
+}
+
+void CallWindow::updateRemoteAudioLevel(float level)
+{
+  if (m_mode != Mode::Active && m_mode != Mode::IncomingAccepted) {
+    return;
+  }
+
+  if (!m_calibrated) {
+    m_calibrationSamples++;
+    m_calibrationSum += level;
+    if (m_calibrationSamples >= 50) {
+      m_noiseFloor = m_calibrationSum / m_calibrationSamples;
+      m_speechThreshold = m_noiseFloor * 4.0f;
+      if (m_speechThreshold < 0.01f) {
+        m_speechThreshold = 0.01f;
+      }
+      m_calibrated = true;
+    }
+    return;
+  }
+
+  const bool nowSpeaking = level > m_speechThreshold;
+  if (nowSpeaking != m_speaking) {
+    m_speaking = nowSpeaking;
+    refreshAvatarBorder();
+  }
+}
+
 void CallWindow::showOutgoing(const QString &peer, const QString &displayName, const QString &detail)
 {
   m_peer = peer;
@@ -191,9 +226,7 @@ void CallWindow::showOutgoing(const QString &peer, const QString &displayName, c
   m_nameLabel->setText(displayName);
   m_detailLabel->setText(detail);
   m_statusLabel->setText(tr("Дозвон"));
-  m_statusLabel->setObjectName(QStringLiteral("callStatusIncoming"));
   m_timerLabel->clear();
-  setNotesVisible(false);
   setMode(Mode::Outgoing);
   stopTimer();
   show();
@@ -209,9 +242,7 @@ void CallWindow::showIncoming(const QString &peer, const QString &displayName, c
   m_nameLabel->setText(displayName);
   m_detailLabel->setText(detail);
   m_statusLabel->setText(tr("Входящий"));
-  m_statusLabel->setObjectName(QStringLiteral("callStatusIncoming"));
   m_timerLabel->clear();
-  setNotesVisible(false);
   setMode(Mode::Incoming);
   stopTimer();
   show();
@@ -226,7 +257,6 @@ void CallWindow::showActive(const QString &peer, const QString &displayName)
   setWindowTitle(tr("%1 — разговор").arg(displayName));
   m_nameLabel->setText(displayName);
   m_statusLabel->setText(tr("Разговор"));
-  m_statusLabel->setObjectName(QStringLiteral("callStatusActive"));
   setMode(Mode::Active);
   stopTimer();
   show();
@@ -255,9 +285,7 @@ void CallWindow::updateState(const QString &state, const QString &detail)
         m_nameLabel->setText(detail);
       }
       m_statusLabel->setText(tr("Разговор"));
-      m_statusLabel->setObjectName(QStringLiteral("callStatusActive"));
       setMode(Mode::Active);
-      // Duration timer starts later, when remote audio actually arrives.
       if (m_timerLabel) {
         m_timerLabel->setText(tr("Соединение..."));
         m_timerLabel->setVisible(true);
@@ -293,7 +321,6 @@ void CallWindow::beginConversationTimer()
 void CallWindow::closeCall()
 {
   stopTimer();
-  setNotesVisible(false);
   hide();
   setMode(Mode::Hidden);
 }

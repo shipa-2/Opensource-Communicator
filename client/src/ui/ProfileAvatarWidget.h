@@ -14,6 +14,7 @@ public:
     explicit ProfileAvatarWidget(itl::AppSettings *settings, QWidget *parent = nullptr);
 
     void setLetter(const QString &letter);
+    void setMenuEnabled(bool enabled);
     void refreshFromSettings();
     void refreshAppearance();
 
@@ -36,4 +37,5 @@ private:
     QString m_letter;
     QPixmap m_photo;
     QColor m_bgColor = QColor(QStringLiteral("#5a9e2f"));
+    bool m_menuEnabled = true;
 };

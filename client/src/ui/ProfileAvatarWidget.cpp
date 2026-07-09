@@ -45,8 +45,14 @@ QRectF ProfileAvatarWidget::circleRect() const
 
 void ProfileAvatarWidget::setLetter(const QString &letter)
 {
-  m_letter = letter.trimmed().isEmpty() ? QStringLiteral("?") : letter.left(1).toUpper();
+  m_letter = letter;
   update();
+}
+
+void ProfileAvatarWidget::setMenuEnabled(bool enabled)
+{
+  m_menuEnabled = enabled;
+  setCursor(enabled ? Qt::PointingHandCursor : Qt::ArrowCursor);
 }
 
 void ProfileAvatarWidget::refreshFromSettings()
@@ -127,7 +133,7 @@ void ProfileAvatarWidget::paintEvent(QPaintEvent *)
 
 void ProfileAvatarWidget::mousePressEvent(QMouseEvent *event)
 {
-  if (event->button() == Qt::LeftButton) {
+  if (event->button() == Qt::LeftButton && m_menuEnabled) {
     showAvatarMenu();
     event->accept();
     return;

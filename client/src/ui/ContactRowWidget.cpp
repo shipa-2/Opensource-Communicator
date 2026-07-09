@@ -63,7 +63,7 @@ ContactRowWidget::ContactRowWidget(const QString &peer, const QString &name, con
   setMinimumHeight(48);
   setAutoFillBackground(false);
   if (!isSelf) {
-    setToolTip(tr("Двойной щелчок — заметка\nПКМ — удалить или экспорт"));
+    setToolTip(tr("Двойной щелчок — заметка\nПКМ — действия с контактом"));
   }
 
   auto *layout = new QHBoxLayout(this);
@@ -145,6 +145,19 @@ void ContactRowWidget::setChatButtonVisible(bool visible)
   }
 }
 
+void ContactRowWidget::setCallButtonVisible(bool visible)
+{
+  if (m_callBtn) {
+    m_callBtn->setVisible(visible);
+  }
+}
+
+void ContactRowWidget::setPeerColor(const QString &color)
+{
+  m_peerColor = color;
+  refreshAvatarStyle();
+}
+
 void ContactRowWidget::setUnreadBlink(bool enabled)
 {
   if (m_unreadBlink == enabled) {
@@ -203,6 +216,12 @@ void ContactRowWidget::setCallNumbers(const QVector<CallNumber> &numbers)
   m_numbers = numbers;
 }
 
+void ContactRowWidget::setPhones(const QString &phone, const QString &personalPhone)
+{
+  m_phone = phone;
+  m_personalPhone = personalPhone;
+}
+
 void ContactRowWidget::showCallMenu(const QPoint &globalPos)
 {
   if (m_numbers.isEmpty()) {
@@ -251,7 +270,22 @@ bool ContactRowWidget::eventFilter(QObject *watched, QEvent *event)
 void ContactRowWidget::contextMenuEvent(QContextMenuEvent *event)
 {
   if (m_isSelf) {
-    QWidget::contextMenuEvent(event);
+    QMenu menu(this);
+    bool hasAny = false;
+    if (!m_personalPhone.isEmpty()) {
+      QAction *action = menu.addAction(tr("Скопировать личный номер"));
+      connect(action, &QAction::triggered, this, [this]() { emit copyNumberRequested(m_personalPhone); });
+      hasAny = true;
+    }
+    if (!m_phone.isEmpty()) {
+      QAction *action = menu.addAction(tr("Скопировать рабочий номер"));
+      connect(action, &QAction::triggered, this, [this]() { emit copyNumberRequested(m_phone); });
+      hasAny = true;
+    }
+    if (hasAny) {
+      menu.exec(event->globalPos());
+      event->accept();
+    }
     return;
   }
 
@@ -261,11 +295,33 @@ void ContactRowWidget::contextMenuEvent(QContextMenuEvent *event)
   }
 
   QMenu menu(this);
+
+  if (m_numbers.size() > 1) {
+    auto *callMenu = menu.addMenu(tr("Позвонить"));
+    for (const CallNumber &number : m_numbers) {
+      const QString label = number.second.isEmpty()
+                                ? number.first
+                                : QStringLiteral("%1  —  %2").arg(number.second, number.first);
+      QAction *action = callMenu->addAction(label);
+      const QString dial = number.second;
+      connect(action, &QAction::triggered, this, [this, dial]() {
+        emit callNumberRequested(dial);
+      });
+    }
+  } else {
+    menu.addAction(tr("Позвонить"), this, [this]() { emit callRequested(m_peer); });
+  }
+
+  menu.addAction(tr("Сообщение"), this, [this]() { emit chatRequested(m_peer); });
+  menu.addAction(tr("Заметка"), this, [this]() { emit notesRequested(m_peer); });
+
+  menu.addSeparator();
+
   if (m_canDelete) {
     menu.addAction(tr("Удалить"), this, [this]() { emit deleteRequested(m_peer); });
-    menu.addSeparator();
   }
   menu.addAction(tr("Экспортировать..."), this, [this]() { emit exportRequested(m_peer); });
+
   menu.exec(event->globalPos());
   event->accept();
 }
@@ -338,7 +394,7 @@ void ContactRowWidget::refreshAvatarStyle()
     return;
   }
 
-  const QColor background = palette().color(QPalette::Midlight);
+  QColor background = m_peerColor.isEmpty() ? palette().color(QPalette::Midlight) : QColor(m_peerColor);
   const QColor text = palette().color(QPalette::ButtonText);
   const QColor border = palette().color(QPalette::WindowText);
   m_avatar->setStyleSheet(

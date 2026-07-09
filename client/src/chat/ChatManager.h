@@ -35,6 +35,10 @@ public:
     bool isSmsPeer(const QString &peer) const;
     QString normalizedPeer(const QString &peer) const;
     int sendMessage(const QString &peer, const QString &text);
+    void sendColorAdvertisement(const QString &color);
+    QString peerColor(const QString &peer) const;
+    static bool isColorAdvertisement(const QString &body);
+    static QString extractColor(const QString &body);
     void setDemoMode(bool enabled);
     void clearDemoMessages();
     void addDemoMessage(const QString &peer, const QString &text, bool incoming, bool notify = true);
@@ -51,6 +55,7 @@ signals:
     void typingReceived(const QString &peer);
     void historyLoaded(const QString &peer);
     void unreadChanged(const QString &peer);
+    void peerColorReceived(const QString &peer, const QString &color);
 
 private:
     InstantMessage parseMessage(const QJsonObject &msg) const;
@@ -67,6 +72,7 @@ private:
     QString m_smsFromNumber;
     QHash<QString, QList<InstantMessage>> m_messages;
     QHash<QString, QStringList> m_unreadByPeer;
+    QHash<QString, QString> m_peerColors;
     int m_historyRequestId = -1;
     int m_smsTelnumsRequestId = -1;
     bool m_demoMode = false;

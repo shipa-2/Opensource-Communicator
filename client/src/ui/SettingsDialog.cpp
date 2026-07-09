@@ -1,6 +1,6 @@
 #include "SettingsDialog.h"
 
-#include "RecordingSettingsDialog.h"
+#include "ProfileAvatarWidget.h"
 #include "audio/AudioDeviceUtils.h"
 #include "audio/IncomingRingPlayer.h"
 #include "audio/RingbackPlayer.h"
@@ -10,6 +10,8 @@
 #include "ui/StyleHelper.h"
 
 #include <QAudioDevice>
+#include <QCheckBox>
+#include <QColorDialog>
 #include <QComboBox>
 #include <QFileDialog>
 #include <QFormLayout>
@@ -18,10 +20,12 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QTabWidget>
 #include <QTimer>
 #include <QVBoxLayout>
 
-SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager *calls, QWidget *parent)
+SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager *calls,
+                               const QString &displayName, QWidget *parent)
     : QDialog(parent)
     , m_client(client)
     , m_calls(calls)
@@ -32,10 +36,17 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
 {
   setWindowTitle(tr("Настройки"));
   setObjectName(QStringLiteral("settingsDialog"));
-  resize(460, 360);
+  resize(460, 420);
+  m_selfName = displayName;
 
-  auto *layout = new QVBoxLayout(this);
-  layout->setContentsMargins(16, 16, 16, 16);
+  auto *mainLayout = new QVBoxLayout(this);
+  mainLayout->setContentsMargins(16, 16, 16, 16);
+
+  auto *tabs = new QTabWidget;
+
+  auto *soundTab = new QWidget;
+  auto *soundLayout = new QVBoxLayout(soundTab);
+  soundLayout->setContentsMargins(8, 8, 8, 8);
 
   auto *audioGroup = new QGroupBox(tr("Звук"));
   auto *form = new QFormLayout(audioGroup);
@@ -97,23 +108,174 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
   incomingRow->addWidget(m_incomingBrowse);
   form->addRow(tr("Файл звонка"), incomingRow);
 
-  layout->addWidget(audioGroup);
+  soundLayout->addWidget(audioGroup);
+  soundLayout->addStretch();
+  tabs->addTab(soundTab, tr("Звук"));
 
-  auto *accountRow = new QHBoxLayout;
-  auto *accountBtn = new QPushButton(tr("Учётная запись..."));
-  auto *recordingBtn = new QPushButton(tr("Запись разговора..."));
-  accountRow->addWidget(accountBtn);
-  accountRow->addWidget(recordingBtn);
-  layout->addLayout(accountRow);
+  auto *accountTab = new QWidget;
+  auto *accountLayout = new QVBoxLayout(accountTab);
+  accountLayout->setContentsMargins(8, 8, 8, 8);
+
+  auto *avatarRow = new QHBoxLayout;
+  m_accountAvatar = new ProfileAvatarWidget(&m_client->appSettings());
+  m_accountAvatar->setMenuEnabled(false);
+  avatarRow->addWidget(m_accountAvatar);
+
+  auto *avatarBtns = new QVBoxLayout;
+  avatarBtns->setSpacing(4);
+  auto *photoBtn = new QPushButton(tr("Загрузить фото"));
+  photoBtn->setObjectName(QStringLiteral("avatarMenuBtn"));
+  auto *colorBtn = new QPushButton(tr("Цвет фона"));
+  colorBtn->setObjectName(QStringLiteral("avatarMenuBtn"));
+  auto *removePhotoBtn = new QPushButton(tr("Убрать фото"));
+  removePhotoBtn->setObjectName(QStringLiteral("avatarMenuBtn"));
+  removePhotoBtn->setVisible(!m_settings->profileAvatarPath().isEmpty());
+  avatarBtns->addWidget(photoBtn);
+  avatarBtns->addWidget(colorBtn);
+  avatarBtns->addWidget(removePhotoBtn);
+  avatarBtns->addStretch();
+  avatarRow->addLayout(avatarBtns);
+  accountLayout->addLayout(avatarRow);
+
+  connect(photoBtn, &QPushButton::clicked, this, [this, removePhotoBtn]() {
+    const QString path = QFileDialog::getOpenFileName(this, tr("Выберите фото"), {},
+                                                       tr("Изображения (*.png *.jpg *.jpeg *.bmp *.webp);;Все файлы (*)"));
+    if (!path.isEmpty()) {
+      m_settings->setProfileAvatarPath(path);
+      m_accountAvatar->refreshFromSettings();
+      removePhotoBtn->setVisible(true);
+    }
+  });
+  connect(colorBtn, &QPushButton::clicked, this, [this]() {
+    const QColor color = QColorDialog::getColor(m_settings->profileAvatarColor(), this, tr("Выберите цвет фона"));
+    if (color.isValid()) {
+      m_settings->setProfileAvatarColor(color.name());
+      m_accountAvatar->refreshFromSettings();
+    }
+  });
+  connect(removePhotoBtn, &QPushButton::clicked, this, [this, removePhotoBtn]() {
+    m_settings->setProfileAvatarPath({});
+    m_accountAvatar->refreshFromSettings();
+    removePhotoBtn->setVisible(false);
+  });
+
+  auto *accountForm = new QFormLayout;
+  accountForm->setSpacing(8);
+
+  m_displayNameEdit = new QLineEdit;
+  m_displayNameEdit->setPlaceholderText(tr("Имя для отображения"));
+  m_displayNameEdit->setText(m_selfName);
+
+  auto *nameRow = new QHBoxLayout;
+  nameRow->addWidget(m_displayNameEdit, 1);
+  auto *resetNameBtn = new QPushButton(tr("Сбросить"));
+  resetNameBtn->setToolTip(tr("Восстановить имя по умолчанию"));
+  connect(resetNameBtn, &QPushButton::clicked, this, [this]() {
+    m_displayNameEdit->setText(m_selfName);
+  });
+  nameRow->addWidget(resetNameBtn);
+  accountForm->addRow(tr("Имя:"), nameRow);
+  accountLayout->addLayout(accountForm);
+
+  accountLayout->addStretch();
+
+  auto *logoutBtn = new QPushButton(tr("Выйти из аккаунта"));
+  logoutBtn->setObjectName(QStringLiteral("logoutBtn"));
+  connect(logoutBtn, &QPushButton::clicked, this, [this]() {
+    accept();
+    done(3);
+  });
+  accountLayout->addWidget(logoutBtn);
+
+  tabs->addTab(accountTab, tr("Аккаунт"));
+
+  auto *recordingTab = new QWidget;
+  auto *recordingLayout = new QVBoxLayout(recordingTab);
+  recordingLayout->setContentsMargins(8, 8, 8, 8);
+
+  auto *recordingForm = new QFormLayout;
+  recordingForm->setSpacing(8);
+
+  m_recordingEnabledCheck = new QCheckBox(tr("Записывать разговоры"));
+  m_recordingEnabledCheck->setChecked(m_settings->recordingEnabled());
+  recordingForm->addRow(m_recordingEnabledCheck);
+
+  m_recordingDualTrackCheck = new QCheckBox(tr("Запись в две дорожки"));
+  m_recordingDualTrackCheck->setChecked(m_settings->recordingDualTrack());
+  recordingForm->addRow(m_recordingDualTrackCheck);
+
+  auto *combinedContainer = new QWidget;
+  auto *combinedLayout = new QHBoxLayout(combinedContainer);
+  combinedLayout->setContentsMargins(0, 0, 0, 0);
+  m_recordingCombinedCheck = new QCheckBox(tr("Записывать объединённую дорожку"));
+  m_recordingCombinedCheck->setChecked(m_settings->recordingCombinedTrack());
+  combinedLayout->addWidget(m_recordingCombinedCheck);
+  combinedLayout->addStretch();
+  recordingForm->addRow(combinedContainer);
+
+  auto *dirRow = new QHBoxLayout;
+  m_recordingDirEdit = new QLineEdit;
+  m_recordingDirEdit->setText(m_settings->recordingDirectory());
+  m_recordingDirEdit->setPlaceholderText(itl::AppSettings::defaultRecordingDirectory());
+  dirRow->addWidget(m_recordingDirEdit, 1);
+  auto *dirBtn = new QPushButton(tr("Обзор..."));
+  connect(dirBtn, &QPushButton::clicked, this, [this]() {
+    const QString dir = QFileDialog::getExistingDirectory(this, tr("Выберите папку"), m_recordingDirEdit->text());
+    if (!dir.isEmpty()) {
+      m_recordingDirEdit->setText(dir);
+    }
+  });
+  dirRow->addWidget(dirBtn);
+  recordingForm->addRow(tr("Директория:"), dirRow);
+
+  m_recordingTemplateEdit = new QLineEdit;
+  m_recordingTemplateEdit->setText(m_settings->recordingFilenameTemplate());
+  m_recordingTemplateEdit->setToolTip(itl::AppSettings::recordingFilenameSyntaxHelp());
+  recordingForm->addRow(tr("Шаблон имени файла:"), m_recordingTemplateEdit);
+
+  recordingLayout->addLayout(recordingForm);
+
+  m_recordingPreviewLabel = new QLabel;
+  m_recordingPreviewLabel->setObjectName(QStringLiteral("recordingPreview"));
+  m_recordingPreviewLabel->setWordWrap(true);
+  recordingLayout->addWidget(m_recordingPreviewLabel);
+
+  auto updatePreview = [this]() {
+    const QString name = m_recordingTemplateEdit->text();
+    const QString base = itl::AppSettings::expandRecordingFilenameTemplate(name, m_selfName);
+    if (m_recordingDualTrackCheck->isChecked()) {
+      QString text = tr("Дорожки:\n  %1_manager.mp3\n  %1_caller.mp3").arg(base);
+      if (m_recordingCombinedCheck->isChecked()) {
+        text += tr("\nОбъединённая:\n  %1.mp3").arg(base);
+      }
+      m_recordingPreviewLabel->setText(text);
+    } else {
+      m_recordingPreviewLabel->setText(tr("Пример: %1.mp3").arg(base));
+    }
+  };
+  connect(m_recordingTemplateEdit, &QLineEdit::textChanged, this, updatePreview);
+  connect(m_recordingDualTrackCheck, &QCheckBox::toggled, this, [this, updatePreview](bool checked) {
+    m_recordingCombinedCheck->setEnabled(checked);
+    if (!checked) {
+      m_recordingCombinedCheck->setChecked(false);
+    }
+    updatePreview();
+  });
+  m_recordingCombinedCheck->setEnabled(m_settings->recordingDualTrack());
+  connect(m_recordingCombinedCheck, &QCheckBox::toggled, this, updatePreview);
+  updatePreview();
+
+  recordingLayout->addStretch();
+  tabs->addTab(recordingTab, tr("Запись"));
+
+  mainLayout->addWidget(tabs, 1);
 
   QPushButton *cancel = nullptr;
   QPushButton *ok = nullptr;
-  layout->addLayout(itl::createDialogButtonRow(&cancel, &ok, tr("Сохранить")));
+  mainLayout->addLayout(itl::createDialogButtonRow(&cancel, &ok, tr("Сохранить")));
 
   connect(cancel, &QPushButton::clicked, this, &QDialog::reject);
   connect(ok, &QPushButton::clicked, this, &SettingsDialog::onAccept);
-  connect(accountBtn, &QPushButton::clicked, this, &SettingsDialog::onAccountSettings);
-  connect(recordingBtn, &QPushButton::clicked, this, &SettingsDialog::onRecordingSettings);
   connect(m_ringbackBrowse, &QPushButton::clicked, this, &SettingsDialog::onBrowseRingback);
   connect(m_incomingBrowse, &QPushButton::clicked, this, &SettingsDialog::onBrowseIncoming);
   connect(m_ringbackPreviewBtn, &QPushButton::clicked, this, &SettingsDialog::onPreviewRingback);
@@ -144,6 +306,11 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
 SettingsDialog::~SettingsDialog()
 {
   stopPreview();
+}
+
+QString SettingsDialog::displayName() const
+{
+  return m_displayNameEdit ? m_displayNameEdit->text().trimmed() : QString();
 }
 
 void SettingsDialog::reject()
@@ -262,7 +429,7 @@ void SettingsDialog::onPreviewIncoming()
 void SettingsDialog::onBrowseRingback()
 {
   const QString path = QFileDialog::getOpenFileName(this, tr("Выберите файл гудка"), {},
-                                                    tr("Аудио (*.wav *.mp3 *.ogg);;Все файлы (*)"));
+                                                     tr("Аудио (*.wav *.mp3 *.ogg);;Все файлы (*)"));
   if (!path.isEmpty()) {
     m_ringbackPath->setText(path);
   }
@@ -271,21 +438,10 @@ void SettingsDialog::onBrowseRingback()
 void SettingsDialog::onBrowseIncoming()
 {
   const QString path = QFileDialog::getOpenFileName(this, tr("Выберите файл звонка"), {},
-                                                    tr("Аудио (*.wav *.mp3 *.ogg);;Все файлы (*)"));
+                                                     tr("Аудио (*.wav *.mp3 *.ogg);;Все файлы (*)"));
   if (!path.isEmpty()) {
     m_incomingPath->setText(path);
   }
-}
-
-void SettingsDialog::onAccountSettings()
-{
-  done(2);
-}
-
-void SettingsDialog::onRecordingSettings()
-{
-  RecordingSettingsDialog dlg(m_client, this);
-  dlg.exec();
 }
 
 void SettingsDialog::onAccept()
@@ -297,6 +453,13 @@ void SettingsDialog::onAccept()
   m_settings->setRingbackCustomPath(m_ringbackPath->text().trimmed());
   m_settings->setIncomingRingKind(static_cast<itl::AppSettings::RingtoneKind>(m_incomingTone->currentData().toInt()));
   m_settings->setIncomingRingCustomPath(m_incomingPath->text().trimmed());
+
+  m_settings->setRecordingEnabled(m_recordingEnabledCheck->isChecked());
+  m_settings->setRecordingDualTrack(m_recordingDualTrackCheck->isChecked());
+  m_settings->setRecordingCombinedTrack(m_recordingCombinedCheck->isChecked());
+  m_settings->setRecordingDirectory(m_recordingDirEdit->text());
+  m_settings->setRecordingFilenameTemplate(m_recordingTemplateEdit->text());
+
   m_client->saveSettings();
   m_calls->applySettings();
   accept();

@@ -11,18 +11,20 @@ class IncomingRingPlayer;
 class RingbackPlayer;
 }
 
+class ProfileAvatarWidget;
+
 class SettingsDialog : public QDialog {
     Q_OBJECT
 
 public:
-    SettingsDialog(itl::CommunicatorClient *client, itl::CallManager *calls, QWidget *parent = nullptr);
+    SettingsDialog(itl::CommunicatorClient *client, itl::CallManager *calls,
+                   const QString &displayName, QWidget *parent = nullptr);
     ~SettingsDialog() override;
+    QString displayName() const;
 
 private slots:
     void onBrowseRingback();
     void onBrowseIncoming();
-    void onAccountSettings();
-    void onRecordingSettings();
     void onAccept();
     void onPreviewRingback();
     void onPreviewIncoming();
@@ -57,4 +59,15 @@ private:
     class QPushButton *m_incomingBrowse = nullptr;
     class QPushButton *m_ringbackPreviewBtn = nullptr;
     class QPushButton *m_incomingPreviewBtn = nullptr;
+
+    ProfileAvatarWidget *m_accountAvatar = nullptr;
+    class QLineEdit *m_displayNameEdit = nullptr;
+    QString m_selfName;
+
+    class QCheckBox *m_recordingEnabledCheck = nullptr;
+    class QCheckBox *m_recordingDualTrackCheck = nullptr;
+    class QCheckBox *m_recordingCombinedCheck = nullptr;
+    class QLineEdit *m_recordingDirEdit = nullptr;
+    class QLineEdit *m_recordingTemplateEdit = nullptr;
+    class QLabel *m_recordingPreviewLabel = nullptr;
 };

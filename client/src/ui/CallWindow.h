@@ -26,6 +26,9 @@ public:
     void setNotesText(const QString &text);
     QString notesText() const;
     void setNotesVisible(bool visible);
+    void setAvatarColor(const QString &color);
+    void updateRemoteAudioLevel(float level);
+    void resetAudioLevel();
     void refreshAppearance();
 
 signals:
@@ -41,6 +44,7 @@ protected:
 private:
     void buildUi();
     void setMode(Mode mode);
+    void refreshAvatarBorder();
     void startTimer();
     void stopTimer();
     void onTimerTick();
@@ -55,14 +59,18 @@ private:
     QLabel *m_detailLabel = nullptr;
     QLabel *m_statusLabel = nullptr;
     QLabel *m_timerLabel = nullptr;
-    QWidget *m_toolbar = nullptr;
     QPushButton *m_answerBtn = nullptr;
     QPushButton *m_hangupBtn = nullptr;
     QPushButton *m_holdBtn = nullptr;
-    QPushButton *m_notesBtn = nullptr;
     QPushButton *m_transferBtn = nullptr;
     QTextEdit *m_notesEdit = nullptr;
     QTimer *m_durationTimer = nullptr;
     int m_elapsedSeconds = 0;
-    bool m_notesVisible = false;
+    QString m_avatarBaseColor;
+    float m_noiseFloor = 0.005f;
+    float m_speechThreshold = 0.02f;
+    int m_calibrationSamples = 0;
+    float m_calibrationSum = 0;
+    bool m_calibrated = false;
+    bool m_speaking = false;
 };
