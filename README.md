@@ -46,7 +46,11 @@
 
 ### Настройки
 
-![Настройки звука](screenshots/settings.png)
+![Настройки звука](screenshots/settings-sound.png)
+
+![Настройки аккаунта](screenshots/settings-account.png)
+
+![Настройки записи](screenshots/settings-recording.png)
 
 ## Возможности (v0.3)
 

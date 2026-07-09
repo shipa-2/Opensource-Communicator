@@ -49,7 +49,7 @@ int main(int argc, char *argv[])
   configureLogging();
   QApplication::setApplicationName(QStringLiteral("opensource-communicator"));
   QApplication::setOrganizationName(QStringLiteral("opensource-communicator"));
-  QApplication::setApplicationVersion(QStringLiteral("0.2.0"));
+  QApplication::setApplicationVersion(QStringLiteral("0.3.0"));
   QApplication::setDesktopFileName(QStringLiteral("opensource-communicator"));
   QApplication::setWindowIcon(QIcon(QStringLiteral(":/logo.png")));
 
