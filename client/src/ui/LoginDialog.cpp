@@ -3,11 +3,14 @@
 #include "protocol/CommunicatorClient.h"
 #include "ui/StyleHelper.h"
 
+#include <QCheckBox>
+#include <QComboBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QVBoxLayout>
 
 LoginDialog::LoginDialog(itl::CommunicatorClient *client, QWidget *parent)
@@ -30,14 +33,24 @@ LoginDialog::LoginDialog(itl::CommunicatorClient *client, QWidget *parent)
   layout->addWidget(subtitle);
 
   auto *form = itl::createDialogForm();
-  m_loginEdit = new QLineEdit;
-  m_loginEdit->setPlaceholderText(QStringLiteral("demo"));
+
+  m_loginCombo = new QComboBox;
+  m_loginCombo->setEditable(true);
+  m_loginCombo->setInsertPolicy(QComboBox::NoInsert);
+  m_loginCombo->lineEdit()->setPlaceholderText(QStringLiteral("demo"));
+  m_loginCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+
   m_passwordEdit = new QLineEdit;
   m_passwordEdit->setEchoMode(QLineEdit::Password);
   m_passwordEdit->setPlaceholderText(QStringLiteral("demo"));
-  form->addRow(tr("Логин"), m_loginEdit);
+
+  form->addRow(tr("Логин"), m_loginCombo);
   form->addRow(tr("Пароль"), m_passwordEdit);
   layout->addLayout(form);
+
+  m_rememberCheck = new QCheckBox(tr("Запомнить меня"));
+  m_rememberCheck->setChecked(true);
+  layout->addWidget(m_rememberCheck);
 
   m_advancedBtn = new QPushButton(tr("Расширенные"));
   m_advancedBtn->setFlat(true);
@@ -57,7 +70,6 @@ LoginDialog::LoginDialog(itl::CommunicatorClient *client, QWidget *parent)
   m_advancedPanel->setVisible(false);
   layout->addWidget(m_advancedPanel);
 
-  auto *buttons = new QHBoxLayout;
   QPushButton *cancel = nullptr;
   QPushButton *ok = nullptr;
   layout->addLayout(itl::createDialogButtonRow(&cancel, &ok, tr("Войти")));
@@ -65,6 +77,7 @@ LoginDialog::LoginDialog(itl::CommunicatorClient *client, QWidget *parent)
   connect(cancel, &QPushButton::clicked, this, &QDialog::reject);
   connect(ok, &QPushButton::clicked, this, &LoginDialog::onAccepted);
   connect(m_advancedBtn, &QPushButton::toggled, this, &LoginDialog::toggleAdvanced);
+  connect(m_loginCombo, QOverload<int>::of(&QComboBox::activated), this, &LoginDialog::onAccountActivated);
 
   itl::applyFormDialogStyle(this);
 }
@@ -76,27 +89,92 @@ void LoginDialog::toggleAdvanced(bool expanded)
   adjustSize();
 }
 
-void LoginDialog::loadFromClient()
+void LoginDialog::applyCredentials(const itl::LoginCredentials &cred)
 {
-  const auto cred = m_client->credentials();
-  m_loginEdit->setText(cred.login);
+  {
+    const QSignalBlocker blocker(m_loginCombo);
+    m_loginCombo->setEditText(cred.login);
+  }
   m_passwordEdit->setText(cred.password);
   m_domainEdit->setText(cred.domain);
   m_authDomainEdit->setText(cred.authDomain);
-  m_partnerEdit->setText(cred.partner);
+  m_partnerEdit->setText(cred.partner.isEmpty() ? QStringLiteral("megafon") : cred.partner);
+}
+
+itl::LoginCredentials LoginDialog::accountAt(int index) const
+{
+  if (index < 0 || index >= m_loginCombo->count()) {
+    return {};
+  }
+  return m_loginCombo->itemData(index).value<itl::LoginCredentials>();
+}
+
+void LoginDialog::refreshAccountCombo(const QString &selectedLogin)
+{
+  const QSignalBlocker blocker(m_loginCombo);
+  m_loginCombo->clear();
+
+  const auto accounts = m_client->savedAccounts();
+  int selectedIndex = -1;
+  for (const itl::LoginCredentials &account : accounts) {
+    QString label = account.login;
+    if (!account.domain.isEmpty() && !label.contains(QLatin1Char('@'))) {
+      label += QLatin1Char('@') + account.domain;
+    }
+    m_loginCombo->addItem(label, QVariant::fromValue(account));
+    if (!selectedLogin.isEmpty()
+        && (account.login.compare(selectedLogin, Qt::CaseInsensitive) == 0
+            || label.compare(selectedLogin, Qt::CaseInsensitive) == 0)) {
+      selectedIndex = m_loginCombo->count() - 1;
+    }
+  }
+
+  if (selectedIndex >= 0) {
+    m_loginCombo->setCurrentIndex(selectedIndex);
+  } else if (!selectedLogin.isEmpty()) {
+    m_loginCombo->setEditText(selectedLogin);
+  }
+}
+
+void LoginDialog::loadFromClient()
+{
+  m_rememberCheck->setChecked(m_client->rememberMe());
+  refreshAccountCombo(m_client->credentials().login);
+
+  const int index = m_loginCombo->currentIndex();
+  if (index >= 0 && m_loginCombo->count() > 0) {
+    applyCredentials(accountAt(index));
+  } else {
+    applyCredentials(m_client->credentials());
+  }
 
   m_advancedBtn->setChecked(false);
   toggleAdvanced(false);
 }
 
-void LoginDialog::onAccepted()
+itl::LoginCredentials LoginDialog::credentialsFromForm() const
 {
   itl::LoginCredentials cred;
-  cred.login = m_loginEdit->text().trimmed();
+  cred.login = m_loginCombo->currentText().trimmed();
   cred.password = m_passwordEdit->text();
   cred.domain = m_domainEdit->text().trimmed();
   cred.authDomain = m_authDomainEdit->text().trimmed();
   cred.partner = m_partnerEdit->text().trimmed();
+  return cred;
+}
+
+void LoginDialog::onAccountActivated(int index)
+{
+  const itl::LoginCredentials account = accountAt(index);
+  if (account.login.isEmpty()) {
+    return;
+  }
+  applyCredentials(account);
+}
+
+void LoginDialog::onAccepted()
+{
+  itl::LoginCredentials cred = credentialsFromForm();
 
   // Пустые логин и пароль — вход в demo-режим (подсказки в полях не меняем).
   if (cred.login.isEmpty() && cred.password.isEmpty()) {
@@ -112,6 +190,9 @@ void LoginDialog::onAccepted()
     cred.domain = cred.login.section(QLatin1Char('@'), 1);
   }
 
+  const bool remember = m_rememberCheck->isChecked();
+  m_client->setRememberMe(remember);
   m_client->setCredentials(cred);
+  m_client->saveSettings();
   accept();
 }

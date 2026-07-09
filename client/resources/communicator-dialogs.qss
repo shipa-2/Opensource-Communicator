@@ -99,6 +99,39 @@ QDialog#loginDialog QLineEdit:focus {
     padding: 3px 7px;
 }
 
+QDialog#loginDialog QComboBox {
+    color: palette(text);
+    background: palette(base);
+    border: 1px solid palette(mid);
+    border-radius: 4px;
+    padding: 4px 8px;
+    min-height: 24px;
+}
+
+QDialog#loginDialog QComboBox:focus {
+    border: 2px solid palette(highlight);
+    padding: 3px 7px;
+}
+
+QDialog#loginDialog QComboBox::drop-down {
+    border: none;
+    width: 22px;
+}
+
+QDialog#loginDialog QComboBox QAbstractItemView {
+    color: palette(text);
+    background: palette(base);
+    selection-color: palette(highlightedText);
+    selection-background-color: palette(highlight);
+}
+
+QDialog#loginDialog QCheckBox {
+    color: palette(text);
+    spacing: 8px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
 QLabel#callAvatar {
     background: palette(midlight);
     border-radius: 36px;

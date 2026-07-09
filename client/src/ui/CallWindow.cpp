@@ -257,7 +257,11 @@ void CallWindow::updateState(const QString &state, const QString &detail)
       m_statusLabel->setText(tr("Разговор"));
       m_statusLabel->setObjectName(QStringLiteral("callStatusActive"));
       setMode(Mode::Active);
-      startTimer();
+      // Duration timer starts later, when remote audio actually arrives.
+      if (m_timerLabel) {
+        m_timerLabel->setText(tr("Соединение..."));
+        m_timerLabel->setVisible(true);
+      }
       if (!isVisible()) {
         show();
       }
@@ -276,6 +280,14 @@ void CallWindow::updateState(const QString &state, const QString &detail)
       || state == QStringLiteral("error")) {
     closeCall();
   }
+}
+
+void CallWindow::beginConversationTimer()
+{
+  if (m_durationTimer->isActive()) {
+    return;
+  }
+  startTimer();
 }
 
 void CallWindow::closeCall()

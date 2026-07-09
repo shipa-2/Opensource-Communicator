@@ -296,15 +296,47 @@ void CallManager::startAudio()
   if (!m_audio.isRunning()) {
     m_audio.start();
   }
-  startCallRecording();
+  // Recording and conversation timer start on first remote audio, not on SIP connect.
 }
 
 void CallManager::stopAudio()
 {
   stopCallRecording();
+  m_remoteAudioStartedLeg.clear();
   if (m_audio.isRunning()) {
     m_audio.stop();
   }
+}
+
+bool CallManager::isAudibleOpusFrame(const QByteArray &opus)
+{
+  // Comfort-noise / DTX Opus frames are typically ~20-35 bytes. Real speech is larger.
+  return opus.size() >= 40;
+}
+
+void CallManager::noteRemoteOpusFrame(const QString &leg, const QByteArray &opus)
+{
+  if (leg.isEmpty() || !m_calls.contains(leg) || !m_calls[leg].connected) {
+    return;
+  }
+  if (m_remoteAudioStartedLeg == leg) {
+    return;
+  }
+  if (!isAudibleOpusFrame(opus)) {
+    return;
+  }
+  onFirstRemoteAudio(leg);
+}
+
+void CallManager::onFirstRemoteAudio(const QString &leg)
+{
+  if (leg.isEmpty() || m_remoteAudioStartedLeg == leg) {
+    return;
+  }
+  m_remoteAudioStartedLeg = leg;
+  qCInfo(lcCall) << "Remote audio started for" << leg;
+  startCallRecording();
+  emit remoteAudioStarted(leg);
 }
 
 QString CallManager::contactNameForLeg(const QString &leg) const
@@ -399,6 +431,12 @@ void CallManager::setupAudioTrack(const QString &leg, const std::shared_ptr<rtc:
       if (!m_calls.contains(leg) || !m_calls[leg].connected) {
         return;
       }
+      static int recvCount = 0;
+      if ((recvCount++ % 50) == 0) {
+        qCInfo(lcCall) << "Receiving Opus frame" << payload.size() << "bytes on" << leg
+                       << "(#" << recvCount << ", via local track)";
+      }
+      noteRemoteOpusFrame(leg, payload);
       m_audio.decodeAndPlayOpus(payload);
     }, Qt::QueuedConnection);
   });
@@ -430,8 +468,9 @@ void CallManager::attachIncomingTrack(const QString &leg, const std::shared_ptr<
       static int recvCount = 0;
       if ((recvCount++ % 50) == 0) {
         qCInfo(lcCall) << "Receiving Opus frame" << payload.size() << "bytes on" << leg
-                       << "(#" << recvCount << ")";
+                       << "(#" << recvCount << ", via remote track)";
       }
+      noteRemoteOpusFrame(leg, payload);
       m_audio.decodeAndPlayOpus(payload);
     }, Qt::QueuedConnection);
   });
@@ -863,6 +902,9 @@ void CallManager::teardownCall(const QString &leg)
   m_peers.remove(leg);
   m_calls.remove(leg);
   m_recordingNames.remove(leg);
+  if (m_remoteAudioStartedLeg == leg) {
+    m_remoteAudioStartedLeg.clear();
+  }
   if (m_activeLeg == leg) {
     m_activeLeg.clear();
     stopAudio();

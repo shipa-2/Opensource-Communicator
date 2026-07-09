@@ -33,6 +33,7 @@ public:
     void handleResponse(int requestId, const QJsonObject &response);
 
     bool isSmsPeer(const QString &peer) const;
+    QString normalizedPeer(const QString &peer) const;
     int sendMessage(const QString &peer, const QString &text);
     void setDemoMode(bool enabled);
     void clearDemoMessages();
@@ -50,6 +51,7 @@ signals:
 private:
     InstantMessage parseMessage(const QJsonObject &msg) const;
     QString normalizePeer(QString peer) const;
+    bool storeMessage(const InstantMessage &im, bool replaceOptimisticOutgoing);
     static bool looksLikePhone(QString value);
     static bool isPhonePeer(QString peer);
     static QString phoneFromPeer(QString peer);

@@ -1,10 +1,14 @@
 #include "CommunicatorClient.h"
 
 #include "chat/ChatManager.h"
+#include "demo/DemoData.h"
 
 #include <QJsonArray>
+#include <QJsonObject>
 #include <QLoggingCategory>
 #include <QUrl>
+
+#include <algorithm>
 
 Q_LOGGING_CATEGORY(lcClient, "itl.client")
 
@@ -15,6 +19,8 @@ CommunicatorClient::CommunicatorClient(QObject *parent)
     , m_settings(QStringLiteral("opensource-communicator"), QStringLiteral("opensource-communicator"))
     , m_chat(new ChatManager(&m_api, this))
 {
+  qRegisterMetaType<itl::LoginCredentials>("itl::LoginCredentials");
+
   connect(&m_api, &WsApiClient::connectionEstablished, this, &CommunicatorClient::onConnectionEstablished);
   connect(&m_api, &WsApiClient::authResult, this, &CommunicatorClient::onAuthResult);
   connect(&m_api, &WsApiClient::serverPayload, this, &CommunicatorClient::onServerPayload);
@@ -24,31 +30,102 @@ CommunicatorClient::CommunicatorClient(QObject *parent)
 
   connect(m_chat, &ChatManager::messageReceived, this, [this](const InstantMessage &im) {
     if (!im.body.isEmpty()) {
-      emit chatMessage(im.peer, im.body, im.incoming);
+      emit chatMessage(im.peer, im.body, im.incoming, im.timestamp);
     }
   });
 }
 
 CommunicatorClient::~CommunicatorClient() = default;
 
+QString CommunicatorClient::accountKey(const LoginCredentials &credentials)
+{
+  const QString login = credentials.login.trimmed().toLower();
+  const QString domain = credentials.domain.trimmed().toLower();
+  if (domain.isEmpty()) {
+    return login;
+  }
+  if (login.contains(QLatin1Char('@'))) {
+    return login;
+  }
+  return login + QLatin1Char('@') + domain;
+}
+
+void CommunicatorClient::loadSavedAccounts()
+{
+  m_savedAccounts.clear();
+  const QJsonArray array = m_settings.value(QStringLiteral("savedAccounts")).toJsonArray();
+  for (const QJsonValue &value : array) {
+    const QJsonObject obj = value.toObject();
+    LoginCredentials account;
+    account.login = obj.value(QStringLiteral("login")).toString();
+    account.password = obj.value(QStringLiteral("password")).toString();
+    account.domain = obj.value(QStringLiteral("domain")).toString();
+    account.authDomain = obj.value(QStringLiteral("authDomain")).toString();
+    account.partner = obj.value(QStringLiteral("partner")).toString(QStringLiteral("megafon"));
+    if (account.login.isEmpty() || DemoData::isDemoCredentials(account.login, account.password)) {
+      continue;
+    }
+    m_savedAccounts.append(account);
+  }
+
+  // Migrate a single previously saved login into the account list.
+  if (m_savedAccounts.isEmpty() && !m_credentials.login.isEmpty()
+      && !DemoData::isDemoCredentials(m_credentials.login, m_credentials.password)) {
+    m_savedAccounts.append(m_credentials);
+  }
+}
+
+void CommunicatorClient::saveSavedAccounts()
+{
+  QJsonArray array;
+  for (const LoginCredentials &account : m_savedAccounts) {
+    if (DemoData::isDemoCredentials(account.login, account.password)) {
+      continue;
+    }
+    array.append(QJsonObject{
+        {QStringLiteral("login"), account.login},
+        {QStringLiteral("password"), account.password},
+        {QStringLiteral("domain"), account.domain},
+        {QStringLiteral("authDomain"), account.authDomain},
+        {QStringLiteral("partner"), account.partner},
+    });
+  }
+  m_settings.setValue(QStringLiteral("savedAccounts"), array);
+}
+
 void CommunicatorClient::loadSettings()
 {
+  m_rememberMe = m_settings.value(QStringLiteral("rememberMe"), true).toBool();
   m_credentials.login = m_settings.value(QStringLiteral("login")).toString();
   m_credentials.password = m_settings.value(QStringLiteral("password")).toString();
   m_credentials.domain = m_settings.value(QStringLiteral("domain")).toString();
   m_credentials.authDomain = m_settings.value(QStringLiteral("authDomain")).toString();
   m_credentials.partner = m_settings.value(QStringLiteral("partner"), QStringLiteral("megafon")).toString();
+  if (!m_rememberMe) {
+    m_credentials.password.clear();
+  }
+  loadSavedAccounts();
   m_appSettings.load(m_settings);
   m_appSettings.loadUserData(m_settings);
 }
 
 void CommunicatorClient::saveSettings()
 {
-  m_settings.setValue(QStringLiteral("login"), m_credentials.login);
-  m_settings.setValue(QStringLiteral("password"), m_credentials.password);
-  m_settings.setValue(QStringLiteral("domain"), m_credentials.domain);
-  m_settings.setValue(QStringLiteral("authDomain"), m_credentials.authDomain);
-  m_settings.setValue(QStringLiteral("partner"), m_credentials.partner);
+  m_settings.setValue(QStringLiteral("rememberMe"), m_rememberMe);
+  if (!m_rememberMe) {
+    m_settings.setValue(QStringLiteral("login"), QString());
+    m_settings.setValue(QStringLiteral("password"), QString());
+    m_settings.setValue(QStringLiteral("domain"), QString());
+    m_settings.setValue(QStringLiteral("authDomain"), QString());
+    m_settings.setValue(QStringLiteral("partner"), QStringLiteral("megafon"));
+  } else if (!DemoData::isDemoCredentials(m_credentials.login, m_credentials.password)) {
+    m_settings.setValue(QStringLiteral("login"), m_credentials.login);
+    m_settings.setValue(QStringLiteral("password"), m_credentials.password);
+    m_settings.setValue(QStringLiteral("domain"), m_credentials.domain);
+    m_settings.setValue(QStringLiteral("authDomain"), m_credentials.authDomain);
+    m_settings.setValue(QStringLiteral("partner"), m_credentials.partner);
+  }
+  saveSavedAccounts();
   m_appSettings.save(m_settings);
   m_appSettings.saveUserData();
 }
@@ -56,6 +133,44 @@ void CommunicatorClient::saveSettings()
 void CommunicatorClient::setCredentials(const LoginCredentials &credentials)
 {
   m_credentials = credentials;
+}
+
+void CommunicatorClient::setRememberMe(bool remember)
+{
+  m_rememberMe = remember;
+}
+
+void CommunicatorClient::rememberAccount(const LoginCredentials &credentials)
+{
+  if (credentials.login.trimmed().isEmpty()
+      || DemoData::isDemoCredentials(credentials.login, credentials.password)) {
+    return;
+  }
+
+  const QString key = accountKey(credentials);
+  for (int i = 0; i < m_savedAccounts.size(); ++i) {
+    if (accountKey(m_savedAccounts.at(i)) == key) {
+      m_savedAccounts[i] = credentials;
+      // Keep the most recently used account first.
+      m_savedAccounts.move(i, 0);
+      return;
+    }
+  }
+  m_savedAccounts.prepend(credentials);
+}
+
+void CommunicatorClient::removeSavedAccount(const QString &login)
+{
+  const QString needle = login.trimmed().toLower();
+  if (needle.isEmpty()) {
+    return;
+  }
+  m_savedAccounts.erase(std::remove_if(m_savedAccounts.begin(), m_savedAccounts.end(),
+                                       [&](const LoginCredentials &account) {
+                                         return accountKey(account) == needle
+                                             || account.login.trimmed().toLower() == needle;
+                                       }),
+                        m_savedAccounts.end());
 }
 
 QString CommunicatorClient::buildWebSocketUrl() const
@@ -157,6 +272,10 @@ void CommunicatorClient::onAuthResult(bool success, const QJsonObject &payload)
   }
 
   saveSettings();
+  if (m_rememberMe) {
+    rememberAccount(m_credentials);
+    saveSavedAccounts();
+  }
   m_chat->setDomain(m_credentials.domain);
   emit stateChanged(AppState::Online);
   emit statusMessage(tr("В сети"));

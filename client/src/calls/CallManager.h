@@ -67,6 +67,7 @@ public:
 signals:
     void callStateChanged(const QString &leg, const QString &state, const QString &detail);
     void callRecordingFinished(const QString &path);
+    void remoteAudioStarted(const QString &leg);
 
 public slots:
     void handleServerCallEvent(const QString &leg, const QString &what, const QJsonObject &payload);
@@ -97,7 +98,10 @@ private:
     void stopIncomingRing();
     void startCallRecording();
     void stopCallRecording();
+    void onFirstRemoteAudio(const QString &leg);
+    void noteRemoteOpusFrame(const QString &leg, const QByteArray &opus);
     QString contactNameForLeg(const QString &leg) const;
+    static bool isAudibleOpusFrame(const QByteArray &opus);
 
     WsApiClient *m_api = nullptr;
     AppSettings *m_settings = nullptr;
@@ -110,6 +114,7 @@ private:
     QHash<QString, QTimer *> m_publishTimers;
     QHash<QString, QString> m_recordingNames;
     QString m_activeLeg;
+    QString m_remoteAudioStartedLeg;
     mutable int m_outgoingLegCounter = 0;
 };
 

@@ -295,6 +295,7 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   connect(m_historyScopeGroup, &QButtonGroup::idClicked, this, &MainWindow::onHistoryScopeChanged);
   connect(m_historyPeriodBtn, &QPushButton::clicked, this, &MainWindow::onHistoryPeriodClicked);
   connect(m_historySearchEdit, &QLineEdit::textChanged, this, &MainWindow::onHistorySearchChanged);
+  connect(m_historyList, &QListWidget::itemClicked, this, &MainWindow::onHistoryItemActivated);
   connect(m_headerAvatar, &ProfileAvatarWidget::settingsChanged, this, &MainWindow::onProfileAvatarChanged);
 
   connect(m_callWindow, &CallWindow::hangupRequested, this, &MainWindow::onHangup);
@@ -311,6 +312,10 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   connect(m_calls, &itl::CallManager::callRecordingFinished, this, [this](const QString &path) {
     onStatusMessage(tr("Запись сохранена: %1").arg(path));
   });
+  connect(m_calls, &itl::CallManager::remoteAudioStarted, this, [this](const QString &leg) {
+    markCallConnected(leg);
+    m_callWindow->beginConversationTimer();
+  });
 
   m_client->loadSettings();
   mergeCustomContacts();
@@ -319,7 +324,7 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   updateHistoryButtonStyles();
   rebuildHistoryList();
   setOnlineUi(false);
-  QTimer::singleShot(0, this, &MainWindow::onLogin);
+  QTimer::singleShot(0, this, &MainWindow::startSession);
 }
 
 void MainWindow::refreshTheme()
@@ -1077,6 +1082,34 @@ void MainWindow::onNotesFromRow(const QString &peer)
   }
 }
 
+void MainWindow::onHistoryItemActivated(QListWidgetItem *item)
+{
+  if (!item || !(item->flags() & Qt::ItemIsEnabled)) {
+    return;
+  }
+
+  const QString peer = item->data(Qt::UserRole).toString();
+  if (peer.isEmpty()) {
+    return;
+  }
+
+  QString displayName = displayNameForPeer(peer);
+  if (displayName == peer.section(QLatin1Char('@'), 0, 0) || displayName == peer) {
+    // Prefer the name stored with the history entry when contact book has no RealName.
+    for (const itl::CallHistoryEntry &entry :
+         (m_demoMode ? m_demoCallHistory : m_client->appSettings().callHistory())) {
+      if (entry.peer == peer && !entry.displayName.isEmpty()) {
+        displayName = entry.displayName;
+        break;
+      }
+    }
+  }
+
+  NotePopupDialog dlg(peer, displayName, &m_client->appSettings(), this);
+  dlg.setShowCallAction(false);
+  dlg.exec();
+}
+
 void MainWindow::onDeleteContactFromRow(const QString &peer)
 {
   const ContactEntry entry = m_contacts.value(peer);
@@ -1140,17 +1173,27 @@ void MainWindow::onExportContactFromRow(const QString &peer)
   onStatusMessage(tr("Контакт экспортирован: %1").arg(path));
 }
 
-void MainWindow::onLogin()
+void MainWindow::startSession()
+{
+  m_client->loadSettings();
+
+  if (m_client->rememberMe()) {
+    const itl::LoginCredentials cred = m_client->credentials();
+    const bool hasAccount = !cred.login.trimmed().isEmpty() && !cred.password.isEmpty()
+        && !itl::DemoData::isDemoCredentials(cred.login, cred.password);
+    if (hasAccount) {
+      beginSessionWithCurrentCredentials();
+      return;
+    }
+  }
+
+  onLogin();
+}
+
+void MainWindow::beginSessionWithCurrentCredentials()
 {
   if (m_demoMode) {
     exitDemoInterface();
-  }
-
-  LoginDialog dlg(m_client, this);
-  m_client->loadSettings();
-  dlg.loadFromClient();
-  if (dlg.exec() != QDialog::Accepted) {
-    return;
   }
 
   m_contacts.clear();
@@ -1171,6 +1214,22 @@ void MainWindow::onLogin()
   }
 
   m_client->login();
+}
+
+void MainWindow::onLogin()
+{
+  if (m_demoMode) {
+    exitDemoInterface();
+  }
+
+  LoginDialog dlg(m_client, this);
+  m_client->loadSettings();
+  dlg.loadFromClient();
+  if (dlg.exec() != QDialog::Accepted) {
+    return;
+  }
+
+  beginSessionWithCurrentCredentials();
 }
 
 void MainWindow::enterDemoInterface()
@@ -1244,6 +1303,7 @@ void MainWindow::startDemoCallSimulation(const QString &peer, const QString &dis
       }
       m_callWindow->updateState(QStringLiteral("connected"), displayName);
       markCallConnected(m_demoCallLeg);
+      m_callWindow->beginConversationTimer();
     });
   });
 }
@@ -1490,7 +1550,7 @@ void MainWindow::onCallFromRow(const QString &peer)
 
 void MainWindow::onChatFromRow(const QString &peer)
 {
-  m_chatDialog->openForPeer(peer, displayNameForPeer(peer));
+  m_chatDialog->openForPeer(peer, displayNameForPeer(peer), m_selfName);
 }
 
 void MainWindow::onHangup()
@@ -1732,7 +1792,7 @@ void MainWindow::onCallStateChanged(const QString &leg, const QString &state, co
   if (state == QStringLiteral("connected")) {
     m_activeLeg = leg;
     m_activeIncomingLeg.clear();
-    markCallConnected(leg);
+    // Conversation duration / history "answered" start when remote audio arrives.
     m_callWindow->updateState(state, detail.isEmpty() ? displayNameForPeer(m_callWindow->peer()) : detail);
     return;
   }

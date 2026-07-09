@@ -3,6 +3,8 @@
 #include "WsApiClient.h"
 #include "settings/AppSettings.h"
 
+#include <QDateTime>
+#include <QList>
 #include <QObject>
 #include <QSettings>
 
@@ -15,6 +17,12 @@ struct LoginCredentials {
     QString authDomain;
     QString partner;
 };
+
+} // namespace itl
+
+Q_DECLARE_METATYPE(itl::LoginCredentials)
+
+namespace itl {
 
 class ChatManager;
 
@@ -36,6 +44,12 @@ public:
     LoginCredentials credentials() const { return m_credentials; }
     void setCredentials(const LoginCredentials &credentials);
 
+    bool rememberMe() const { return m_rememberMe; }
+    void setRememberMe(bool remember);
+    QList<LoginCredentials> savedAccounts() const { return m_savedAccounts; }
+    void rememberAccount(const LoginCredentials &credentials);
+    void removeSavedAccount(const QString &login);
+
     void login();
     void logout();
     void enterDemoMode();
@@ -47,7 +61,7 @@ public:
 signals:
     void stateChanged(itl::AppState state);
     void statusMessage(const QString &message);
-    void chatMessage(const QString &peer, const QString &text, bool incoming);
+    void chatMessage(const QString &peer, const QString &text, bool incoming, const QDateTime &timestamp);
     void contactUpdated(const QString &peer, const QString &name, const QString &presence);
     void callEvent(const QString &leg, const QString &what, const QJsonObject &payload);
 
@@ -61,13 +75,18 @@ private slots:
 
 private:
     void handlePresencePayload(const QJsonObject &payload);
+    void loadSavedAccounts();
+    void saveSavedAccounts();
+    static QString accountKey(const LoginCredentials &credentials);
 
     WsApiClient m_api;
     ChatManager *m_chat = nullptr;
     LoginCredentials m_credentials;
+    QList<LoginCredentials> m_savedAccounts;
     AppSettings m_appSettings;
     QSettings m_settings;
     bool m_demoMode = false;
+    bool m_rememberMe = true;
 };
 
 } // namespace itl

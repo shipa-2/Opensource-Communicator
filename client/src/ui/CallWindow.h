@@ -20,6 +20,7 @@ public:
     void showIncoming(const QString &peer, const QString &displayName, const QString &detail);
     void showActive(const QString &peer, const QString &displayName);
     void updateState(const QString &state, const QString &detail);
+    void beginConversationTimer();
     void closeCall();
     QString peer() const { return m_peer; }
     void setNotesText(const QString &text);

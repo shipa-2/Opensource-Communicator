@@ -41,6 +41,8 @@ public:
 private slots:
     void onLogin();
     void onLogout();
+    void startSession();
+    void beginSessionWithCurrentCredentials();
     void onSettings();
     void onHelp();
     void onAddContact();
@@ -51,6 +53,7 @@ private slots:
     void onCallFromRow(const QString &peer);
     void onChatFromRow(const QString &peer);
     void onNotesFromRow(const QString &peer);
+    void onHistoryItemActivated(QListWidgetItem *item);
     void onDeleteContactFromRow(const QString &peer);
     void onExportContactFromRow(const QString &peer);
     void onHangup();

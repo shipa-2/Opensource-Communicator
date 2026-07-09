@@ -110,9 +110,9 @@ void RecordingSettingsDialog::updatePreview()
   const QString example = itl::AppSettings::expandRecordingFilenameTemplate(
       m_filenameEdit->text(), tr("Иван Иванов"));
   if (m_dualTrackCheck->isChecked()) {
-    m_previewLabel->setText(tr("Пример: %1.wav, %1_manager.wav, %1_caller.wav").arg(example));
+    m_previewLabel->setText(tr("Пример: %1.mp3, %1_manager.mp3, %1_caller.mp3").arg(example));
   } else {
-    m_previewLabel->setText(tr("Пример: %1.wav").arg(example));
+    m_previewLabel->setText(tr("Пример: %1.mp3").arg(example));
   }
 }
 

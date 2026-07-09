@@ -5,6 +5,8 @@
 #include <QJsonArray>
 #include <QLoggingCategory>
 
+#include <algorithm>
+
 Q_LOGGING_CATEGORY(lcChat, "itl.chat")
 
 namespace itl {
@@ -86,6 +88,11 @@ bool ChatManager::isSmsPeer(const QString &peer) const
   return isPhonePeer(peer);
 }
 
+QString ChatManager::normalizedPeer(const QString &peer) const
+{
+  return normalizePeer(peer);
+}
+
 void ChatManager::loadSmsTelnums()
 {
   if (!m_api) {
@@ -144,12 +151,47 @@ InstantMessage ChatManager::parseMessage(const QJsonObject &msg) const
   }
 
   if (msg.contains(QStringLiteral("timestamp"))) {
-    im.timestamp = QDateTime::fromMSecsSinceEpoch(msg.value(QStringLiteral("timestamp")).toVariant().toLongLong());
+    qint64 raw = msg.value(QStringLiteral("timestamp")).toVariant().toLongLong();
+    // Protocol may send seconds or milliseconds since epoch.
+    if (raw > 0 && raw < 100000000000LL) {
+      raw *= 1000;
+    }
+    im.timestamp = QDateTime::fromMSecsSinceEpoch(raw);
   } else {
     im.timestamp = QDateTime::currentDateTime();
   }
 
   return im;
+}
+
+bool ChatManager::storeMessage(const InstantMessage &im, bool replaceOptimisticOutgoing)
+{
+  if (im.body.isEmpty() || im.peer.isEmpty()) {
+    return false;
+  }
+
+  auto &list = m_messages[im.peer];
+
+  if (!im.id.isEmpty() && im.id != QStringLiteral("0")) {
+    for (const InstantMessage &existing : list) {
+      if (existing.id == im.id) {
+        return false;
+      }
+    }
+  }
+
+  if (replaceOptimisticOutgoing && !im.incoming) {
+    for (int i = list.size() - 1; i >= 0; --i) {
+      InstantMessage &existing = list[i];
+      if (!existing.incoming && existing.id.isEmpty() && existing.body == im.body) {
+        existing = im;
+        return false;
+      }
+    }
+  }
+
+  list.append(im);
+  return true;
 }
 
 void ChatManager::handlePayload(const QJsonObject &payload)
@@ -168,7 +210,11 @@ void ChatManager::handlePayload(const QJsonObject &payload)
       return;
     }
 
-    m_messages[im.peer].append(im);
+    // Outgoing copyToSelf echoes the optimistic local insert — merge, don't re-emit.
+    if (!storeMessage(im, /*replaceOptimisticOutgoing=*/true)) {
+      return;
+    }
+
     if (im.incoming && !im.origId.isEmpty()) {
       m_unreadByPeer[im.peer].append(im.origId);
     }
@@ -183,15 +229,15 @@ void ChatManager::handlePayload(const QJsonObject &payload)
     }
 
     const QJsonArray messages = payload.value(QStringLiteral("messages")).toArray();
-    QString chatPeer = payload.value(QStringLiteral("chatId")).toString();
+    QString chatPeer = normalizePeer(payload.value(QStringLiteral("chatId")).toString());
     for (const auto &value : messages) {
       const InstantMessage im = parseMessage(value.toObject());
       if (im.body.isEmpty()) {
         continue;
       }
       chatPeer = im.peer;
-      m_messages[im.peer].append(im);
-      emit messageReceived(im);
+      // History is applied to the store only; UI reloads via historyLoaded.
+      storeMessage(im, /*replaceOptimisticOutgoing=*/true);
     }
     if (!chatPeer.isEmpty()) {
       emit historyLoaded(chatPeer);
@@ -314,7 +360,17 @@ void ChatManager::loadHistory(const QString &lastKnownId)
 
 QList<InstantMessage> ChatManager::messagesForPeer(const QString &peer) const
 {
-  return m_messages.value(normalizePeer(peer));
+  QList<InstantMessage> list = m_messages.value(normalizePeer(peer));
+  std::stable_sort(list.begin(), list.end(), [](const InstantMessage &a, const InstantMessage &b) {
+    if (a.timestamp.isValid() != b.timestamp.isValid()) {
+      return a.timestamp.isValid();
+    }
+    if (a.timestamp != b.timestamp) {
+      return a.timestamp < b.timestamp;
+    }
+    return a.id < b.id;
+  });
+  return list;
 }
 
 } // namespace itl
