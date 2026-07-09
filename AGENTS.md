@@ -245,7 +245,7 @@ sudo cmake --install build   # по умолчанию /opt/opensource-communica
 | Job | Платформа | Артефакты |
 |-----|-----------|-----------|
 | `windows-portable` | MSYS2 UCRT64, Qt 6.8, libdatachannel static | `windows-portable-Release` (без консоли), `windows-portable-Debug` (с консолью) |
-| `linux-build` | Ubuntu 24.04, системные Qt6 + `libdatachannel-dev` | `linux-build-Release`, `linux-build-Debug` (tar.gz от `install`) |
+| `linux-build` | Ubuntu 24.04, системные Qt6/opus/openssl, libdatachannel из исходников (нет в apt), кэш | `linux-build-Release`, `linux-build-Debug` (tar.gz от `install`) |
 
 - Триггер: push в `main`, `workflow_dispatch` или тег `v*`.
 - Job `release` (только на тег `v*`) прикрепляет к GitHub Release **только Release**-артефакты (pattern `*-Release`).

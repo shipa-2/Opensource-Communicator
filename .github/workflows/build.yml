@@ -115,6 +115,7 @@ jobs:
         build_type: [Release, Debug]
     env:
       BUILD_TYPE: ${{ matrix.build_type }}
+      PREFIX: /tmp/osc-deps
     steps:
       - uses: actions/checkout@v4
 
@@ -122,6 +123,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
+          # libdatachannel is not packaged in Ubuntu 24.04, it is built from source below.
           sudo apt-get install -y --no-install-recommends \
             build-essential \
             cmake \
@@ -132,14 +134,41 @@ jobs:
             qt6-multimedia-dev \
             libgl1-mesa-dev \
             libssl-dev \
-            libopus-dev \
-            libdatachannel-dev
+            libopus-dev
+
+      - name: Cache libdatachannel
+        id: cache-libdatachannel
+        uses: actions/cache@v4
+        with:
+          path: /tmp/osc-deps
+          key: linux-libdatachannel-${{ env.LIBDATACHANNEL_VERSION }}
+
+      - name: Build libdatachannel
+        if: steps.cache-libdatachannel.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/libdatachannel "$PREFIX"
+          git clone --branch "$LIBDATACHANNEL_VERSION" --recurse-submodules \
+            https://github.com/paullouisageneau/libdatachannel.git /tmp/libdatachannel
+          cmake -S /tmp/libdatachannel -B /tmp/libdatachannel/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DENABLE_WARNINGS_AS_ERRORS=OFF \
+            -DUSE_GNUTLS=OFF \
+            -DUSE_MBEDTLS=OFF \
+            -DUSE_NICE=OFF \
+            -DNO_EXAMPLES=ON \
+            -DNO_TESTS=ON
+          cmake --build /tmp/libdatachannel/build
+          cmake --install /tmp/libdatachannel/build
 
       - name: Build application
         run: |
           set -euo pipefail
           cmake -S client -B client/build-linux -G Ninja \
             -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+            -DCMAKE_PREFIX_PATH="$PREFIX" \
             -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/dist/AppDir/usr"
           cmake --build client/build-linux -j"$(nproc)"
 
