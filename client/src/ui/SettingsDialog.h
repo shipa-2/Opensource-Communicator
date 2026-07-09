@@ -22,6 +22,7 @@ private slots:
     void onBrowseRingback();
     void onBrowseIncoming();
     void onAccountSettings();
+    void onRecordingSettings();
     void onAccept();
     void onPreviewRingback();
     void onPreviewIncoming();

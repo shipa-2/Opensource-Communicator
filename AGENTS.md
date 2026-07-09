@@ -16,7 +16,7 @@
 Логотип (роликовый спортсмен) — намеренно **не** пародия на бренд «Мегафон».
 
 Репозиторий: `https://github.com/shipa-2/Opensource-Communicator`  
-Версия приложения: **0.1.0** (`client/CMakeLists.txt`, `main.cpp`).
+Версия приложения: **0.2.0** (`client/CMakeLists.txt`, `main.cpp`).
 
 ---
 

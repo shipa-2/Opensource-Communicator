@@ -1,5 +1,6 @@
 #include "SettingsDialog.h"
 
+#include "RecordingSettingsDialog.h"
 #include "audio/AudioDeviceUtils.h"
 #include "audio/IncomingRingPlayer.h"
 #include "audio/RingbackPlayer.h"
@@ -98,8 +99,12 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
 
   layout->addWidget(audioGroup);
 
+  auto *accountRow = new QHBoxLayout;
   auto *accountBtn = new QPushButton(tr("Учётная запись..."));
-  layout->addWidget(accountBtn);
+  auto *recordingBtn = new QPushButton(tr("Запись разговора..."));
+  accountRow->addWidget(accountBtn);
+  accountRow->addWidget(recordingBtn);
+  layout->addLayout(accountRow);
 
   QPushButton *cancel = nullptr;
   QPushButton *ok = nullptr;
@@ -108,6 +113,7 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
   connect(cancel, &QPushButton::clicked, this, &QDialog::reject);
   connect(ok, &QPushButton::clicked, this, &SettingsDialog::onAccept);
   connect(accountBtn, &QPushButton::clicked, this, &SettingsDialog::onAccountSettings);
+  connect(recordingBtn, &QPushButton::clicked, this, &SettingsDialog::onRecordingSettings);
   connect(m_ringbackBrowse, &QPushButton::clicked, this, &SettingsDialog::onBrowseRingback);
   connect(m_incomingBrowse, &QPushButton::clicked, this, &SettingsDialog::onBrowseIncoming);
   connect(m_ringbackPreviewBtn, &QPushButton::clicked, this, &SettingsDialog::onPreviewRingback);
@@ -274,6 +280,12 @@ void SettingsDialog::onBrowseIncoming()
 void SettingsDialog::onAccountSettings()
 {
   done(2);
+}
+
+void SettingsDialog::onRecordingSettings()
+{
+  RecordingSettingsDialog dlg(m_client, this);
+  dlg.exec();
 }
 
 void SettingsDialog::onAccept()

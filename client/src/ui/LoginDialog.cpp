@@ -39,7 +39,7 @@ LoginDialog::LoginDialog(itl::CommunicatorClient *client, QWidget *parent)
   form->addRow(tr("Пароль"), m_passwordEdit);
   layout->addLayout(form);
 
-  m_advancedBtn = new QPushButton(tr("Расширенные ▾"));
+  m_advancedBtn = new QPushButton(tr("Расширенные"));
   m_advancedBtn->setFlat(true);
   m_advancedBtn->setCheckable(true);
   layout->addWidget(m_advancedBtn, 0, Qt::AlignLeft);
@@ -72,7 +72,7 @@ LoginDialog::LoginDialog(itl::CommunicatorClient *client, QWidget *parent)
 void LoginDialog::toggleAdvanced(bool expanded)
 {
   m_advancedPanel->setVisible(expanded);
-  m_advancedBtn->setText(expanded ? tr("Расширенные ▴") : tr("Расширенные ▾"));
+  m_advancedBtn->setText(tr("Расширенные"));
   adjustSize();
 }
 
@@ -97,6 +97,12 @@ void LoginDialog::onAccepted()
   cred.domain = m_domainEdit->text().trimmed();
   cred.authDomain = m_authDomainEdit->text().trimmed();
   cred.partner = m_partnerEdit->text().trimmed();
+
+  // Пустые логин и пароль — вход в demo-режим (подсказки в полях не меняем).
+  if (cred.login.isEmpty() && cred.password.isEmpty()) {
+    cred.login = QStringLiteral("demo");
+    cred.password = QStringLiteral("demo");
+  }
 
   if (cred.partner.isEmpty()) {
     cred.partner = QStringLiteral("megafon");

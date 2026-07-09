@@ -33,6 +33,8 @@ public:
 
 signals:
     void opusFrameReady(const QByteArray &opus);
+    void localPcmFrameReady(const QByteArray &pcm);
+    void remotePcmFrameReady(const QByteArray &pcm);
     void errorOccurred(const QString &message);
 
 private:

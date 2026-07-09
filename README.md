@@ -48,14 +48,19 @@
 
 ![Настройки звука](screenshots/settings.png)
 
-## Возможности (v0.1)
+## Возможности (v0.2)
 
 - WebSocket-протокол ITooLabs (seq/ack, login, Bind, BindIM)
-- Контакты домена и presence
+- Контакты домена и presence, локальные контакты, импорт/экспорт CSV и vCard
 - Чат (через BindIM + SMS API)
-- Звонки: сигнализация + WebRTC через libdatachannel
+- Звонки: сигнализация + WebRTC через libdatachannel, удержание, слепой перевод
+- Запись разговоров в WAV (одна или две дорожки)
+- История звонков с фильтрами и поиском
+- Конференция с выбором собеседников и слушателей
 - Демо-режим (`demo` / `demo`) без подключения к серверу
 - Без телеметрии Amplitude/Sentry
+
+Полный список изменений: [CHANGELOG.md](CHANGELOG.md).
 
 ## Установка (Arch Linux / AUR)
 
@@ -68,17 +73,16 @@ yay -S opensource-communicator-git
 
 ## Установка (Windows)
 
-Portable ZIP для Windows собирается в **GitHub Actions**:
+Portable ZIP для Windows и tar.gz для Linux публикуются в [GitHub Releases](https://github.com/shipa-2/Opensource-Communicator/releases):
 
-1. [Actions → Build releases](https://github.com/shipa-2/Opensource-Communicator/actions/workflows/build.yml)
-2. **Run workflow** → ветка `main`
-3. Скачайте артефакт `windows-portable-Release`
+1. Откройте страницу релиза (например, [v0.2.0](https://github.com/shipa-2/Opensource-Communicator/releases/latest))
+2. Скачайте `OpenSource-Communicator-*-win64.zip` (Windows) или `OpenSource-Communicator-*-linux-x86_64.tar.gz` (Linux)
 
-Распакуйте ZIP в любую папку и запустите `opensource-communicator.exe`. Установщик (MSI) не нужен.
+Распакуйте архив в любую папку и запустите `opensource-communicator` / `opensource-communicator.exe`. Установщик (MSI) не нужен.
 
-Для отладки есть артефакт `windows-portable-Debug` — та же сборка, но с окном консоли и полными логами протокола/звонков.
+Для отладки в [Actions](https://github.com/shipa-2/Opensource-Communicator/actions/workflows/build.yml) доступны артефакты `*-Debug` — сборка с окном консоли и полными логами протокола/звонков.
 
-При push тега `v*` создаётся [GitHub Release](https://github.com/shipa-2/Opensource-Communicator/releases) с ZIP для Windows и tar.gz для Linux.
+При push тега `v*` CI автоматически создаёт GitHub Release и прикрепляет **Release**-артефакты (Windows ZIP и Linux tar.gz).
 
 ## Сборка (Linux)
 

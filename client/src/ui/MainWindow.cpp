@@ -21,13 +21,20 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMenuBar>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QButtonGroup>
 #include <QAbstractButton>
 #include <QDialog>
+#include <QFile>
+#include <QFileDialog>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QMenu>
+#include <QMessageBox>
 #include <QTabWidget>
+#include <QTextStream>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QDateTime>
@@ -74,7 +81,26 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   setWindowTitle(tr("OpenSource Communicator"));
   setFixedWidth(390);
   resize(390, 620);
-  setMenuBar(nullptr);
+
+  auto *menuBar = new QMenuBar(this);
+  menuBar->setObjectName(QStringLiteral("windowMenuBar"));
+  menuBar->setNativeMenuBar(false);
+  auto *headerLinks = new QWidget(menuBar);
+  auto *linksRow = new QHBoxLayout(headerLinks);
+  linksRow->setContentsMargins(0, 0, 4, 0);
+  linksRow->setSpacing(8);
+  auto *settingsBtn = new QPushButton(tr("Настройки"), headerLinks);
+  settingsBtn->setObjectName(QStringLiteral("linkButton"));
+  settingsBtn->setFlat(true);
+  settingsBtn->setCursor(Qt::PointingHandCursor);
+  auto *helpBtn = new QPushButton(tr("Помощь"), headerLinks);
+  helpBtn->setObjectName(QStringLiteral("linkButton"));
+  helpBtn->setFlat(true);
+  helpBtn->setCursor(Qt::PointingHandCursor);
+  linksRow->addWidget(settingsBtn);
+  linksRow->addWidget(helpBtn);
+  menuBar->setCornerWidget(headerLinks, Qt::TopLeftCorner);
+  setMenuBar(menuBar);
 
   auto *central = new QWidget;
   setCentralWidget(central);
@@ -86,16 +112,6 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   header->setObjectName(QStringLiteral("mainHeader"));
   auto *headerOuter = new QVBoxLayout(header);
   headerOuter->setContentsMargins(10, 8, 10, 8);
-
-  auto *linksRow = new QHBoxLayout;
-  linksRow->addStretch();
-  auto *settingsBtn = new QPushButton(tr("Настройки..."));
-  settingsBtn->setObjectName(QStringLiteral("linkButton"));
-  auto *helpBtn = new QPushButton(tr("Помощь"));
-  helpBtn->setObjectName(QStringLiteral("linkButton"));
-  linksRow->addWidget(settingsBtn);
-  linksRow->addWidget(helpBtn);
-  headerOuter->addLayout(linksRow);
 
   auto *profileRow = new QHBoxLayout;
   m_headerAvatar = new ProfileAvatarWidget(&m_client->appSettings());
@@ -179,23 +195,86 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   auto *historyPage = new QWidget;
   auto *historyLayout = new QVBoxLayout(historyPage);
   historyLayout->setContentsMargins(8, 8, 8, 8);
-  historyLayout->setSpacing(0);
+  historyLayout->setSpacing(6);
+
+  auto *periodRow = new QHBoxLayout;
+  periodRow->addWidget(new QLabel(tr("Показать за")));
+  m_historyPeriodBtn = new QPushButton;
+  m_historyPeriodBtn->setObjectName(QStringLiteral("linkButton"));
+  m_historyPeriodBtn->setFlat(true);
+  m_historyPeriodBtn->setCursor(Qt::PointingHandCursor);
+  applyLinkButtonStyle(m_historyPeriodBtn);
+  periodRow->addWidget(m_historyPeriodBtn);
+  periodRow->addStretch();
+  historyLayout->addLayout(periodRow);
+
+  auto *historyFilterRow = new QHBoxLayout;
+  m_historyDirGroup = new QButtonGroup(this);
+  const struct {
+    const char *label;
+    HistoryDir mode;
+  } dirButtons[] = {
+      {QT_TR_NOOP("Все"), HistoryDir::All},
+      {QT_TR_NOOP("Входящие"), HistoryDir::Incoming},
+      {QT_TR_NOOP("Неотвеченные"), HistoryDir::Missed},
+      {QT_TR_NOOP("Исходящие"), HistoryDir::Outgoing},
+  };
+  for (const auto &def : dirButtons) {
+    auto *btn = new QPushButton(tr(def.label));
+    btn->setObjectName(QStringLiteral("filterBtn"));
+    btn->setCheckable(true);
+    btn->setChecked(def.mode == HistoryDir::All);
+    m_historyDirGroup->addButton(btn, static_cast<int>(def.mode));
+    historyFilterRow->addWidget(btn, 1);
+  }
+  historyLayout->addLayout(historyFilterRow);
+
+  m_historySearchEdit = new QLineEdit;
+  m_historySearchEdit->setObjectName(QStringLiteral("searchEdit"));
+  m_historySearchEdit->setPlaceholderText(tr("Поиск в истории звонков"));
+  m_historySearchEdit->setClearButtonEnabled(true);
+  historyLayout->addWidget(m_historySearchEdit);
 
   m_historyList = new QListWidget;
   m_historyList->setObjectName(QStringLiteral("historyList"));
   m_historyList->setFrameShape(QFrame::NoFrame);
   applyHistoryListPalette(m_historyList, palette());
   historyLayout->addWidget(m_historyList, 1);
+
+  auto *historyScopeRow = new QHBoxLayout;
+  m_historyScopeGroup = new QButtonGroup(this);
+  const struct {
+    const char *label;
+    HistoryScope mode;
+  } scopeButtons[] = {
+      {QT_TR_NOOP("Мои звонки"), HistoryScope::Mine},
+      {QT_TR_NOOP("Звонки компании"), HistoryScope::Company},
+      {QT_TR_NOOP("Внутренние звонки"), HistoryScope::Internal},
+  };
+  for (const auto &def : scopeButtons) {
+    auto *btn = new QPushButton(tr(def.label));
+    btn->setObjectName(QStringLiteral("filterBtn"));
+    btn->setCheckable(true);
+    btn->setChecked(def.mode == HistoryScope::Mine);
+    m_historyScopeGroup->addButton(btn, static_cast<int>(def.mode));
+    historyScopeRow->addWidget(btn, 1);
+  }
+  historyLayout->addLayout(historyScopeRow);
+
   m_tabs->addTab(historyPage, tr("История"));
 
   auto *footer = new QWidget;
   footer->setObjectName(QStringLiteral("mainFooter"));
   auto *footerLayout = new QHBoxLayout(footer);
-  auto *addBtn = new QPushButton(tr("+ Добавить..."));
+  auto *addBtn = new QPushButton(tr("Добавить"));
   addBtn->setObjectName(QStringLiteral("footerBtn"));
-  auto *confBtn = new QPushButton(tr("📞 Конференция"));
+  auto *addMenu = new QMenu(addBtn);
+  addMenu->addAction(tr("Контакт..."), this, &MainWindow::onAddContact);
+  addMenu->addAction(tr("Импорт..."), this, &MainWindow::onImportContacts);
+  addBtn->setMenu(addMenu);
+  auto *confBtn = new QPushButton(tr("Конференция"));
   confBtn->setObjectName(QStringLiteral("footerBtn"));
-  auto *viewBtn = new QPushButton(tr("Вид ▾"));
+  auto *viewBtn = new QPushButton(tr("Вид"));
   viewBtn->setObjectName(QStringLiteral("footerBtn"));
   footerLayout->addWidget(addBtn);
   footerLayout->addWidget(confBtn);
@@ -204,14 +283,18 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
 
   connect(settingsBtn, &QPushButton::clicked, this, &MainWindow::onSettings);
   connect(helpBtn, &QPushButton::clicked, this, &MainWindow::onHelp);
-  connect(addBtn, &QPushButton::clicked, this, &MainWindow::onAddContact);
   connect(confBtn, &QPushButton::clicked, this, &MainWindow::onConference);
+  connect(viewBtn, &QPushButton::clicked, this, &MainWindow::onViewMenu);
   connect(m_dialCallBtn, &QPushButton::clicked, this, &MainWindow::onDial);
   connect(m_dialInput, &QLineEdit::returnPressed, this, &MainWindow::onDial);
   connect(m_searchEdit, &QLineEdit::textChanged, this, &MainWindow::onSearchChanged);
   connect(m_contactsList, &QListWidget::currentItemChanged, this, [this]() { onContactSelected(); });
   connect(m_presenceSelector, &PresenceSelector::currentIndexChanged, this, &MainWindow::onPresenceChanged);
   connect(m_filterGroup, &QButtonGroup::idClicked, this, &MainWindow::onFilterChanged);
+  connect(m_historyDirGroup, &QButtonGroup::idClicked, this, &MainWindow::onHistoryDirChanged);
+  connect(m_historyScopeGroup, &QButtonGroup::idClicked, this, &MainWindow::onHistoryScopeChanged);
+  connect(m_historyPeriodBtn, &QPushButton::clicked, this, &MainWindow::onHistoryPeriodClicked);
+  connect(m_historySearchEdit, &QLineEdit::textChanged, this, &MainWindow::onHistorySearchChanged);
   connect(m_headerAvatar, &ProfileAvatarWidget::settingsChanged, this, &MainWindow::onProfileAvatarChanged);
 
   connect(m_callWindow, &CallWindow::hangupRequested, this, &MainWindow::onHangup);
@@ -225,10 +308,15 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   connect(m_client, &itl::CommunicatorClient::callEvent, this, &MainWindow::onCallEvent);
   connect(m_client->api(), &itl::WsApiClient::domainContactsLoaded, this, &MainWindow::onContactsLoaded);
   connect(m_calls, &itl::CallManager::callStateChanged, this, &MainWindow::onCallStateChanged);
+  connect(m_calls, &itl::CallManager::callRecordingFinished, this, [this](const QString &path) {
+    onStatusMessage(tr("Запись сохранена: %1").arg(path));
+  });
 
   m_client->loadSettings();
   mergeCustomContacts();
   updateSelfHeader();
+  updateHistoryPeriodLabel();
+  updateHistoryButtonStyles();
   rebuildHistoryList();
   setOnlineUi(false);
   QTimer::singleShot(0, this, &MainWindow::onLogin);
@@ -267,6 +355,10 @@ void MainWindow::refreshTheme()
   }
 
   updateFilterButtonStyles();
+  updateHistoryButtonStyles();
+  for (QPushButton *linkBtn : findChildren<QPushButton *>(QStringLiteral("linkButton"))) {
+    applyLinkButtonStyle(linkBtn);
+  }
   update();
 }
 
@@ -329,6 +421,35 @@ QString MainWindow::detailForPeer(const QString &peer) const
 {
   const QString ext = m_contacts.value(peer).ext;
   return ext.isEmpty() ? peer : tr("%1 (Внутренний номер)").arg(ext);
+}
+
+QString MainWindow::recordingNameForPeer(const QString &peer, const QString &fallbackDisplayName) const
+{
+  const QString resolved = resolvePeer(peer);
+  const ContactEntry entry = m_contacts.value(resolved.isEmpty() ? peer : resolved);
+
+  if (!entry.name.isEmpty()) {
+    return entry.name;
+  }
+  if (!fallbackDisplayName.isEmpty() && !fallbackDisplayName.contains(QLatin1Char('@'))) {
+    return fallbackDisplayName;
+  }
+
+  if (!entry.ext.isEmpty()) {
+    return entry.ext;
+  }
+  if (!entry.phone.isEmpty()) {
+    return entry.phone;
+  }
+  if (!entry.personalPhone.isEmpty()) {
+    return entry.personalPhone;
+  }
+
+  const QString target = resolved.isEmpty() ? peer : resolved;
+  if (!target.contains(QLatin1Char('@'))) {
+    return target;
+  }
+  return target.section(QLatin1Char('@'), 0, 0);
 }
 
 bool MainWindow::matchesFilterMode(const QString &peer) const
@@ -413,7 +534,12 @@ void MainWindow::rebuildContactList()
 void MainWindow::addOrUpdateContactRow(const QString &peer)
 {
   const ContactEntry entry = m_contacts.value(peer);
-  auto *row = new ContactRowWidget(peer, entry.name, entry.ext, entry.phone, entry.presence, entry.isSelf);
+  auto *row = new ContactRowWidget(peer, entry.name, entry.ext, entry.phone, entry.presence, entry.isSelf,
+                                  entry.isCustom);
+  if (!entry.isSelf) {
+    row->setCallNumbers(callNumbersForPeer(peer));
+  }
+  row->setChatButtonVisible(m_client->appSettings().showChatButtons());
   auto *item = new QListWidgetItem;
   item->setData(Qt::UserRole, peer);
   item->setSizeHint(QSize(0, entry.ext.isEmpty() && entry.phone.isEmpty() ? 48 : 56));
@@ -421,8 +547,32 @@ void MainWindow::addOrUpdateContactRow(const QString &peer)
   m_contactsList->setItemWidget(item, row);
   m_contactItems.insert(peer, item);
   connect(row, &ContactRowWidget::callRequested, this, &MainWindow::onCallFromRow);
+  connect(row, &ContactRowWidget::callNumberRequested, this, [this](const QString &number) {
+    const QString target = resolvePeer(number);
+    if (!target.isEmpty()) {
+      onCallFromRow(target);
+    }
+  });
   connect(row, &ContactRowWidget::chatRequested, this, &MainWindow::onChatFromRow);
   connect(row, &ContactRowWidget::notesRequested, this, &MainWindow::onNotesFromRow);
+  connect(row, &ContactRowWidget::deleteRequested, this, &MainWindow::onDeleteContactFromRow);
+  connect(row, &ContactRowWidget::exportRequested, this, &MainWindow::onExportContactFromRow);
+}
+
+QVector<ContactRowWidget::CallNumber> MainWindow::callNumbersForPeer(const QString &peer) const
+{
+  const ContactEntry entry = m_contacts.value(peer);
+  QVector<ContactRowWidget::CallNumber> numbers;
+  if (!entry.ext.isEmpty()) {
+    numbers.append({tr("Внутренний номер"), entry.ext});
+  }
+  if (!entry.phone.isEmpty()) {
+    numbers.append({tr("Мобильный номер"), entry.phone});
+  }
+  if (!entry.personalPhone.isEmpty() && entry.personalPhone != entry.phone) {
+    numbers.append({tr("Личный мобильный"), entry.personalPhone});
+  }
+  return numbers;
 }
 
 void MainWindow::updateSelfHeader()
@@ -522,42 +672,318 @@ QString MainWindow::formatHistoryTime(qint64 ms)
   return QDateTime::fromMSecsSinceEpoch(ms).toString(QStringLiteral("dd.MM.yy HH:mm"));
 }
 
+QString MainWindow::formatHistoryWhen(qint64 ms)
+{
+  if (ms <= 0) {
+    return {};
+  }
+  const QDateTime dt = QDateTime::fromMSecsSinceEpoch(ms);
+  const QDate today = QDate::currentDate();
+  const QString time = dt.toString(QStringLiteral("HH:mm"));
+  if (dt.date() == today) {
+    return tr("сегодня, %1").arg(time);
+  }
+  if (dt.date() == today.addDays(-1)) {
+    return tr("вчера, %1").arg(time);
+  }
+  return dt.toString(QStringLiteral("dd.MM.yy, HH:mm"));
+}
+
+void MainWindow::onHistoryDirChanged(int id)
+{
+  m_historyDir = static_cast<HistoryDir>(id);
+  updateHistoryButtonStyles();
+  rebuildHistoryList();
+}
+
+void MainWindow::onHistoryScopeChanged(int id)
+{
+  m_historyScope = static_cast<HistoryScope>(id);
+  updateHistoryButtonStyles();
+  rebuildHistoryList();
+}
+
+void MainWindow::onHistorySearchChanged(const QString &text)
+{
+  m_historySearch = text.trimmed();
+  rebuildHistoryList();
+}
+
+void MainWindow::applyLinkButtonStyle(QPushButton *button) const
+{
+  if (!button) {
+    return;
+  }
+  QPalette pal = QApplication::palette(button);
+  pal.setColor(QPalette::Button, Qt::transparent);
+  pal.setColor(QPalette::ButtonText, pal.color(QPalette::Link));
+  button->setPalette(pal);
+  button->setStyleSheet({});
+  button->style()->unpolish(button);
+  button->style()->polish(button);
+}
+
+void MainWindow::onHistoryPeriodClicked()
+{
+  QMenu menu(this);
+  const struct {
+    const char *label;
+    HistoryPeriod period;
+  } items[] = {
+      {QT_TR_NOOP("сегодня"), HistoryPeriod::Today},
+      {QT_TR_NOOP("текущую неделю"), HistoryPeriod::Week},
+      {QT_TR_NOOP("текущий месяц"), HistoryPeriod::Month},
+      {QT_TR_NOOP("всё время"), HistoryPeriod::AllTime},
+  };
+  for (const auto &item : items) {
+    QAction *action = menu.addAction(tr(item.label));
+    QFont font = action->font();
+    font.setBold(item.period == m_historyPeriod);
+    action->setFont(font);
+    const HistoryPeriod period = item.period;
+    connect(action, &QAction::triggered, this, [this, period]() {
+      m_historyPeriod = period;
+      updateHistoryPeriodLabel();
+      rebuildHistoryList();
+    });
+  }
+  menu.exec(m_historyPeriodBtn->mapToGlobal(QPoint(0, m_historyPeriodBtn->height())));
+}
+
+void MainWindow::updateHistoryPeriodLabel()
+{
+  if (!m_historyPeriodBtn) {
+    return;
+  }
+  QString text;
+  switch (m_historyPeriod) {
+  case HistoryPeriod::Today:
+    text = tr("сегодня");
+    break;
+  case HistoryPeriod::Week:
+    text = tr("текущую неделю");
+    break;
+  case HistoryPeriod::Month:
+    text = tr("текущий месяц");
+    break;
+  case HistoryPeriod::AllTime:
+    text = tr("всё время");
+    break;
+  }
+  m_historyPeriodBtn->setText(text);
+  applyLinkButtonStyle(m_historyPeriodBtn);
+}
+
+bool MainWindow::historyEntryMatches(const itl::CallHistoryEntry &entry) const
+{
+  const bool incoming = entry.direction == QStringLiteral("incoming");
+  switch (m_historyDir) {
+  case HistoryDir::All:
+    break;
+  case HistoryDir::Incoming:
+    if (!incoming) {
+      return false;
+    }
+    break;
+  case HistoryDir::Outgoing:
+    if (incoming) {
+      return false;
+    }
+    break;
+  case HistoryDir::Missed:
+    if (!(incoming && !entry.answered)) {
+      return false;
+    }
+    break;
+  }
+
+  const QString domain = m_client->credentials().domain;
+  const bool internal = !domain.isEmpty() && entry.peer.endsWith(QLatin1Char('@') + domain);
+  switch (m_historyScope) {
+  case HistoryScope::Mine:
+  case HistoryScope::Company:
+    break;
+  case HistoryScope::Internal:
+    if (!internal) {
+      return false;
+    }
+    break;
+  }
+
+  const QDateTime now = QDateTime::currentDateTime();
+  const QDateTime started = QDateTime::fromMSecsSinceEpoch(entry.startedAtMs);
+  switch (m_historyPeriod) {
+  case HistoryPeriod::Today:
+    if (started.date() != now.date()) {
+      return false;
+    }
+    break;
+  case HistoryPeriod::Week: {
+    QDate weekStart = now.date().addDays(-(now.date().dayOfWeek() - 1));
+    if (started.date() < weekStart) {
+      return false;
+    }
+    break;
+  }
+  case HistoryPeriod::Month:
+    if (started.date().year() != now.date().year()
+        || started.date().month() != now.date().month()) {
+      return false;
+    }
+    break;
+  case HistoryPeriod::AllTime:
+    break;
+  }
+
+  if (!m_historySearch.isEmpty()) {
+    const QString name = entry.displayName.isEmpty() ? entry.peer : entry.displayName;
+    if (!name.contains(m_historySearch, Qt::CaseInsensitive)
+        && !entry.peer.contains(m_historySearch, Qt::CaseInsensitive)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 void MainWindow::rebuildHistoryList()
 {
   m_historyList->clear();
   const QList<itl::CallHistoryEntry> history =
       m_demoMode ? m_demoCallHistory : m_client->appSettings().callHistory();
-  if (history.isEmpty()) {
-    auto *placeholder = new QListWidgetItem(tr("История звонков пуста"));
-    placeholder->setFlags(Qt::NoItemFlags);
-    m_historyList->addItem(placeholder);
-    return;
-  }
 
+  int shown = 0;
   for (const itl::CallHistoryEntry &entry : history) {
-    const QString arrow = entry.direction == QStringLiteral("incoming") ? QStringLiteral("↓") : QStringLiteral("↑");
+    if (!historyEntryMatches(entry)) {
+      continue;
+    }
+    ++shown;
+
+    const bool incoming = entry.direction == QStringLiteral("incoming");
+    const bool missed = incoming && !entry.answered;
+    const QString arrow = incoming ? QStringLiteral("↙") : QStringLiteral("↗");
+    QString arrowColor;
+    if (missed) {
+      arrowColor = QStringLiteral("#c0392b");
+    } else if (incoming) {
+      arrowColor = QStringLiteral("#27ae60");
+    } else {
+      arrowColor = QStringLiteral("#2b7bd6");
+    }
+
+    // Время ожидания ответа (гудки).
+    qint64 waitMs = 0;
+    if (entry.answered && entry.connectedAtMs > 0) {
+      waitMs = entry.connectedAtMs - entry.startedAtMs;
+    } else if (entry.endedAtMs > 0) {
+      waitMs = entry.endedAtMs - entry.startedAtMs;
+    }
+    const int waitSec = waitMs > 0 ? static_cast<int>((waitMs + 500) / 1000) : 0;
+
     QString status;
     if (entry.result == QStringLiteral("transferred") && !entry.transferTo.isEmpty()) {
-      if (entry.answered && entry.durationSec > 0) {
-        status = tr("%1 · переведён на %2")
-                     .arg(formatHistoryDuration(entry.durationSec), entry.transferTo);
-      } else {
-        status = tr("переведён на %1").arg(entry.transferTo);
-      }
-    } else if (entry.answered) {
-      status = formatHistoryDuration(entry.durationSec);
-    } else if (entry.direction == QStringLiteral("incoming")) {
-      status = tr("пропущ.");
-    } else {
-      status = tr("не отв.");
+      status = tr("переведён на %1").arg(entry.transferTo);
+    } else if (entry.answered && entry.durationSec > 0) {
+      status = tr("%1 сек.").arg(entry.durationSec);
+    } else if (missed) {
+      status = tr("пропущенный");
+    } else if (!incoming && !entry.answered) {
+      status = tr("не отвечено");
     }
 
     const QString name = entry.displayName.isEmpty() ? entry.peer : entry.displayName;
-    const QString line = QStringLiteral("%1  %2  %3  %4")
-                             .arg(formatHistoryTime(entry.startedAtMs), arrow, name, status);
-    auto *item = new QListWidgetItem(line);
+
+    auto *rowWidget = new QWidget;
+    auto *rowLayout = new QHBoxLayout(rowWidget);
+    rowLayout->setContentsMargins(6, 4, 6, 4);
+    rowLayout->setSpacing(8);
+
+    auto *arrowLabel = new QLabel(arrow);
+    arrowLabel->setStyleSheet(QStringLiteral("color:%1; font-size:16px; font-weight:bold;").arg(arrowColor));
+    arrowLabel->setFixedWidth(18);
+    arrowLabel->setAlignment(Qt::AlignTop | Qt::AlignHCenter);
+    rowLayout->addWidget(arrowLabel);
+
+    auto *textCol = new QVBoxLayout;
+    textCol->setSpacing(1);
+    QString firstLine = name;
+    if (waitSec > 0) {
+      firstLine += tr("; ждал: %1 сек.").arg(waitSec);
+    }
+    auto *nameLabel = new QLabel(firstLine);
+    QFont nameFont = nameLabel->font();
+    nameFont.setBold(missed);
+    nameLabel->setFont(nameFont);
+    textCol->addWidget(nameLabel);
+
+    QString secondLine = entry.peer;
+    if (!status.isEmpty()) {
+      secondLine += QStringLiteral("; ") + status;
+    }
+    auto *detailLabel = new QLabel(secondLine);
+    QFont detailFont = detailLabel->font();
+    detailFont.setPixelSize(11);
+    detailLabel->setFont(detailFont);
+    QPalette detailPalette = detailLabel->palette();
+    detailPalette.setColor(QPalette::WindowText, palette().color(QPalette::Link));
+    detailLabel->setPalette(detailPalette);
+    textCol->addWidget(detailLabel);
+    rowLayout->addLayout(textCol, 1);
+
+    auto *dateLabel = new QLabel(formatHistoryWhen(entry.startedAtMs));
+    dateLabel->setAlignment(Qt::AlignTop | Qt::AlignRight);
+    QFont dateFont = dateLabel->font();
+    dateFont.setPixelSize(11);
+    dateLabel->setFont(dateFont);
+    rowLayout->addWidget(dateLabel);
+
+    auto *item = new QListWidgetItem;
     item->setData(Qt::UserRole, entry.peer);
+    item->setSizeHint(QSize(0, 46));
     m_historyList->addItem(item);
+    m_historyList->setItemWidget(item, rowWidget);
+  }
+
+  if (shown == 0) {
+    auto *placeholder = new QListWidgetItem(history.isEmpty()
+                                                ? tr("История звонков пуста")
+                                                : tr("Нет звонков по выбранному фильтру"));
+    placeholder->setFlags(Qt::NoItemFlags);
+    m_historyList->addItem(placeholder);
+  }
+}
+
+void MainWindow::updateHistoryButtonStyles()
+{
+  const QPalette appPalette = QApplication::palette();
+  const QColor accent = appPalette.color(QPalette::Highlight);
+  const QColor accentText = appPalette.color(QPalette::HighlightedText);
+
+  for (QButtonGroup *group : {m_historyDirGroup, m_historyScopeGroup}) {
+    if (!group) {
+      continue;
+    }
+    for (QAbstractButton *button : group->buttons()) {
+      auto *btn = qobject_cast<QPushButton *>(button);
+      if (!btn) {
+        continue;
+      }
+      if (btn->isChecked()) {
+        QPalette pal = QApplication::palette(btn);
+        pal.setColor(QPalette::Button, accent);
+        pal.setColor(QPalette::ButtonText, accentText);
+        pal.setColor(QPalette::Light, accent.lighter(115));
+        pal.setColor(QPalette::Midlight, accent.lighter(105));
+        pal.setColor(QPalette::Mid, accent.darker(105));
+        pal.setColor(QPalette::Dark, accent.darker(125));
+        btn->setPalette(pal);
+      } else {
+        btn->setPalette(QApplication::palette(btn));
+      }
+      btn->style()->unpolish(btn);
+      btn->style()->polish(btn);
+      btn->update();
+    }
   }
 }
 
@@ -572,6 +998,7 @@ void MainWindow::beginCallTracking(const QString &leg, const QString &peer, cons
   tracking.incoming = incoming;
   tracking.startedAtMs = QDateTime::currentMSecsSinceEpoch();
   m_callTracking.insert(leg, tracking);
+  m_calls->setRecordingName(leg, recordingNameForPeer(peer, displayName));
 }
 
 void MainWindow::markCallConnected(const QString &leg)
@@ -637,13 +1064,80 @@ void MainWindow::onNotesFromRow(const QString &peer)
   const bool activeCallPeer = duringCall && isSamePeer(peer, m_callWindow->peer());
 
   NotePopupDialog dlg(peer, displayNameForPeer(peer), &m_client->appSettings(), this);
-  dlg.setDuringCall(duringCall);
-  if (dlg.exec() == QDialog::Accepted) {
-    if (activeCallPeer) {
-      loadCallNotes(peer);
-      m_callWindow->setNotesVisible(true);
-    }
+  dlg.setShowCallAction(true);
+  dlg.setDuringCall(activeCallPeer);
+  const int result = dlg.exec();
+  if (result == NotePopupDialog::CallResult) {
+    onCallFromRow(peer);
+    return;
   }
+  if (activeCallPeer) {
+    loadCallNotes(peer);
+    m_callWindow->setNotesVisible(true);
+  }
+}
+
+void MainWindow::onDeleteContactFromRow(const QString &peer)
+{
+  const ContactEntry entry = m_contacts.value(peer);
+  if (!entry.isCustom || entry.isSelf) {
+    return;
+  }
+
+  const QString name = entry.name.isEmpty() ? peer.section(QLatin1Char('@'), 0, 0) : entry.name;
+  if (QMessageBox::question(this, tr("Удалить контакт"),
+                            tr("Удалить контакт «%1»?").arg(name))
+      != QMessageBox::Yes) {
+    return;
+  }
+
+  m_client->appSettings().removeCustomContact(peer);
+  m_client->saveSettings();
+  m_contacts.remove(peer);
+  rebuildContactList();
+}
+
+void MainWindow::onExportContactFromRow(const QString &peer)
+{
+  const ContactEntry entry = m_contacts.value(peer);
+  const QString displayName = entry.name.isEmpty() ? peer.section(QLatin1Char('@'), 0, 0) : entry.name;
+  QString defaultBase = displayName.trimmed();
+  defaultBase.replace(QRegularExpression(QStringLiteral("\\s+")), QStringLiteral("_"));
+
+  const QString path = QFileDialog::getSaveFileName(
+      this, tr("Экспорт контакта"), defaultBase,
+      tr("vCard (*.vcf);;CSV (*.csv)"));
+  if (path.isEmpty()) {
+    return;
+  }
+
+  QFile file(path);
+  if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+    QMessageBox::warning(this, tr("Экспорт"), tr("Не удалось создать файл."));
+    return;
+  }
+
+  QTextStream out(&file);
+  if (path.endsWith(QStringLiteral(".csv"), Qt::CaseInsensitive)) {
+    out << displayName << QLatin1Char(',') << entry.phone << QLatin1Char(',') << entry.ext << QLatin1Char('\n');
+  } else {
+    out << QStringLiteral("BEGIN:VCARD\n");
+    out << QStringLiteral("VERSION:3.0\n");
+    out << QStringLiteral("FN:") << displayName << QLatin1Char('\n');
+    if (!entry.ext.isEmpty()) {
+      out << QStringLiteral("TEL;TYPE=WORK:") << entry.ext << QLatin1Char('\n');
+    }
+    if (!entry.phone.isEmpty()) {
+      out << QStringLiteral("TEL;TYPE=CELL:") << entry.phone << QLatin1Char('\n');
+    }
+    if (!entry.personalPhone.isEmpty()) {
+      out << QStringLiteral("TEL;TYPE=HOME:") << entry.personalPhone << QLatin1Char('\n');
+    }
+    out << QStringLiteral("END:VCARD\n");
+  }
+
+  file.close();
+  onStatusMessage(tr("Контакт экспортирован: %1").arg(path));
 }
 
 void MainWindow::onLogin()
@@ -774,6 +1268,33 @@ void MainWindow::onSettings()
   }
 }
 
+void MainWindow::applyContactViewSettings()
+{
+  const bool show = m_client->appSettings().showChatButtons();
+  for (ContactRowWidget *row : findChildren<ContactRowWidget *>()) {
+    row->setChatButtonVisible(show);
+  }
+}
+
+void MainWindow::onViewMenu()
+{
+  auto *viewBtn = qobject_cast<QPushButton *>(sender());
+  if (!viewBtn) {
+    return;
+  }
+
+  QMenu menu(this);
+  QAction *chatAction = menu.addAction(tr("Кнопка сообщений"));
+  chatAction->setCheckable(true);
+  chatAction->setChecked(m_client->appSettings().showChatButtons());
+  connect(chatAction, &QAction::triggered, this, [this](bool checked) {
+    m_client->appSettings().setShowChatButtons(checked);
+    m_client->saveSettings();
+    applyContactViewSettings();
+  });
+  menu.exec(viewBtn->mapToGlobal(QPoint(0, viewBtn->height())));
+}
+
 void MainWindow::onAddContact()
 {
   if (!m_online) {
@@ -796,6 +1317,107 @@ void MainWindow::onAddContact()
   entry.login = contact.peer.section(QLatin1Char('@'), 0, 0);
   m_contacts.insert(contact.peer, entry);
   rebuildContactList();
+}
+
+void MainWindow::onImportContacts()
+{
+  if (!m_online) {
+    return;
+  }
+
+  const QString path = QFileDialog::getOpenFileName(
+      this, tr("Импорт контактов"), QString(),
+      tr("Контакты (*.csv *.vcf *.txt);;Все файлы (*)"));
+  if (path.isEmpty()) {
+    return;
+  }
+
+  QFile file(path);
+  if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    QMessageBox::warning(this, tr("Импорт"), tr("Не удалось открыть файл."));
+    return;
+  }
+
+  const QString domain = m_client->credentials().domain;
+  QTextStream in(&file);
+  int imported = 0;
+
+  // vCard: собираем FN/TEL; CSV/TXT: строки "имя,номер[,внутренний]".
+  const bool isVcard = path.endsWith(QStringLiteral(".vcf"), Qt::CaseInsensitive);
+  QString vcardName;
+  QString vcardTel;
+
+  auto addContact = [&](const QString &name, const QString &phone, const QString &ext) {
+    const QString cleanPhone = phone.trimmed();
+    const QString cleanExt = ext.trimmed();
+    QString cleanName = name.trimmed();
+    if (cleanPhone.isEmpty() && cleanExt.isEmpty()) {
+      return;
+    }
+    if (cleanName.isEmpty()) {
+      cleanName = cleanPhone.isEmpty() ? cleanExt : cleanPhone;
+    }
+
+    const QString handle = !cleanExt.isEmpty() ? cleanExt : cleanPhone;
+    itl::CustomContact contact;
+    contact.peer = handle.contains(QLatin1Char('@')) ? handle
+                                                     : handle + QLatin1Char('@') + domain;
+    contact.name = cleanName;
+    contact.phone = cleanPhone;
+    contact.ext = cleanExt;
+    m_client->appSettings().addCustomContact(contact);
+
+    ContactEntry entry;
+    entry.name = contact.name;
+    entry.ext = contact.ext;
+    entry.phone = contact.phone;
+    entry.login = contact.peer.section(QLatin1Char('@'), 0, 0);
+    entry.isCustom = true;
+    m_contacts.insert(contact.peer, entry);
+    ++imported;
+  };
+
+  while (!in.atEnd()) {
+    const QString line = in.readLine().trimmed();
+    if (line.isEmpty()) {
+      if (isVcard) {
+        continue;
+      }
+      continue;
+    }
+
+    if (isVcard) {
+      if (line.startsWith(QStringLiteral("BEGIN:VCARD"), Qt::CaseInsensitive)) {
+        vcardName.clear();
+        vcardTel.clear();
+      } else if (line.startsWith(QStringLiteral("FN:"), Qt::CaseInsensitive)) {
+        vcardName = line.mid(3).trimmed();
+      } else if (line.startsWith(QStringLiteral("TEL"), Qt::CaseInsensitive)) {
+        vcardTel = line.section(QLatin1Char(':'), 1).trimmed();
+      } else if (line.startsWith(QStringLiteral("END:VCARD"), Qt::CaseInsensitive)) {
+        addContact(vcardName, vcardTel, {});
+      }
+      continue;
+    }
+
+    const QStringList parts = line.split(QLatin1Char(','));
+    const QString name = parts.value(0);
+    const QString phone = parts.value(1);
+    const QString ext = parts.value(2);
+    addContact(name, phone, ext);
+  }
+
+  file.close();
+
+  if (imported > 0) {
+    m_client->saveSettings();
+    rebuildContactList();
+    QMessageBox::information(this, tr("Импорт"),
+                            tr("Импортировано контактов: %1").arg(imported));
+  } else {
+    QMessageBox::warning(this, tr("Импорт"),
+                         tr("В файле не найдено контактов.\n\nФормат CSV: имя,номер,внутренний"));
+  }
 }
 
 void MainWindow::onConference()
@@ -1039,8 +1661,10 @@ void MainWindow::onContactsLoaded(const QJsonObject &contacts)
         entry.phone = tn.first().toString();
       }
     }
+    entry.personalPhone = acc.value(QStringLiteral("sim")).toString();
     if (entry.phone.isEmpty()) {
-      entry.phone = acc.value(QStringLiteral("sim")).toString();
+      entry.phone = entry.personalPhone;
+      entry.personalPhone.clear();
     }
     entry.isSelf = (entry.login == selfLogin);
     const QString peer = entry.login + QLatin1Char('@') + domain;

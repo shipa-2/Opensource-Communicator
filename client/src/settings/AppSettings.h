@@ -7,6 +7,7 @@
 #include <QObject>
 #include <QString>
 #include <QStringList>
+#include <QDateTime>
 
 class QSettings;
 
@@ -65,6 +66,18 @@ public:
     void setProfileAvatarPath(const QString &path);
     void setProfileAvatarColor(const QString &color);
 
+    bool showChatButtons() const { return m_showChatButtons; }
+    void setShowChatButtons(bool show);
+
+    bool recordingDualTrack() const { return m_recordingDualTrack; }
+    QString recordingFilenameTemplate() const { return m_recordingFilenameTemplate; }
+    bool recordingEnabled() const { return m_recordingEnabled; }
+    QString recordingDirectory() const { return m_recordingDirectory; }
+    void setRecordingDualTrack(bool dual);
+    void setRecordingFilenameTemplate(const QString &templateText);
+    void setRecordingEnabled(bool enabled);
+    void setRecordingDirectory(const QString &directory);
+
     QString noteForPeer(const QString &peer) const;
     void setNoteForPeer(const QString &peer, const QString &note);
 
@@ -76,6 +89,10 @@ public:
 
     static QString ringtoneLabel(RingtoneKind kind);
     static RingtoneKind ringtoneKindFromString(const QString &value);
+    static QString recordingFilenameSyntaxHelp();
+    static QString defaultRecordingDirectory();
+    static QString expandRecordingFilenameTemplate(const QString &templateText, const QString &contactName,
+                                                   const QDateTime &when = QDateTime());
 
 signals:
     void settingsChanged();
@@ -94,6 +111,11 @@ private:
     QList<CustomContact> m_customContacts;
     QString m_profileAvatarPath;
     QString m_profileAvatarColor = QStringLiteral("#5a9e2f");
+    bool m_showChatButtons = true;
+    bool m_recordingDualTrack = false;
+    bool m_recordingEnabled = true;
+    QString m_recordingFilenameTemplate = QStringLiteral("%dmy_%h-%m-%s_%name");
+    QString m_recordingDirectory;
 };
 
 } // namespace itl

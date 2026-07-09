@@ -1,14 +1,17 @@
 #include "ContactRowWidget.h"
 
+#include <QContextMenuEvent>
 #include <QEvent>
 #include <QFont>
 #include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QLabel>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QPushButton>
 #include <QStyle>
+#include <QWidgetAction>
 
 namespace {
 QString presenceColor(const QString &presence)
@@ -47,17 +50,18 @@ void configureEmojiButton(QPushButton *button)
 
 ContactRowWidget::ContactRowWidget(const QString &peer, const QString &name, const QString &ext,
                                    const QString &phone, const QString &presence, bool isSelf,
-                                   QWidget *parent)
+                                   bool canDelete, QWidget *parent)
     : QWidget(parent)
     , m_peer(peer)
     , m_presence(presence)
     , m_isSelf(isSelf)
+    , m_canDelete(canDelete)
 {
   setObjectName(isSelf ? QStringLiteral("contactRowSelf") : QStringLiteral("contactRow"));
   setMinimumHeight(48);
   setAutoFillBackground(false);
   if (!isSelf) {
-    setToolTip(tr("Двойной щелчок — заметки"));
+    setToolTip(tr("Двойной щелчок — заметка\nПКМ — удалить или экспорт"));
   }
 
   auto *layout = new QHBoxLayout(this);
@@ -117,13 +121,120 @@ ContactRowWidget::ContactRowWidget(const QString &peer, const QString &name, con
 
   m_callBtn = new QPushButton(QStringLiteral("📞"));
   m_callBtn->setObjectName(QStringLiteral("rowCallBtn"));
-  m_callBtn->setToolTip(tr("Позвонить"));
+  m_callBtn->setToolTip(tr("Позвонить (ПКМ — выбор номера)"));
   m_callBtn->setFlat(true);
   configureEmojiButton(m_callBtn);
+  m_callBtn->installEventFilter(this);
   layout->addWidget(m_callBtn);
 
   connect(m_callBtn, &QPushButton::clicked, this, [this]() { emit callRequested(m_peer); });
   connect(m_chatBtn, &QPushButton::clicked, this, [this]() { emit chatRequested(m_peer); });
+}
+
+void ContactRowWidget::setChatButtonVisible(bool visible)
+{
+  if (m_chatBtn) {
+    m_chatBtn->setVisible(visible);
+  }
+}
+
+void ContactRowWidget::setCallNumbers(const QVector<CallNumber> &numbers)
+{
+  m_numbers = numbers;
+}
+
+void ContactRowWidget::showCallMenu(const QPoint &globalPos)
+{
+  if (m_numbers.isEmpty()) {
+    emit callRequested(m_peer);
+    return;
+  }
+
+  QMenu menu(this);
+  auto *header = new QLabel(tr("Позвонить по:"), &menu);
+  header->setObjectName(QStringLiteral("callMenuHeader"));
+  header->setContentsMargins(12, 6, 12, 4);
+  QFont headerFont = header->font();
+  headerFont.setBold(true);
+  header->setFont(headerFont);
+  auto *headerAction = new QWidgetAction(&menu);
+  headerAction->setDefaultWidget(header);
+  headerAction->setEnabled(false);
+  menu.addAction(headerAction);
+
+  for (const CallNumber &number : m_numbers) {
+    const QString label = number.second.isEmpty()
+                              ? number.first
+                              : QStringLiteral("%1  —  %2").arg(number.second, number.first);
+    QAction *action = menu.addAction(label);
+    const QString dial = number.second;
+    connect(action, &QAction::triggered, this, [this, dial]() {
+      emit callNumberRequested(dial);
+    });
+  }
+
+  menu.exec(globalPos);
+}
+
+bool ContactRowWidget::eventFilter(QObject *watched, QEvent *event)
+{
+  if (watched == m_callBtn && event->type() == QEvent::ContextMenu) {
+    if (m_numbers.size() > 1) {
+      const auto *ctx = static_cast<QContextMenuEvent *>(event);
+      showCallMenu(ctx->globalPos());
+      return true;
+    }
+  }
+  return QWidget::eventFilter(watched, event);
+}
+
+void ContactRowWidget::contextMenuEvent(QContextMenuEvent *event)
+{
+  if (m_isSelf) {
+    QWidget::contextMenuEvent(event);
+    return;
+  }
+
+  if (isInteractiveChild(childAt(event->pos()))) {
+    QWidget::contextMenuEvent(event);
+    return;
+  }
+
+  QMenu menu(this);
+  if (m_canDelete) {
+    menu.addAction(tr("Удалить"), this, [this]() { emit deleteRequested(m_peer); });
+    menu.addSeparator();
+  }
+  menu.addAction(tr("Экспортировать..."), this, [this]() { emit exportRequested(m_peer); });
+  menu.exec(event->globalPos());
+  event->accept();
+}
+
+void ContactRowWidget::mouseDoubleClickEvent(QMouseEvent *event)
+{
+  if (m_isSelf) {
+    QWidget::mouseDoubleClickEvent(event);
+    return;
+  }
+
+  if (isInteractiveChild(childAt(event->pos()))) {
+    QWidget::mouseDoubleClickEvent(event);
+    return;
+  }
+
+  emit notesRequested(m_peer);
+  event->accept();
+}
+
+bool ContactRowWidget::isInteractiveChild(QWidget *target) const
+{
+  while (target && target != this) {
+    if (target == m_callBtn || target == m_chatBtn) {
+      return true;
+    }
+    target = target->parentWidget();
+  }
+  return false;
 }
 
 void ContactRowWidget::changeEvent(QEvent *event)
@@ -206,26 +317,6 @@ void ContactRowWidget::setSelected(bool selected)
   style()->unpolish(this);
   style()->polish(this);
   update();
-}
-
-void ContactRowWidget::mouseDoubleClickEvent(QMouseEvent *event)
-{
-  if (m_isSelf) {
-    QWidget::mouseDoubleClickEvent(event);
-    return;
-  }
-
-  QWidget *target = childAt(event->pos());
-  while (target && target != this) {
-    if (target == m_callBtn || target == m_chatBtn) {
-      QWidget::mouseDoubleClickEvent(event);
-      return;
-    }
-    target = target->parentWidget();
-  }
-
-  emit notesRequested(m_peer);
-  event->accept();
 }
 
 void ContactRowWidget::refreshStatusDot()

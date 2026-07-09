@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(opensource-communicator VERSION 0.1.0 LANGUAGES CXX)
+project(opensource-communicator VERSION 0.2.0 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 
@@ -51,6 +51,8 @@ add_executable(opensource-communicator
     src/calls/CallManager.h
     src/audio/AudioBridge.cpp
     src/audio/AudioBridge.h
+    src/audio/CallRecorder.cpp
+    src/audio/CallRecorder.h
     src/audio/RingbackPlayer.cpp
     src/audio/RingbackPlayer.h
     src/audio/IncomingRingPlayer.cpp
@@ -81,6 +83,8 @@ add_executable(opensource-communicator
     src/ui/PresenceSelector.h
     src/ui/SettingsDialog.cpp
     src/ui/SettingsDialog.h
+    src/ui/RecordingSettingsDialog.cpp
+    src/ui/RecordingSettingsDialog.h
     src/ui/AddContactDialog.cpp
     src/ui/AddContactDialog.h
     src/ui/ConferenceDialog.cpp

@@ -2,6 +2,8 @@
 
 #include <QJsonObject>
 #include <QSettings>
+#include <QStandardPaths>
+#include <QRegularExpression>
 
 namespace {
 constexpr auto kInputDevice = "audio/inputDevice";
@@ -13,6 +15,11 @@ constexpr auto kIncomingPath = "audio/incomingPath";
 constexpr auto kCustomContacts = "contacts/custom";
 constexpr auto kProfileAvatarPath = "profile/avatarPath";
 constexpr auto kProfileAvatarColor = "profile/avatarColor";
+constexpr auto kShowChatButtons = "ui/showChatButtons";
+constexpr auto kRecordingDualTrack = "recording/dualTrack";
+constexpr auto kRecordingFilenameTemplate = "recording/filenameTemplate";
+constexpr auto kRecordingEnabled = "recording/enabled";
+constexpr auto kRecordingDirectory = "recording/directory";
 } // namespace
 
 namespace itl {
@@ -33,6 +40,12 @@ void AppSettings::load(QSettings &settings)
   customContactsFromJson(settings.value(QString::fromUtf8(kCustomContacts)).toJsonArray());
   m_profileAvatarPath = settings.value(QString::fromUtf8(kProfileAvatarPath)).toString();
   m_profileAvatarColor = settings.value(QString::fromUtf8(kProfileAvatarColor), QStringLiteral("#5a9e2f")).toString();
+  m_showChatButtons = settings.value(QString::fromUtf8(kShowChatButtons), true).toBool();
+  m_recordingDualTrack = settings.value(QString::fromUtf8(kRecordingDualTrack), false).toBool();
+  m_recordingFilenameTemplate =
+      settings.value(QString::fromUtf8(kRecordingFilenameTemplate), QStringLiteral("%dmy_%h-%m-%s_%name")).toString();
+  m_recordingEnabled = settings.value(QString::fromUtf8(kRecordingEnabled), true).toBool();
+  m_recordingDirectory = settings.value(QString::fromUtf8(kRecordingDirectory)).toString();
 }
 
 void AppSettings::save(QSettings &settings) const
@@ -46,6 +59,11 @@ void AppSettings::save(QSettings &settings) const
   settings.setValue(QString::fromUtf8(kCustomContacts), customContactsToJson());
   settings.setValue(QString::fromUtf8(kProfileAvatarPath), m_profileAvatarPath);
   settings.setValue(QString::fromUtf8(kProfileAvatarColor), m_profileAvatarColor);
+  settings.setValue(QString::fromUtf8(kShowChatButtons), m_showChatButtons);
+  settings.setValue(QString::fromUtf8(kRecordingDualTrack), m_recordingDualTrack);
+  settings.setValue(QString::fromUtf8(kRecordingFilenameTemplate), m_recordingFilenameTemplate);
+  settings.setValue(QString::fromUtf8(kRecordingEnabled), m_recordingEnabled);
+  settings.setValue(QString::fromUtf8(kRecordingDirectory), m_recordingDirectory);
 }
 
 void AppSettings::loadUserData(QSettings &settings)
@@ -195,6 +213,92 @@ void AppSettings::setProfileAvatarColor(const QString &color)
   }
   m_profileAvatarColor = color;
   emit settingsChanged();
+}
+
+void AppSettings::setShowChatButtons(bool show)
+{
+  if (m_showChatButtons == show) {
+    return;
+  }
+  m_showChatButtons = show;
+  emit settingsChanged();
+}
+
+void AppSettings::setRecordingDualTrack(bool dual)
+{
+  if (m_recordingDualTrack == dual) {
+    return;
+  }
+  m_recordingDualTrack = dual;
+  emit settingsChanged();
+}
+
+void AppSettings::setRecordingFilenameTemplate(const QString &templateText)
+{
+  const QString trimmed = templateText.trimmed();
+  if (m_recordingFilenameTemplate == trimmed) {
+    return;
+  }
+  m_recordingFilenameTemplate = trimmed.isEmpty() ? QStringLiteral("%dmy_%h-%m-%s_%name") : trimmed;
+  emit settingsChanged();
+}
+
+void AppSettings::setRecordingEnabled(bool enabled)
+{
+  if (m_recordingEnabled == enabled) {
+    return;
+  }
+  m_recordingEnabled = enabled;
+  emit settingsChanged();
+}
+
+void AppSettings::setRecordingDirectory(const QString &directory)
+{
+  const QString trimmed = directory.trimmed();
+  if (m_recordingDirectory == trimmed) {
+    return;
+  }
+  m_recordingDirectory = trimmed;
+  emit settingsChanged();
+}
+
+QString AppSettings::recordingFilenameSyntaxHelp()
+{
+  return QObject::tr(
+      "Шаблон имени файла записи:\n"
+      "%dmy — день, месяц, год (дд.ММ.гггг)\n"
+      "%h — час (00–23)\n"
+      "%m — минута\n"
+      "%s — секунда\n"
+      "%name — ФИО абонента или номер телефона");
+}
+
+QString AppSettings::defaultRecordingDirectory()
+{
+  return QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
+         + QStringLiteral("/opensource-communicator/recordings");
+}
+
+QString AppSettings::expandRecordingFilenameTemplate(const QString &templateText, const QString &contactName,
+                                                     const QDateTime &when)
+{
+  const QDateTime dt = when.isValid() ? when : QDateTime::currentDateTime();
+  QString result = templateText.trimmed();
+  if (result.isEmpty()) {
+    result = QStringLiteral("%dmy_%h-%m-%s_%name");
+  }
+
+  result.replace(QStringLiteral("%dmy"), dt.toString(QStringLiteral("dd.MM.yyyy")));
+  result.replace(QStringLiteral("%h"), dt.toString(QStringLiteral("hh")));
+  result.replace(QStringLiteral("%m"), dt.toString(QStringLiteral("mm")));
+  result.replace(QStringLiteral("%s"), dt.toString(QStringLiteral("ss")));
+  QString safeName = contactName.trimmed();
+  safeName.replace(QRegularExpression(QStringLiteral("\\s+")), QStringLiteral("_"));
+  if (safeName.isEmpty()) {
+    safeName = QStringLiteral("call");
+  }
+  result.replace(QStringLiteral("%name"), safeName);
+  return result;
 }
 
 QString AppSettings::noteForPeer(const QString &peer) const

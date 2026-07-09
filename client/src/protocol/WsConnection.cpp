@@ -136,7 +136,7 @@ void WsConnection::onSocketConnected()
     }
 
     hello.insert(QStringLiteral("task"), QStringLiteral("Main"));
-    hello.insert(QStringLiteral("useragent"), QStringLiteral("opensource-communicator/0.1 Qt6"));
+    hello.insert(QStringLiteral("useragent"), QStringLiteral("opensource-communicator/0.2 Qt6"));
     hello.insert(QStringLiteral("params"), params);
   }
 

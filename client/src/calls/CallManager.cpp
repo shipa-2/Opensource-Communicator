@@ -69,6 +69,18 @@ CallManager::CallManager(WsApiClient *api, AppSettings *settings, QObject *paren
     ctx.nextRtpTimestamp += 960;
     track->sendFrame(reinterpret_cast<const rtc::byte *>(opus.constData()), static_cast<size_t>(opus.size()), info);
   });
+
+  connect(&m_audio, &AudioBridge::localPcmFrameReady, this, [this](const QByteArray &pcm) {
+    if (m_recorder.isActive()) {
+      m_recorder.appendLocal(pcm);
+    }
+  });
+  connect(&m_audio, &AudioBridge::remotePcmFrameReady, this, [this](const QByteArray &pcm) {
+    if (m_recorder.isActive()) {
+      m_recorder.appendRemote(pcm);
+    }
+  });
+  connect(&m_recorder, &CallRecorder::recordingFinished, this, &CallManager::callRecordingFinished);
 }
 
 CallManager::~CallManager()
@@ -284,12 +296,57 @@ void CallManager::startAudio()
   if (!m_audio.isRunning()) {
     m_audio.start();
   }
+  startCallRecording();
 }
 
 void CallManager::stopAudio()
 {
+  stopCallRecording();
   if (m_audio.isRunning()) {
     m_audio.stop();
+  }
+}
+
+QString CallManager::contactNameForLeg(const QString &leg) const
+{
+  if (m_recordingNames.contains(leg)) {
+    return m_recordingNames.value(leg);
+  }
+
+  const CallSession session = m_calls.value(leg);
+  if (!session.realName.isEmpty()) {
+    return session.realName;
+  }
+  if (!session.peer.isEmpty()) {
+    const QString peer = session.peer;
+    if (!peer.contains(QLatin1Char('@'))) {
+      return peer;
+    }
+    return peer.section(QLatin1Char('@'), 0, 0);
+  }
+  return QStringLiteral("call");
+}
+
+void CallManager::setRecordingName(const QString &leg, const QString &name)
+{
+  if (leg.isEmpty() || name.trimmed().isEmpty()) {
+    return;
+  }
+  m_recordingNames.insert(leg, name.trimmed());
+}
+
+void CallManager::startCallRecording()
+{
+  if (!m_settings || m_recorder.isActive() || m_activeLeg.isEmpty()) {
+    return;
+  }
+  m_recorder.start(m_settings, contactNameForLeg(m_activeLeg));
+}
+
+void CallManager::stopCallRecording()
+{
+  if (m_recorder.isActive()) {
+    m_recorder.stop();
   }
 }
 
@@ -643,7 +700,7 @@ QString CallManager::startConferenceCall(const QString &subject, const QList<Con
         {QStringLiteral("realName"), participant.name},
         {QStringLiteral("op"), participant.operatorPeer},
         {QStringLiteral("owner"), participant.owner},
-        {QStringLiteral("muted"), false},
+        {QStringLiteral("muted"), participant.listener},
     });
   }
 
@@ -805,6 +862,7 @@ void CallManager::teardownCall(const QString &leg)
   cancelPublishFallback(leg);
   m_peers.remove(leg);
   m_calls.remove(leg);
+  m_recordingNames.remove(leg);
   if (m_activeLeg == leg) {
     m_activeLeg.clear();
     stopAudio();

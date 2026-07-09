@@ -2,6 +2,7 @@
 
 #include "CallTypes.h"
 #include "audio/AudioBridge.h"
+#include "audio/CallRecorder.h"
 #include "audio/IncomingRingPlayer.h"
 #include "audio/RingbackPlayer.h"
 #include "protocol/WsApiClient.h"
@@ -27,6 +28,7 @@ struct ConferenceParticipant {
     QString name;
     bool owner = false;
     bool operatorPeer = false;
+    bool listener = false; // слушатель: только слушает (muted), не говорит
 };
 
 struct PeerContext {
@@ -57,12 +59,14 @@ public:
     void hangupAll();
     void setHold(const QString &leg, bool hold);
     void blindTransfer(const QString &leg, const QString &targetPeer);
+    void setRecordingName(const QString &leg, const QString &name);
 
     CallSession *call(const QString &leg);
     QString activeLeg() const { return m_activeLeg; }
 
 signals:
     void callStateChanged(const QString &leg, const QString &state, const QString &detail);
+    void callRecordingFinished(const QString &path);
 
 public slots:
     void handleServerCallEvent(const QString &leg, const QString &what, const QJsonObject &payload);
@@ -91,15 +95,20 @@ private:
     void stopRingback();
     void startIncomingRing();
     void stopIncomingRing();
+    void startCallRecording();
+    void stopCallRecording();
+    QString contactNameForLeg(const QString &leg) const;
 
     WsApiClient *m_api = nullptr;
     AppSettings *m_settings = nullptr;
     AudioBridge m_audio;
+    CallRecorder m_recorder;
     RingbackPlayer m_ringback;
     IncomingRingPlayer m_incomingRing;
     QHash<QString, CallSession> m_calls;
     QHash<QString, PeerContext> m_peers;
     QHash<QString, QTimer *> m_publishTimers;
+    QHash<QString, QString> m_recordingNames;
     QString m_activeLeg;
     mutable int m_outgoingLegCounter = 0;
 };

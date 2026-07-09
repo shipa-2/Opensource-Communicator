@@ -38,16 +38,27 @@ NotePopupDialog::NotePopupDialog(const QString &peer, const QString &displayName
 
   auto *buttons = new QHBoxLayout;
   buttons->addStretch();
-  auto *saveBtn = new QPushButton(tr("Сохранить"));
+  m_primaryBtn = new QPushButton(tr("Сохранить"));
   auto *closeBtn = new QPushButton(tr("Закрыть"));
-  buttons->addWidget(saveBtn);
+  buttons->addWidget(m_primaryBtn);
   buttons->addWidget(closeBtn);
   root->addLayout(buttons);
 
-  connect(saveBtn, &QPushButton::clicked, this, &NotePopupDialog::onSave);
-  connect(closeBtn, &QPushButton::clicked, this, &QDialog::reject);
+  connect(m_primaryBtn, &QPushButton::clicked, this, &NotePopupDialog::onSave);
+  connect(closeBtn, &QPushButton::clicked, this, &NotePopupDialog::onClose);
 
   itl::applyDialogStyle(this);
+}
+
+void NotePopupDialog::setShowCallAction(bool show)
+{
+  m_showCallAction = show;
+  if (!m_primaryBtn) {
+    return;
+  }
+  m_primaryBtn->setText(show ? tr("Позвонить") : tr("Сохранить"));
+  disconnect(m_primaryBtn, nullptr, this, nullptr);
+  connect(m_primaryBtn, &QPushButton::clicked, this, show ? &NotePopupDialog::onCall : &NotePopupDialog::onSave);
 }
 
 void NotePopupDialog::setDuringCall(bool duringCall)
@@ -60,10 +71,27 @@ void NotePopupDialog::setDuringCall(bool duringCall)
   }
 }
 
-void NotePopupDialog::onSave()
+void NotePopupDialog::saveNote()
 {
   if (m_settings) {
     m_settings->setNoteForPeer(m_peer, m_editor->toPlainText());
   }
+}
+
+void NotePopupDialog::onSave()
+{
+  saveNote();
   accept();
+}
+
+void NotePopupDialog::onCall()
+{
+  saveNote();
+  done(CallResult);
+}
+
+void NotePopupDialog::onClose()
+{
+  saveNote();
+  reject();
 }

@@ -155,6 +155,7 @@ void AudioBridge::onMicData()
   while (m_pcmBuffer.size() >= bytesPerFrame) {
     const QByteArray frame = m_pcmBuffer.left(bytesPerFrame);
     m_pcmBuffer.remove(0, bytesPerFrame);
+    emit localPcmFrameReady(frame);
     const QByteArray opus = encodeOpusFrame(frame);
     if (!opus.isEmpty()) {
       emit opusFrameReady(opus);
@@ -191,6 +192,10 @@ void AudioBridge::decodeAndPlayOpus(const QByteArray &opus)
   if (samples <= 0) {
     return;
   }
+
+  const QByteArray pcmBytes(reinterpret_cast<const char *>(pcm),
+                            samples * channels * static_cast<int>(sizeof(qint16)));
+  emit remotePcmFrameReady(pcmBytes);
 
   qint16 stereo[frameSize * 2];
   for (int i = 0; i < samples; ++i) {
