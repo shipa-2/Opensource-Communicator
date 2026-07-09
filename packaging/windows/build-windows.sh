@@ -56,12 +56,14 @@ if [[ ! -f \"\$PREFIX/lib/cmake/LibDataChannel/LibDataChannelConfig.cmake\" ]]; 
 fi
 "
 
+BUILD_TYPE="${BUILD_TYPE:-Release}"
+
 "$MSYS_BASH" -lc "
 set -euo pipefail
 export PATH=/ucrt64/bin:\$PATH
 PREFIX='$DEPS/prefix'
 cmake -S '$CLIENT' -B '$CLIENT/build-win64' -G Ninja \
-    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_BUILD_TYPE='$BUILD_TYPE' \
     -DCMAKE_PREFIX_PATH=\"\$PREFIX;/ucrt64\"
 cmake --build '$CLIENT/build-win64'
 "

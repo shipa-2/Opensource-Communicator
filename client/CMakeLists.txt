@@ -13,6 +13,11 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type (Debug or Release)" FORCE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release RelWithDebInfo MinSizeRel)
+endif()
+
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets WebSockets Network Multimedia)
 find_package(OpenSSL REQUIRED)
 
@@ -111,6 +116,25 @@ target_link_libraries(opensource-communicator PRIVATE
 
 if(WIN32)
     target_link_libraries(opensource-communicator PRIVATE ws2_32)
+
+    # Release: GUI subsystem (no console). Debug: console for live logs.
+    if(CMAKE_CONFIGURATION_TYPES)
+        set_target_properties(opensource-communicator PROPERTIES
+            WIN32_EXECUTABLE $<NOT:$<CONFIG:Debug>>
+        )
+    elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set_target_properties(opensource-communicator PROPERTIES WIN32_EXECUTABLE FALSE)
+    else()
+        set_target_properties(opensource-communicator PROPERTIES WIN32_EXECUTABLE TRUE)
+    endif()
+endif()
+
+if(CMAKE_CONFIGURATION_TYPES)
+    target_compile_definitions(opensource-communicator PRIVATE
+        $<$<CONFIG:Debug>:OSC_DEBUG_BUILD>
+    )
+elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_compile_definitions(opensource-communicator PRIVATE OSC_DEBUG_BUILD)
 endif()
 
 install(TARGETS opensource-communicator RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

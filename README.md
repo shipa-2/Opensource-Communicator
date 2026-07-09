@@ -14,7 +14,7 @@
 
 Совместимый open-source клиент для **ITooLabs Communicator** (Megafon PBX, virtual-ats и др.) на **Qt 6**.
 
-**[⬇ Установка (Arch Linux / AUR)](#установка-arch-linux--aur)**
+**[⬇ Установка (Arch Linux / AUR)](#установка-arch-linux--aur)** · **[⬇ Установка (Windows)](#установка-windows)**
 
 ## Скриншоты
 
@@ -66,6 +66,20 @@ yay -S opensource-communicator-git
 Пакет [`opensource-communicator-git`](https://aur.archlinux.org/packages/opensource-communicator-git)
 собирает клиент из ветки `main` и ставит его в `/usr`.
 
+## Установка (Windows)
+
+Portable ZIP для Windows собирается в **GitHub Actions**:
+
+1. [Actions → Build releases](https://github.com/shipa-2/Opensource-Communicator/actions/workflows/build.yml)
+2. **Run workflow** → ветка `main`
+3. Скачайте артефакт `windows-portable-Release`
+
+Распакуйте ZIP в любую папку и запустите `opensource-communicator.exe`. Установщик (MSI) не нужен.
+
+Для отладки есть артефакт `windows-portable-Debug` — та же сборка, но с окном консоли и полными логами протокола/звонков.
+
+При push тега `v*` создаётся [GitHub Release](https://github.com/shipa-2/Opensource-Communicator/releases) с ZIP для Windows и tar.gz для Linux.
+
 ## Сборка (Linux)
 
 ```bash
@@ -95,15 +109,29 @@ sudo cmake --install build
 - `libdatachannel`
 - `opus`
 
-### Windows (готовая сборка)
+Готовая сборка для Windows — в разделе [Установка (Windows)](#установка-windows). GitHub Actions также собирает Linux-бинарник (артефакты `linux-build-Release` / `linux-build-Debug`, tar.gz) на Ubuntu 24.04 с системными Qt6 и `libdatachannel-dev`.
 
-Portable ZIP для Windows собирается в **GitHub Actions**:
+### Типы сборки (Debug / Release)
 
-1. [Actions → Build releases](https://github.com/shipa-2/Opensource-Communicator/actions/workflows/build.yml)
-2. **Run workflow** → ветка `main`
-3. Скачайте артефакт `windows-portable`
+| | **Release** (по умолчанию) | **Debug** |
+|---|---------------------------|-----------|
+| Назначение | Повседневное использование, CI, релизы | Разработка и отладка |
+| Оптимизация | Включена | Отключена, символы отладки |
+| Логи | Только предупреждения и ошибки | Полный вывод `itl.*` в консоль |
+| Windows | Без окна терминала (GUI-приложение) | Консоль с логами при запуске |
+| Linux | Логи в stderr при запуске из терминала | То же, но подробнее |
 
-При push тега `v*` создаётся GitHub Release с ZIP для Windows.
+```bash
+# Release (по умолчанию)
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+
+# Debug
+cmake -B build-debug -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-debug
+```
+
+На Windows в Debug-сборке запускайте `opensource-communicator.exe` из `ucrt64`/`cmd`, чтобы видеть логи протокола и звонков. В GitHub Actions доступны оба артефакта: `windows-portable-Release` и `windows-portable-Debug`.
 
 ## Использование
 
@@ -118,6 +146,7 @@ Portable ZIP для Windows собирается в **GitHub Actions**:
 client/           — Qt6 приложение (open-source реализация)
 screenshots/      — скриншоты интерфейса
 PROTOCOL.md       — описание протокола ITooLabs WS
+AGENTS.md         — справка для AI-агентов (архитектура, паритет с официальным клиентом)
 README.md         — этот файл
 ```
 

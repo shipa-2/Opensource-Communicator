@@ -15,12 +15,17 @@ env:
 jobs:
   windows-portable:
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Release, Debug]
     defaults:
       run:
         shell: msys2 {0}
     env:
       LIBDATACHANNEL_VERSION: v0.24.5
       PREFIX: /tmp/osc-deps
+      BUILD_TYPE: ${{ matrix.build_type }}
     steps:
       - uses: actions/checkout@v4
 
@@ -67,7 +72,7 @@ jobs:
           export PATH=/ucrt64/bin:$PATH
           export PKG_CONFIG_PATH=/ucrt64/lib/pkgconfig
           cmake -S client -B client/build-win64 -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
             "-DCMAKE_PREFIX_PATH=${PREFIX}:/ucrt64"
           cmake --build client/build-win64
 
@@ -76,35 +81,98 @@ jobs:
           set -euo pipefail
           export PATH=/ucrt64/bin:$PATH
           VERSION="$(grep -m1 'project(opensource-communicator VERSION' client/CMakeLists.txt | sed -E 's/.*VERSION ([0-9.]+).*/\1/')"
+          SUFFIX="win64"
+          if [ "$BUILD_TYPE" = "Debug" ]; then
+            SUFFIX="win64-debug"
+          fi
           STAGE="$GITHUB_WORKSPACE/client/build-win64/portable"
           mkdir -p dist "$STAGE"
           cp client/build-win64/opensource-communicator.exe "$STAGE/"
-          windeployqt6 --no-translations --no-system-d3d-compiler --no-opengl-sw \
+          # MSYS2 ships release-only Qt, so always deploy release DLLs even for the
+          # Debug build (our Debug exe links against the same release Qt runtime).
+          windeployqt6 --release --no-translations --no-system-d3d-compiler --no-opengl-sw \
             "$STAGE/opensource-communicator.exe"
           cp /ucrt64/bin/libopus-0.dll "$STAGE/"
           ldd "$STAGE/opensource-communicator.exe" | awk '/\/ucrt64\// {print $3}' | while read -r dll; do
             cp -n "$dll" "$STAGE/" 2>/dev/null || true
           done
-          (cd "$STAGE" && zip -r9 "$GITHUB_WORKSPACE/dist/OpenSource-Communicator-${VERSION}-win64.zip" .)
+          (cd "$STAGE" && zip -r9 "$GITHUB_WORKSPACE/dist/OpenSource-Communicator-${VERSION}-${SUFFIX}.zip" .)
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-portable
+          name: windows-portable-${{ matrix.build_type }}
           path: dist/*.zip
+          if-no-files-found: error
+
+  linux-build:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Release, Debug]
+    env:
+      BUILD_TYPE: ${{ matrix.build_type }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            ninja-build \
+            pkg-config \
+            qt6-base-dev \
+            qt6-websockets-dev \
+            qt6-multimedia-dev \
+            libgl1-mesa-dev \
+            libssl-dev \
+            libopus-dev \
+            libdatachannel-dev
+
+      - name: Build application
+        run: |
+          set -euo pipefail
+          cmake -S client -B client/build-linux -G Ninja \
+            -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+            -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/dist/AppDir/usr"
+          cmake --build client/build-linux -j"$(nproc)"
+
+      - name: Stage tarball
+        run: |
+          set -euo pipefail
+          VERSION="$(grep -m1 'project(opensource-communicator VERSION' client/CMakeLists.txt | sed -E 's/.*VERSION ([0-9.]+).*/\1/')"
+          SUFFIX="linux-x86_64"
+          if [ "$BUILD_TYPE" = "Debug" ]; then
+            SUFFIX="linux-x86_64-debug"
+          fi
+          cmake --install client/build-linux
+          mkdir -p dist
+          tar -C "$GITHUB_WORKSPACE/dist/AppDir/usr" \
+            -czf "dist/OpenSource-Communicator-${VERSION}-${SUFFIX}.tar.gz" .
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build-${{ matrix.build_type }}
+          path: dist/*.tar.gz
           if-no-files-found: error
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [windows-portable]
+    needs: [windows-portable, linux-build]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4
         with:
+          pattern: '*-Release'
           path: artifacts
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/windows-portable/*
+          files: artifacts/**/*
           generate_release_notes: true

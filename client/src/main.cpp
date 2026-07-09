@@ -5,12 +5,36 @@
 
 #include <QApplication>
 #include <QIcon>
+#include <QLoggingCategory>
 #include "ui/NativeScrollBars.h"
 #include "ui/ThemeHelper.h"
+
+namespace {
+
+void configureLogging()
+{
+#ifdef OSC_DEBUG_BUILD
+  qSetMessagePattern(QStringLiteral("[%{time HH:mm:ss.zzz}] %{type} %{category}: %{message}"));
+  QLoggingCategory::setFilterRules(QStringLiteral(
+      "itl.*.debug=true\n"
+      "itl.*.info=true\n"
+      "itl.*.warning=true\n"
+      "itl.*.critical=true"));
+#else
+  QLoggingCategory::setFilterRules(QStringLiteral(
+      "*.debug=false\n"
+      "*.info=false\n"
+      "*.warning=true\n"
+      "*.critical=true"));
+#endif
+}
+
+} // namespace
 
 int main(int argc, char *argv[])
 {
   QApplication app(argc, argv);
+  configureLogging();
   QApplication::setApplicationName(QStringLiteral("opensource-communicator"));
   QApplication::setOrganizationName(QStringLiteral("opensource-communicator"));
   QApplication::setApplicationVersion(QStringLiteral("0.1.0"));
