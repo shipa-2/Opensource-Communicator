@@ -247,7 +247,7 @@ sudo cmake --install build   # по умолчанию /opt/opensource-communica
 | `windows-portable` | MSYS2 UCRT64, Qt 6.8, libdatachannel static | `windows-portable-Release` (без консоли), `windows-portable-Debug` (с консолью) |
 | `linux-build` | Ubuntu 24.04, системные Qt6 + `libdatachannel-dev` | `linux-build-Release`, `linux-build-Debug` (tar.gz от `install`) |
 
-- Триггер: `workflow_dispatch` или тег `v*`.
+- Триггер: push в `main`, `workflow_dispatch` или тег `v*`.
 - Job `release` (только на тег `v*`) прикрепляет к GitHub Release **только Release**-артефакты (pattern `*-Release`).
 - Локально Windows: `packaging/windows/build-windows.sh` (поддерживает `BUILD_TYPE=Debug`).
 
