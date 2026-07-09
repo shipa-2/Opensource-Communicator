@@ -175,7 +175,15 @@ QLineEdit#dialEdit {
     border: 1px solid palette(mid);
     border-radius: 6px;
     padding: 8px;
-    font-size: 16px;
+    font-size: 18px;
     color: palette(text);
     background: palette(base);
+}
+
+QPushButton#dialCallBtn {
+    min-height: 40px;
+    font-size: 15px;
+    font-weight: bold;
+    border-radius: 8px;
+    /* color/background are set from MainWindow::updateDialCallButtonStyle() */
 }

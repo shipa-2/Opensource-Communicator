@@ -217,6 +217,7 @@ void ChatManager::handlePayload(const QJsonObject &payload)
 
     if (im.incoming && !im.origId.isEmpty()) {
       m_unreadByPeer[im.peer].append(im.origId);
+      emit unreadChanged(im.peer);
     }
     emit messageReceived(im);
     return;
@@ -258,6 +259,7 @@ void ChatManager::handlePayload(const QJsonObject &payload)
       }
       if (!ids.isEmpty()) {
         m_unreadByPeer.insert(peer, ids);
+        emit unreadChanged(peer);
       }
     }
   }
@@ -330,7 +332,7 @@ void ChatManager::clearDemoMessages()
   m_unreadByPeer.clear();
 }
 
-void ChatManager::addDemoMessage(const QString &peer, const QString &text, bool incoming)
+void ChatManager::addDemoMessage(const QString &peer, const QString &text, bool incoming, bool notify)
 {
   const QString normalized = normalizePeer(peer);
   InstantMessage im;
@@ -339,6 +341,34 @@ void ChatManager::addDemoMessage(const QString &peer, const QString &text, bool 
   im.incoming = incoming;
   im.timestamp = QDateTime::currentDateTime();
   m_messages[normalized].append(im);
+  if (!notify) {
+    return;
+  }
+  if (incoming) {
+    m_unreadByPeer[normalized].append(QStringLiteral("demo-%1").arg(im.timestamp.toMSecsSinceEpoch()));
+    emit unreadChanged(normalized);
+  }
+  emit messageReceived(im);
+}
+
+bool ChatManager::hasUnread(const QString &peer) const
+{
+  return !m_unreadByPeer.value(normalizePeer(peer)).isEmpty();
+}
+
+void ChatManager::markPeerRead(const QString &peer)
+{
+  const QString normalized = normalizePeer(peer);
+  const QStringList ids = m_unreadByPeer.value(normalized);
+  if (ids.isEmpty()) {
+    return;
+  }
+  if (m_demoMode || !m_api) {
+    m_unreadByPeer.remove(normalized);
+  } else {
+    sendSeen(normalized, ids);
+  }
+  emit unreadChanged(normalized);
 }
 
 void ChatManager::sendSeen(const QString &peer, const QStringList &origIds)

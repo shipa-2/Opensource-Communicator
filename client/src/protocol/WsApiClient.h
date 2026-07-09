@@ -27,6 +27,10 @@ public:
     void bindIm(const QString &lastKnownId = {}, int maxHistSize = 32767, bool loadContacts = true);
     void subscribeToAddressBook();
 
+    int createContact(const QJsonObject &contact);
+    int deleteContact(const QString &contactId);
+    int uploadContacts(const QJsonArray &contacts);
+
     void provisionCall(const QString &leg);
     void startCall(const QString &leg, const QString &peer, const QString &localSdp,
                    const QString &callerId = {}, const QJsonObject &conference = {});
@@ -42,7 +46,7 @@ public:
     void sendSms(const QString &from, const QString &to, const QString &text);
 
     void getDomainContacts();
-    void getHistory(const QJsonObject &params);
+    int getHistory(const QJsonObject &params);
     int getSmsTelnums();
 
     int sendIm(const QString &peer, const QString &body, const QString &type = {},

@@ -18,6 +18,7 @@ public:
     explicit ChatDialog(itl::CommunicatorClient *client, QWidget *parent = nullptr);
 
     void openForPeer(const QString &peer, const QString &peerDisplayName, const QString &selfDisplayName);
+    bool isOpenForPeer(const QString &peer) const;
 
 private slots:
     void onSend();

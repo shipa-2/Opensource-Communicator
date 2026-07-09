@@ -10,7 +10,9 @@
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPushButton>
+#include <QApplication>
 #include <QStyle>
+#include <QTimer>
 #include <QWidgetAction>
 
 namespace {
@@ -135,7 +137,65 @@ void ContactRowWidget::setChatButtonVisible(bool visible)
 {
   if (m_chatBtn) {
     m_chatBtn->setVisible(visible);
+    if (!visible) {
+      setUnreadBlink(false);
+    } else {
+      refreshChatButtonStyle();
+    }
   }
+}
+
+void ContactRowWidget::setUnreadBlink(bool enabled)
+{
+  if (m_unreadBlink == enabled) {
+    return;
+  }
+  m_unreadBlink = enabled;
+  if (!enabled) {
+    if (m_blinkTimer) {
+      m_blinkTimer->stop();
+    }
+    m_blinkAccentOn = false;
+    refreshChatButtonStyle();
+    return;
+  }
+
+  if (!m_blinkTimer) {
+    m_blinkTimer = new QTimer(this);
+    m_blinkTimer->setInterval(500);
+    connect(m_blinkTimer, &QTimer::timeout, this, [this]() {
+      if (!m_unreadBlink || !m_chatBtn || !m_chatBtn->isVisible()) {
+        return;
+      }
+      m_blinkAccentOn = !m_blinkAccentOn;
+      refreshChatButtonStyle();
+    });
+  }
+  m_blinkAccentOn = true;
+  refreshChatButtonStyle();
+  m_blinkTimer->start();
+}
+
+void ContactRowWidget::refreshChatButtonStyle()
+{
+  if (!m_chatBtn || !m_chatBtn->isVisible()) {
+    return;
+  }
+
+  if (m_unreadBlink && m_blinkAccentOn) {
+    QPalette pal = palette();
+    pal.setColor(QPalette::Button, pal.color(QPalette::Highlight));
+    pal.setColor(QPalette::ButtonText, pal.color(QPalette::HighlightedText));
+    m_chatBtn->setAutoFillBackground(true);
+    m_chatBtn->setPalette(pal);
+  } else {
+    m_chatBtn->setAutoFillBackground(false);
+    m_chatBtn->setPalette(QApplication::palette(m_chatBtn));
+    m_chatBtn->setStyleSheet({});
+  }
+  m_chatBtn->style()->unpolish(m_chatBtn);
+  m_chatBtn->style()->polish(m_chatBtn);
+  m_chatBtn->update();
 }
 
 void ContactRowWidget::setCallNumbers(const QVector<CallNumber> &numbers)
@@ -250,6 +310,7 @@ void ContactRowWidget::refreshAppearance()
   refreshAvatarStyle();
   refreshStatusDot();
   refreshTextLabels();
+  refreshChatButtonStyle();
 }
 
 void ContactRowWidget::refreshTextLabels()

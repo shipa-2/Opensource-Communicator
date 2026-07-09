@@ -6,6 +6,7 @@
 
 class QLabel;
 class QPushButton;
+class QTimer;
 
 class ContactRowWidget : public QWidget {
     Q_OBJECT
@@ -23,6 +24,7 @@ public:
     void updateName(const QString &name);
     void setCallNumbers(const QVector<CallNumber> &numbers);
     void setChatButtonVisible(bool visible);
+    void setUnreadBlink(bool enabled);
     void setSelected(bool selected);
     void refreshAppearance();
 
@@ -44,6 +46,7 @@ private:
     void refreshAvatarStyle();
     void refreshStatusDot();
     void refreshTextLabels();
+    void refreshChatButtonStyle();
     void showCallMenu(const QPoint &globalPos);
     bool isInteractiveChild(QWidget *target) const;
 
@@ -59,4 +62,7 @@ private:
     QLabel *m_numberLabel = nullptr;
     QPushButton *m_callBtn = nullptr;
     QPushButton *m_chatBtn = nullptr;
+    QTimer *m_blinkTimer = nullptr;
+    bool m_unreadBlink = false;
+    bool m_blinkAccentOn = false;
 };

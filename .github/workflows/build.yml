@@ -193,7 +193,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    # Publish Release builds to a date-tagged GitHub Release (DDMMYYYY)
+    # Publish Release builds to a pre-release tagged DDMMYYYY-HHMM (UTC, commit time)
     # after every successful main / manual run.
     if: >-
       always() &&
@@ -216,16 +216,21 @@ jobs:
         id: meta
         run: |
           set -euo pipefail
-          # Tag / release title: DDMMYYYY (UTC date of the run).
-          TAG="$(date -u +%d%m%Y)"
+          # Tag / release title: DDMMYYYY-HHMM (UTC time of the commit being built).
+          TAG="$(TZ=UTC git log -1 --format=%cd --date=format:%d%m%Y-%H%M)"
           APP_VERSION="$(grep -m1 'project(opensource-communicator VERSION' client/CMakeLists.txt | sed -E 's/.*VERSION ([0-9.]+).*/\1/')"
+          DAY="${TAG:0:2}"
+          MONTH="${TAG:2:2}"
+          YEAR="${TAG:4:4}"
+          HOUR="${TAG:9:2}"
+          MINUTE="${TAG:11:2}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "name=${TAG}" >> "$GITHUB_OUTPUT"
 
           {
             echo "## ${TAG}"
             echo
-            echo "Сборка приложения **${APP_VERSION}** от ${TAG:0:2}.${TAG:2:2}.${TAG:4:4} (UTC)."
+            echo "Сборка приложения **${APP_VERSION}** от ${DAY}.${MONTH}.${YEAR} ${HOUR}:${MINUTE} (UTC)."
             echo
             awk -v ver="$APP_VERSION" '
               /^## \[/ {
@@ -236,7 +241,7 @@ jobs:
             ' CHANGELOG.md
           } > release-notes.md
 
-          echo "Publishing assets to ${TAG}:"
+          echo "Publishing pre-release assets to ${TAG}:"
           find artifacts -type f -print
 
       - name: Create or update GitHub release
@@ -247,5 +252,6 @@ jobs:
           files: artifacts/**/*
           body_path: release-notes.md
           generate_release_notes: false
-          make_latest: true
+          prerelease: true
+          make_latest: false
           fail_on_unmatched_files: true

@@ -20,6 +20,10 @@ struct CallHistoryEntry {
     bool answered = false;
     QString result;
     QString transferTo; // display name or peer when result == "transferred"
+    QString employeeInfo; // сотрудник домена для вкладки «Звонки компании»
+    QString fromAddr; // нормализованный From/FromExt
+    QString toAddr;   // нормализованный To/ToExt
+    bool isInnerCall = false; // CallType == inner с сервера
 };
 
 class UserDataStore : public QObject {

@@ -45,12 +45,15 @@ QList<CallHistoryEntry> callHistory()
   const qint64 now = QDateTime::currentMSecsSinceEpoch();
   const QString domain = demoDomain();
   return {
-      {QStringLiteral("ivan@") + domain, QStringLiteral("Иван Петров"), QStringLiteral("outgoing"), now - 3600000, now - 3580000,
-       now - 3400000, 180, true, QStringLiteral("connected")},
-      {QStringLiteral("maria@") + domain, QStringLiteral("Мария Сидорова"), QStringLiteral("incoming"), now - 86400000, now - 86380000,
-       now - 86350000, 30, true, QStringLiteral("connected")},
-      {QStringLiteral("+79991234567"), QStringLiteral("Клиент VIP"), QStringLiteral("outgoing"), now - 172800000, 0, now - 172790000,
-       0, false, QStringLiteral("no-answer")},
+      {QStringLiteral("ivan@") + domain, QStringLiteral("Иван Петров"), QStringLiteral("outgoing"), now - 3600000,
+       now - 3580000, now - 3400000, 180, true, QStringLiteral("connected"), {}, {}},
+      {QStringLiteral("maria@") + domain, QStringLiteral("Мария Сидорова"), QStringLiteral("incoming"), now - 86400000,
+       now - 86380000, now - 86350000, 30, true, QStringLiteral("connected"), {}, {}},
+      {QStringLiteral("+79991234567"), QStringLiteral("Клиент VIP"), QStringLiteral("incoming"), now - 172800000, 0,
+       now - 172790000, 0, false, QStringLiteral("no-answer"), {}, QStringLiteral("Иван Петров <ivan@") + domain + QLatin1Char('>')},
+      {QStringLiteral("705"), QStringLiteral("Мария Сидорова"), QStringLiteral("outgoing"), now - 7200000, now - 7180000,
+       now - 7000000, 120, true, QStringLiteral("connected"), {}, QStringLiteral("Демо-пользователь <100>"),
+       QStringLiteral("100@") + domain, QStringLiteral("705@") + domain, true},
   };
 }
 
@@ -63,9 +66,9 @@ void seedChatMessages(ChatManager *chat)
   chat->clearDemoMessages();
   const QString domain = demoDomain();
   const QString ivanPeer = QStringLiteral("ivan@") + domain;
-  chat->addDemoMessage(ivanPeer, QStringLiteral("Привет! Это демо-чат."), true);
-  chat->addDemoMessage(ivanPeer, QStringLiteral("Можно проверить интерфейс без подключения к ВАТС."), true);
-  chat->addDemoMessage(ivanPeer, QStringLiteral("Понял, спасибо!"), false);
+  chat->addDemoMessage(ivanPeer, QStringLiteral("Привет! Это демо-чат."), true, false);
+  chat->addDemoMessage(ivanPeer, QStringLiteral("Можно проверить интерфейс без подключения к ВАТС."), true, false);
+  chat->addDemoMessage(ivanPeer, QStringLiteral("Понял, спасибо!"), false, false);
 }
 
 } // namespace itl::DemoData

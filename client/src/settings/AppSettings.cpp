@@ -342,12 +342,16 @@ QJsonArray AppSettings::customContactsToJson() const
 {
   QJsonArray array;
   for (const CustomContact &contact : m_customContacts) {
-    array.append(QJsonObject{
+    QJsonObject obj{
         {QStringLiteral("peer"), contact.peer},
         {QStringLiteral("name"), contact.name},
         {QStringLiteral("phone"), contact.phone},
         {QStringLiteral("ext"), contact.ext},
-    });
+    };
+    if (!contact.serverId.isEmpty()) {
+      obj.insert(QStringLiteral("serverId"), contact.serverId);
+    }
+    array.append(obj);
   }
   return array;
 }
@@ -362,6 +366,7 @@ void AppSettings::customContactsFromJson(const QJsonArray &array)
     contact.name = obj.value(QStringLiteral("name")).toString();
     contact.phone = obj.value(QStringLiteral("phone")).toString();
     contact.ext = obj.value(QStringLiteral("ext")).toString();
+    contact.serverId = obj.value(QStringLiteral("serverId")).toString();
     if (!contact.peer.isEmpty()) {
       m_customContacts.append(contact);
     }

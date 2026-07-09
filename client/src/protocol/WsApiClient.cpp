@@ -183,6 +183,39 @@ void WsApiClient::subscribeToAddressBook()
   m_connection->sendRequestWithResponse(QJsonObject{{QString::fromUtf8(kEmptyKey), QStringLiteral("subscribetoaddressbook")}});
 }
 
+int WsApiClient::createContact(const QJsonObject &contact)
+{
+  if (!ensureOnline()) {
+    return -1;
+  }
+  return m_connection->sendRequestWithResponse(QJsonObject{
+      {QString::fromUtf8(kEmptyKey), QStringLiteral("createcontact")},
+      {QStringLiteral("contact"), contact},
+  });
+}
+
+int WsApiClient::deleteContact(const QString &contactId)
+{
+  if (!ensureOnline() || contactId.isEmpty()) {
+    return -1;
+  }
+  return m_connection->sendRequestWithResponse(QJsonObject{
+      {QString::fromUtf8(kEmptyKey), QStringLiteral("deletecontact")},
+      {QStringLiteral("contact"), QJsonObject{{QStringLiteral("contactId"), contactId}}},
+  });
+}
+
+int WsApiClient::uploadContacts(const QJsonArray &contacts)
+{
+  if (!ensureOnline() || contacts.isEmpty()) {
+    return -1;
+  }
+  return m_connection->sendRequestWithResponse(QJsonObject{
+      {QString::fromUtf8(kEmptyKey), QStringLiteral("uploadcontacts")},
+      {QStringLiteral("contacts"), contacts},
+  });
+}
+
 void WsApiClient::provisionCall(const QString &leg)
 {
   if (!ensureOnline()) {
@@ -342,17 +375,17 @@ void WsApiClient::getDomainContacts()
       [](const QString &) {});
 }
 
-void WsApiClient::getHistory(const QJsonObject &params)
+int WsApiClient::getHistory(const QJsonObject &params)
 {
   if (!ensureOnline()) {
-    return;
+    return -1;
   }
 
   QJsonObject request = params;
   if (!request.contains(QString::fromUtf8(kEmptyKey))) {
     request.insert(QString::fromUtf8(kEmptyKey), QStringLiteral("gethistory"));
   }
-  m_connection->sendRequestWithResponse(request);
+  return m_connection->sendRequestWithResponse(request);
 }
 
 int WsApiClient::getSmsTelnums()

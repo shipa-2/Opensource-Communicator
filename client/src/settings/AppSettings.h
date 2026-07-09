@@ -18,6 +18,7 @@ struct CustomContact {
     QString name;
     QString phone;
     QString ext;
+    QString serverId;
 };
 
 class AppSettings : public QObject {

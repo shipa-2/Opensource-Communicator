@@ -37,16 +37,20 @@ public:
     int sendMessage(const QString &peer, const QString &text);
     void setDemoMode(bool enabled);
     void clearDemoMessages();
-    void addDemoMessage(const QString &peer, const QString &text, bool incoming);
+    void addDemoMessage(const QString &peer, const QString &text, bool incoming, bool notify = true);
     void sendSeen(const QString &peer, const QStringList &origIds);
     void loadHistory(const QString &lastKnownId = {});
 
     QList<InstantMessage> messagesForPeer(const QString &peer) const;
 
+    bool hasUnread(const QString &peer) const;
+    void markPeerRead(const QString &peer);
+
 signals:
     void messageReceived(const itl::InstantMessage &message);
     void typingReceived(const QString &peer);
     void historyLoaded(const QString &peer);
+    void unreadChanged(const QString &peer);
 
 private:
     InstantMessage parseMessage(const QJsonObject &msg) const;

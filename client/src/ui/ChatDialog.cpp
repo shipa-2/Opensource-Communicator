@@ -55,6 +55,15 @@ void ChatDialog::openForPeer(const QString &peer, const QString &peerDisplayName
   raise();
   activateWindow();
   m_input->setFocus();
+  m_client->chat()->markPeerRead(peer);
+}
+
+bool ChatDialog::isOpenForPeer(const QString &peer) const
+{
+  if (!isVisible() || peer.isEmpty() || !m_client) {
+    return false;
+  }
+  return m_client->chat()->normalizedPeer(peer) == m_client->chat()->normalizedPeer(m_peer);
 }
 
 QString ChatDialog::shortDisplayName(const QString &fullName, const QString &fallback)
@@ -144,4 +153,7 @@ void ChatDialog::onChatMessage(const QString &peer, const QString &text, bool in
     return;
   }
   appendMessage(text, incoming, timestamp);
+  if (incoming) {
+    m_client->chat()->markPeerRead(peer);
+  }
 }

@@ -18,6 +18,7 @@ CommunicatorClient::CommunicatorClient(QObject *parent)
     : QObject(parent)
     , m_settings(QStringLiteral("opensource-communicator"), QStringLiteral("opensource-communicator"))
     , m_chat(new ChatManager(&m_api, this))
+    , m_addressBook(new AddressBookManager(&m_api, this))
 {
   qRegisterMetaType<itl::LoginCredentials>("itl::LoginCredentials");
 
@@ -27,6 +28,14 @@ CommunicatorClient::CommunicatorClient(QObject *parent)
   connect(&m_api, &WsApiClient::connectionFailed, this, &CommunicatorClient::onConnectionFailed);
   connect(&m_api, &WsApiClient::connectionClosed, this, &CommunicatorClient::onConnectionClosed);
   connect(&m_api, &WsApiClient::responseReceived, this, &CommunicatorClient::onApiResponse);
+
+  connect(m_addressBook, &AddressBookManager::contactsChanged, this, &CommunicatorClient::addressBookChanged);
+  connect(m_addressBook, &AddressBookManager::uploadCompleted, this, [this](bool success) {
+    if (success && !m_appSettings.customContacts().isEmpty()) {
+      m_appSettings.setCustomContacts({});
+      saveSettings();
+    }
+  });
 
   connect(m_chat, &ChatManager::messageReceived, this, [this](const InstantMessage &im) {
     if (!im.body.isEmpty()) {
@@ -215,6 +224,7 @@ void CommunicatorClient::logout()
   if (m_api.appState() == AppState::Online) {
     m_api.sendBye();
   }
+  m_addressBook->clear();
   m_api.disconnect();
   emit stateChanged(AppState::Offline);
   emit statusMessage(tr("Отключено"));
@@ -277,6 +287,14 @@ void CommunicatorClient::onAuthResult(bool success, const QJsonObject &payload)
     saveSavedAccounts();
   }
   m_chat->setDomain(m_credentials.domain);
+  m_addressBook->setDomain(m_credentials.domain);
+  m_addressBook->clear();
+
+  const QList<CustomContact> localContacts = m_appSettings.customContacts();
+  if (!localContacts.isEmpty()) {
+    m_addressBook->uploadLocalContacts(localContacts);
+  }
+
   emit stateChanged(AppState::Online);
   emit statusMessage(tr("В сети"));
 
@@ -298,6 +316,11 @@ void CommunicatorClient::onServerPayload(const QJsonObject &payload)
 
   if (what == QStringLiteral("[PRESENCE]")) {
     handlePresencePayload(payload);
+    return;
+  }
+
+  if (what == QStringLiteral("[CONTACTS]")) {
+    m_addressBook->handlePayload(payload);
     return;
   }
 
@@ -342,16 +365,19 @@ void CommunicatorClient::handlePresencePayload(const QJsonObject &payload)
 void CommunicatorClient::onApiResponse(int requestId, const QJsonObject &response)
 {
   m_chat->handleResponse(requestId, response);
+  m_addressBook->handleResponse(requestId, response);
 }
 
 void CommunicatorClient::onConnectionFailed(const QString &error)
 {
+  m_addressBook->clear();
   emit statusMessage(tr("Ошибка соединения: %1").arg(error));
   emit stateChanged(AppState::Offline);
 }
 
 void CommunicatorClient::onConnectionClosed(const QString &reason)
 {
+  m_addressBook->clear();
   emit statusMessage(tr("Соединение закрыто: %1").arg(reason));
   emit stateChanged(AppState::Offline);
 }

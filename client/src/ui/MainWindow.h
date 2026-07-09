@@ -14,21 +14,28 @@ struct CallHistoryEntry;
 class PresenceSelector;
 class QLabel;
 class QButtonGroup;
+class QDragEnterEvent;
+class QDropEvent;
 class QLineEdit;
 class QListWidget;
 class QListWidgetItem;
+class QMimeData;
 class QPushButton;
 class QTabWidget;
 class QJsonObject;
+class QAction;
+class QMenu;
 
 class CallWindow;
 class ChatDialog;
 class ContactRowWidget;
+class DialKeypadWidget;
 class ProfileAvatarWidget;
 
 namespace itl {
 class CommunicatorClient;
 class CallManager;
+class MessageNotifyPlayer;
 }
 
 class MainWindow : public QMainWindow {
@@ -37,6 +44,12 @@ class MainWindow : public QMainWindow {
 public:
     explicit MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls, QWidget *parent = nullptr);
     void refreshTheme();
+    void handleIncomingTelUri(const QString &uri);
+
+protected:
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private slots:
     void onLogin();
@@ -48,10 +61,10 @@ private slots:
     void onAddContact();
     void onImportContacts();
     void onConference();
-    void onViewMenu();
     void onDial();
     void onCallFromRow(const QString &peer);
     void onChatFromRow(const QString &peer);
+    void onIncomingChatMessage(const QString &peer, const QString &text, bool incoming, const QDateTime &timestamp);
     void onNotesFromRow(const QString &peer);
     void onHistoryItemActivated(QListWidgetItem *item);
     void onDeleteContactFromRow(const QString &peer);
@@ -68,6 +81,8 @@ private slots:
     void onCallEvent(const QString &leg, const QString &what, const QJsonObject &payload);
     void onCallStateChanged(const QString &leg, const QString &state, const QString &detail);
     void onContactsLoaded(const QJsonObject &contacts);
+    void onAddressBookChanged();
+    void onServerHistoryLoaded(int requestId, const QJsonObject &response);
     void onFilterChanged(int id);
     void onHistoryDirChanged(int id);
     void onHistoryScopeChanged(int id);
@@ -99,6 +114,17 @@ private:
     QVector<ContactRowWidget::CallNumber> callNumbersForPeer(const QString &peer) const;
     void updateSelfHeader();
     void mergeCustomContacts();
+    bool useServerContacts() const;
+    void setupDragDrop();
+    void registerDropTarget(QWidget *widget);
+    bool canAcceptDrag(const QMimeData *mimeData) const;
+    bool handleDroppedMimeData(const QMimeData *mimeData, bool notify);
+    void applyTelUriToDial(const QString &raw);
+    int importContactsFromPath(const QString &path, bool notify, bool fromDrop = false);
+    int importContactsFromText(const QString &text, bool isVcard, bool notify, bool fromDrop = false);
+    int addImportedContact(const QString &name, const QString &phone, const QString &ext);
+    bool shouldInterceptTelPaste(QObject *focusWidget) const;
+    bool isTelUri(const QString &text) const;
     QString selectedPeer() const;
     QString resolvePeer(QString input) const;
     QString displayNameForPeer(const QString &peer) const;
@@ -112,12 +138,21 @@ private:
     void loadCallNotes(const QString &peer);
     void recordCallForPeer(const QString &peer);
     void rebuildHistoryList();
+    void refreshServerHistory();
+    void prefetchCompanyHistory();
+    void prefetchInternalHistory();
+    void runHistorySelfTest();
+    QJsonObject buildHistoryRequest(HistoryScope scope) const;
+    QList<itl::CallHistoryEntry> currentHistoryEntries() const;
     bool historyEntryMatches(const itl::CallHistoryEntry &entry) const;
     void updateHistoryPeriodLabel();
     void applyLinkButtonStyle(QPushButton *button) const;
     void updateFilterButtonStyles();
     void updateHistoryButtonStyles();
+    void updateDialCallButtonStyle();
     void applyContactViewSettings();
+    void updateUnreadIndicators();
+    bool shouldNotifyForChatMessage(const QString &peer) const;
     void enterDemoInterface();
     void exitDemoInterface();
     void stopDemoCallSimulation();
@@ -139,17 +174,22 @@ private:
 
     itl::CommunicatorClient *m_client = nullptr;
     itl::CallManager *m_calls = nullptr;
+    itl::MessageNotifyPlayer *m_messageNotify = nullptr;
     CallWindow *m_callWindow = nullptr;
     ChatDialog *m_chatDialog = nullptr;
+    QMenu *m_viewMenu = nullptr;
+    QAction *m_viewChatAction = nullptr;
 
     QLabel *m_headerName = nullptr;
     ProfileAvatarWidget *m_headerAvatar = nullptr;
     PresenceSelector *m_presenceSelector = nullptr;
     QTabWidget *m_tabs = nullptr;
+    QWidget *m_dialPage = nullptr;
     QListWidget *m_contactsList = nullptr;
     QListWidget *m_historyList = nullptr;
     QLineEdit *m_searchEdit = nullptr;
     QLineEdit *m_dialInput = nullptr;
+    DialKeypadWidget *m_dialKeypad = nullptr;
     QLineEdit *m_historySearchEdit = nullptr;
     QPushButton *m_dialCallBtn = nullptr;
     QPushButton *m_historyPeriodBtn = nullptr;
@@ -174,4 +214,14 @@ private:
     QHash<QString, CallTracking> m_callTracking;
     QString m_demoCallLeg;
     QList<itl::CallHistoryEntry> m_demoCallHistory;
+    QList<itl::CallHistoryEntry> m_serverHistory;
+    QList<itl::CallHistoryEntry> m_companyHistory;
+    QList<itl::CallHistoryEntry> m_internalHistory;
+    int m_historyRequestId = -1;
+    int m_companyHistoryRequestId = -1;
+    int m_internalHistoryRequestId = -1;
+    HistoryScope m_historyRequestScope = HistoryScope::Mine;
+    bool m_historyLoading = false;
+    bool m_companyHistoryLoading = false;
+    bool m_internalHistoryLoading = false;
 };

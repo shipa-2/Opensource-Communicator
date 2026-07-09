@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AddressBookManager.h"
 #include "WsApiClient.h"
 #include "settings/AppSettings.h"
 
@@ -35,6 +36,7 @@ public:
 
     WsApiClient *api() { return &m_api; }
     ChatManager *chat() { return m_chat; }
+    AddressBookManager *addressBook() { return m_addressBook; }
     AppSettings &appSettings() { return m_appSettings; }
     AppState state() const { return m_api.appState(); }
 
@@ -63,6 +65,7 @@ signals:
     void statusMessage(const QString &message);
     void chatMessage(const QString &peer, const QString &text, bool incoming, const QDateTime &timestamp);
     void contactUpdated(const QString &peer, const QString &name, const QString &presence);
+    void addressBookChanged();
     void callEvent(const QString &leg, const QString &what, const QJsonObject &payload);
 
 private slots:
@@ -81,6 +84,7 @@ private:
 
     WsApiClient m_api;
     ChatManager *m_chat = nullptr;
+    AddressBookManager *m_addressBook = nullptr;
     LoginCredentials m_credentials;
     QList<LoginCredentials> m_savedAccounts;
     AppSettings m_appSettings;

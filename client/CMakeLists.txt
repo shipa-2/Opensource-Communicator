@@ -46,6 +46,10 @@ add_executable(opensource-communicator
     src/protocol/WsApiClient.h
     src/protocol/CommunicatorClient.cpp
     src/protocol/CommunicatorClient.h
+    src/protocol/AddressBookManager.cpp
+    src/protocol/AddressBookManager.h
+    src/protocol/CallHistoryParser.cpp
+    src/protocol/CallHistoryParser.h
     src/calls/CallTypes.h
     src/calls/CallManager.cpp
     src/calls/CallManager.h
@@ -57,6 +61,8 @@ add_executable(opensource-communicator
     src/audio/RingbackPlayer.h
     src/audio/IncomingRingPlayer.cpp
     src/audio/IncomingRingPlayer.h
+    src/audio/MessageNotifyPlayer.cpp
+    src/audio/MessageNotifyPlayer.h
     src/audio/AudioDeviceUtils.cpp
     src/audio/AudioDeviceUtils.h
     src/settings/AppSettings.cpp
@@ -69,6 +75,10 @@ add_executable(opensource-communicator
     src/demo/DemoData.h
     src/ui/MainWindow.cpp
     src/ui/MainWindow.h
+    src/ui/DialKeypadWidget.cpp
+    src/ui/DialKeypadWidget.h
+    src/ui/AppInstance.cpp
+    src/ui/AppInstance.h
     src/ui/ContactRowWidget.cpp
     src/ui/ContactRowWidget.h
     src/ui/CallWindow.cpp

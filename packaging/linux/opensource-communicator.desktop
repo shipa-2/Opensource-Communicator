@@ -2,8 +2,9 @@
 Type=Application
 Name=OpenSource Communicator
 Comment=ITooLabs / Megafon PBX compatible VoIP client
-Exec=/opt/opensource-communicator/bin/opensource-communicator
+Exec=/opt/opensource-communicator/bin/opensource-communicator %u
 Icon=opensource-communicator
 Categories=Network;InstantMessaging;Telephony;
+MimeType=x-scheme-handler/tel;
 Terminal=false
 StartupWMClass=opensource-communicator
