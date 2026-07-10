@@ -3,6 +3,7 @@
 #include <QDialog>
 
 class QLabel;
+class QKeyEvent;
 class QPushButton;
 class QTextEdit;
 class QTimer;
@@ -42,6 +43,7 @@ signals:
 
 protected:
     void reject() override;
+    void keyPressEvent(QKeyEvent *event) override;
 
 private:
     void buildUi();

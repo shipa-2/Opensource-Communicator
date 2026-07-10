@@ -3,6 +3,7 @@
 #include "ui/StyleHelper.h"
 
 #include <QHBoxLayout>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QPushButton>
 #include <QTextEdit>
@@ -151,6 +152,18 @@ void CallWindow::reject()
   QDialog::reject();
 }
 
+void CallWindow::keyPressEvent(QKeyEvent *event)
+{
+  // Escape may have been intended for the window that was active before an
+  // incoming call appeared. Ending a call must require an explicit action.
+  if (event->key() == Qt::Key_Escape) {
+    event->accept();
+    return;
+  }
+
+  QDialog::keyPressEvent(event);
+}
+
 void CallWindow::setNotesText(const QString &text)
 {
   const QSignalBlocker blocker(m_notesEdit);
@@ -251,6 +264,7 @@ void CallWindow::updateRemoteAudioLevel(float level)
 
 void CallWindow::showOutgoing(const QString &peer, const QString &displayName, const QString &detail)
 {
+  setAttribute(Qt::WA_ShowWithoutActivating, false);
   m_peer = peer;
   m_displayName = displayName;
   setWindowTitle(tr("%1 — дозвон").arg(displayName));
@@ -268,6 +282,9 @@ void CallWindow::showOutgoing(const QString &peer, const QString &displayName, c
 
 void CallWindow::showIncoming(const QString &peer, const QString &displayName, const QString &detail)
 {
+  // Show the incoming call prominently, but preserve keyboard focus in the
+  // application the user is currently working in.
+  setAttribute(Qt::WA_ShowWithoutActivating, true);
   m_peer = peer;
   m_displayName = displayName;
   setWindowTitle(tr("Входящий: %1").arg(displayName));
@@ -280,11 +297,11 @@ void CallWindow::showIncoming(const QString &peer, const QString &displayName, c
   stopTimer();
   show();
   raise();
-  activateWindow();
 }
 
 void CallWindow::showActive(const QString &peer, const QString &displayName)
 {
+  setAttribute(Qt::WA_ShowWithoutActivating, false);
   m_peer = peer;
   m_displayName = displayName;
   setWindowTitle(tr("%1 — разговор").arg(displayName));
