@@ -65,10 +65,9 @@ void seedChatMessages(ChatManager *chat)
 
   chat->clearDemoMessages();
   const QString domain = demoDomain();
-  const QString ivanPeer = QStringLiteral("ivan@") + domain;
-  chat->addDemoMessage(ivanPeer, QStringLiteral("Привет! Это демо-чат."), true, false);
-  chat->addDemoMessage(ivanPeer, QStringLiteral("Можно проверить интерфейс без подключения к ВАТС."), true, false);
-  chat->addDemoMessage(ivanPeer, QStringLiteral("Понял, спасибо!"), false, false);
+  const QString adminPeer = QStringLiteral("admin@") + domain;
+  chat->setDemoPeerColor(adminPeer, QStringLiteral("#c0392b"));
+  chat->addDemoMessage(adminPeer, QStringLiteral("ты уволен"), true, true);
 }
 
 } // namespace itl::DemoData

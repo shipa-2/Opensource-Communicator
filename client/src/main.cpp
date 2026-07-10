@@ -60,6 +60,7 @@ int main(int argc, char *argv[])
 
   itl::NativeScrollBarHelper nativeScrollBars(&app);
   itl::ThemeWatcher themeWatcher(&app);
+  itl::NoFullscreenGuard noFullscreenGuard(&app);
 
   itl::CommunicatorClient client;
   itl::CallManager calls(client.api(), &client.appSettings());
@@ -78,6 +79,10 @@ int main(int argc, char *argv[])
   });
 
   window.show();
+  QTimer::singleShot(0, &window, [&window]() {
+    window.setWindowState(Qt::WindowNoState);
+    window.resize(390, 620);
+  });
 
   const QStringList startupTelUrls = itl::AppInstance::extractTelUrls(startupArgs);
   if (!startupTelUrls.isEmpty()) {

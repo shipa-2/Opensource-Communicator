@@ -3,6 +3,7 @@
 #include "CallTypes.h"
 #include "audio/AudioBridge.h"
 #include "audio/CallRecorder.h"
+#include "audio/ExternalMediaPauser.h"
 #include "audio/IncomingRingPlayer.h"
 #include "audio/RingbackPlayer.h"
 #include "protocol/WsApiClient.h"
@@ -60,9 +61,12 @@ public:
     void setHold(const QString &leg, bool hold);
     void blindTransfer(const QString &leg, const QString &targetPeer);
     void setRecordingName(const QString &leg, const QString &name);
+    void pauseExternalMedia();
+    void resumeExternalMedia();
 
     CallSession *call(const QString &leg);
     QString activeLeg() const { return m_activeLeg; }
+    bool hasActiveCalls() const { return !m_calls.isEmpty(); }
 
 signals:
     void callStateChanged(const QString &leg, const QString &state, const QString &detail);
@@ -103,6 +107,8 @@ private:
     void noteRemoteOpusFrame(const QString &leg, const QByteArray &opus);
     QString contactNameForLeg(const QString &leg) const;
     static bool isAudibleOpusFrame(const QByteArray &opus);
+    void onCallSessionStarted();
+    void onCallSessionEnded();
 
     WsApiClient *m_api = nullptr;
     AppSettings *m_settings = nullptr;
@@ -110,6 +116,7 @@ private:
     CallRecorder m_recorder;
     RingbackPlayer m_ringback;
     IncomingRingPlayer m_incomingRing;
+    ExternalMediaPauser m_externalMedia;
     QHash<QString, CallSession> m_calls;
     QHash<QString, PeerContext> m_peers;
     QHash<QString, QTimer *> m_publishTimers;

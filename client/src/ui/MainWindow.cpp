@@ -23,6 +23,7 @@
 #include "protocol/ProtocolTypes.h"
 #include "settings/AppSettings.h"
 #include "settings/UserDataStore.h"
+#include "ui/ThemeHelper.h"
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
@@ -45,6 +46,7 @@
 #include <QTabWidget>
 #include <QTextStream>
 #include <QTimer>
+#include <QRandomGenerator>
 #include <QVBoxLayout>
 #include <QDateTime>
 #include <QTime>
@@ -58,6 +60,7 @@
 #include <QKeyEvent>
 #include <QLoggingCategory>
 #include <QMimeData>
+#include <QShowEvent>
 #include <QUrl>
 #include <QEvent>
 
@@ -108,8 +111,10 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
     , m_chatDialog(new ChatDialog(client, this))
 {
   setWindowTitle(tr("OpenSource Communicator"));
-  setFixedWidth(390);
-  resize(390, 620);
+  setProperty("itlNoMaximize", true);
+  setWindowFlags(windowFlags() & ~Qt::WindowMaximizeButtonHint);
+  setFixedSize(390, 620);
+  itl::preventFullscreen(this);
 
   auto *menuBar = new QMenuBar(this);
   menuBar->setObjectName(QStringLiteral("windowMenuBar"));
@@ -407,6 +412,27 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   setOnlineUi(false);
   setupDragDrop();
   QTimer::singleShot(0, this, &MainWindow::startSession);
+}
+
+void MainWindow::showEvent(QShowEvent *event)
+{
+  QMainWindow::showEvent(event);
+  if (windowState() & (Qt::WindowFullScreen | Qt::WindowMaximized)) {
+    setWindowState(Qt::WindowNoState);
+  }
+  resize(390, 620);
+}
+
+void MainWindow::changeEvent(QEvent *event)
+{
+  if (event->type() == QEvent::WindowStateChange) {
+    if (windowState() & (Qt::WindowFullScreen | Qt::WindowMaximized)) {
+      setWindowState(Qt::WindowNoState);
+      event->accept();
+      return;
+    }
+  }
+  QMainWindow::changeEvent(event);
 }
 
 void MainWindow::refreshTheme()
@@ -801,6 +827,9 @@ void MainWindow::onProfileAvatarChanged()
 {
   m_client->saveSettings();
   m_headerAvatar->refreshFromSettings();
+  if (m_online) {
+    m_client->chat()->sendColorAdvertisement(m_client->appSettings().profileAvatarColor());
+  }
 }
 
 void MainWindow::loadCallNotes(const QString &peer)
@@ -1460,6 +1489,20 @@ void MainWindow::markCallConnected(const QString &leg)
   m_callTracking[leg].connectedAtMs = QDateTime::currentMSecsSinceEpoch();
 }
 
+void MainWindow::resumeExternalMediaIfIdle()
+{
+  if (m_demoMode) {
+    if (m_demoCallLeg.isEmpty()) {
+      m_calls->resumeExternalMedia();
+    }
+    return;
+  }
+  if (m_calls->hasActiveCalls() || !m_activeLeg.isEmpty() || !m_activeIncomingLeg.isEmpty()) {
+    return;
+  }
+  m_calls->resumeExternalMedia();
+}
+
 void MainWindow::finalizeCallHistory(const QString &leg, const QString &state, const QString &transferTo)
 {
   if (!m_callTracking.contains(leg)) {
@@ -1717,9 +1760,11 @@ void MainWindow::enterDemoInterface()
   }
 
   itl::DemoData::seedChatMessages(m_client->chat());
+  m_client->chat()->sendColorAdvertisement(m_client->appSettings().profileAvatarColor());
   updateSelfHeader();
   rebuildContactList();
   rebuildHistoryList();
+  updateUnreadIndicators();
   setOnlineUi(true);
 }
 
@@ -1742,7 +1787,35 @@ void MainWindow::exitDemoInterface()
 
 void MainWindow::stopDemoCallSimulation()
 {
+  if (!m_demoCallLeg.isEmpty()) {
+    m_calls->resumeExternalMedia();
+  }
+  if (m_demoVoiceTimer) {
+    m_demoVoiceTimer->stop();
+  }
+  m_demoVoiceActive = false;
+  if (m_callWindow && m_callWindow->isVisible()) {
+    m_callWindow->setRemoteSpeakingIndicator(false);
+  }
   m_demoCallLeg.clear();
+}
+
+void MainWindow::startDemoVoiceSimulation()
+{
+  if (!m_demoVoiceTimer) {
+    m_demoVoiceTimer = new QTimer(this);
+    connect(m_demoVoiceTimer, &QTimer::timeout, this, [this]() {
+      if (!m_demoMode || m_activeLeg != m_demoCallLeg) {
+        m_demoVoiceTimer->stop();
+        return;
+      }
+      m_demoVoiceActive = !m_demoVoiceActive;
+      m_callWindow->setRemoteSpeakingIndicator(m_demoVoiceActive);
+      m_demoVoiceTimer->start(150 + QRandomGenerator::global()->bounded(650));
+    });
+  }
+  m_demoVoiceActive = false;
+  m_demoVoiceTimer->start(400);
 }
 
 void MainWindow::startDemoCallSimulation(const QString &peer, const QString &displayName, const QString &detail)
@@ -1754,6 +1827,7 @@ void MainWindow::startDemoCallSimulation(const QString &peer, const QString &dis
   loadCallNotes(peer);
   m_callWindow->showOutgoing(peer, displayName, detail);
   m_callWindow->setAvatarColor(m_client->chat()->peerColor(peer));
+  m_calls->pauseExternalMedia();
   beginCallTracking(m_demoCallLeg, peer, displayName, false);
 
   QTimer::singleShot(1200, this, [this, displayName]() {
@@ -1768,6 +1842,7 @@ void MainWindow::startDemoCallSimulation(const QString &peer, const QString &dis
       m_callWindow->updateState(QStringLiteral("connected"), displayName);
       markCallConnected(m_demoCallLeg);
       m_callWindow->beginConversationTimer();
+      startDemoVoiceSimulation();
     });
   });
 }
@@ -1796,6 +1871,9 @@ void MainWindow::onSettings()
       m_headerAvatar->setLetter(m_selfName.left(1).toUpper());
     }
     m_headerAvatar->refreshFromSettings();
+    if (m_online) {
+      m_client->chat()->sendColorAdvertisement(m_client->appSettings().profileAvatarColor());
+    }
   } else if (result == 3) {
     onLogin();
   }
@@ -2464,6 +2542,7 @@ void MainWindow::onTransfer()
   const QString leg = m_activeLeg;
 
   if (m_demoMode) {
+    stopDemoCallSimulation();
     finalizeCallHistory(leg, QStringLiteral("transferred"), transferName);
     m_activeLeg.clear();
     m_activeIncomingLeg.clear();
@@ -2673,6 +2752,11 @@ void MainWindow::onCallStateChanged(const QString &leg, const QString &state, co
       m_activeIncomingLeg.clear();
       m_onHold = false;
     }
+    if (m_demoMode) {
+      stopDemoCallSimulation();
+    } else {
+      resumeExternalMediaIfIdle();
+    }
     m_callWindow->closeCall();
     return;
   }
@@ -2683,6 +2767,11 @@ void MainWindow::onCallStateChanged(const QString &leg, const QString &state, co
       m_activeLeg.clear();
       m_activeIncomingLeg.clear();
       m_onHold = false;
+    }
+    if (m_demoMode) {
+      stopDemoCallSimulation();
+    } else {
+      resumeExternalMediaIfIdle();
     }
     m_callWindow->updateState(state, detail);
   }

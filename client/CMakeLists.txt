@@ -19,6 +19,9 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets WebSockets Network Multimedia)
+if(UNIX AND NOT APPLE)
+    find_package(Qt6 REQUIRED COMPONENTS DBus)
+endif()
 find_package(OpenSSL REQUIRED)
 
 find_package(PkgConfig REQUIRED)
@@ -61,6 +64,8 @@ add_executable(opensource-communicator
     src/audio/RingbackPlayer.h
     src/audio/IncomingRingPlayer.cpp
     src/audio/IncomingRingPlayer.h
+    src/audio/ExternalMediaPauser.cpp
+    src/audio/ExternalMediaPauser.h
     src/audio/MessageNotifyPlayer.cpp
     src/audio/MessageNotifyPlayer.h
     src/audio/AudioDeviceUtils.cpp
@@ -129,6 +134,10 @@ target_link_libraries(opensource-communicator PRIVATE
     ${DATACHANNEL_LIB}
     ${OPUS_LIBRARIES}
 )
+
+if(UNIX AND NOT APPLE)
+    target_link_libraries(opensource-communicator PRIVATE Qt6::DBus)
+endif()
 
 if(WIN32)
     target_link_libraries(opensource-communicator PRIVATE ws2_32)

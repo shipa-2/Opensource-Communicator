@@ -27,6 +27,8 @@ public:
     QString notesText() const;
     void setNotesVisible(bool visible);
     void setAvatarColor(const QString &color);
+    void setAvatarLetter(const QString &displayName);
+    void setRemoteSpeakingIndicator(bool speaking);
     void updateRemoteAudioLevel(float level);
     void resetAudioLevel();
     void refreshAppearance();

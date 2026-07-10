@@ -42,6 +42,7 @@ public:
     void setDemoMode(bool enabled);
     void clearDemoMessages();
     void addDemoMessage(const QString &peer, const QString &text, bool incoming, bool notify = true);
+    void setDemoPeerColor(const QString &peer, const QString &color);
     void sendSeen(const QString &peer, const QStringList &origIds);
     void loadHistory(const QString &lastKnownId = {});
 

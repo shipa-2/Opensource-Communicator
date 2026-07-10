@@ -371,6 +371,16 @@ void ChatManager::addDemoMessage(const QString &peer, const QString &text, bool 
   emit messageReceived(im);
 }
 
+void ChatManager::setDemoPeerColor(const QString &peer, const QString &color)
+{
+  if (color.isEmpty()) {
+    return;
+  }
+  const QString normalized = normalizePeer(peer);
+  m_peerColors[normalized] = color;
+  emit peerColorReceived(normalized, color);
+}
+
 bool ChatManager::hasUnread(const QString &peer) const
 {
   return !m_unreadByPeer.value(normalizePeer(peer)).isEmpty();
@@ -440,7 +450,11 @@ QString ChatManager::extractColor(const QString &body)
 
 void ChatManager::sendColorAdvertisement(const QString &color)
 {
-  if (m_demoMode || !m_api || color.isEmpty()) {
+  if (color.isEmpty()) {
+    return;
+  }
+  if (m_demoMode || !m_api) {
+    qCDebug(lcChat) << "Color advertisement (demo/local):" << color;
     return;
   }
   const QString body = QStringLiteral("**%1**").arg(color);

@@ -86,6 +86,7 @@ CallManager::CallManager(WsApiClient *api, AppSettings *settings, QObject *paren
 
 CallManager::~CallManager()
 {
+  resumeExternalMedia();
   m_audio.stop();
 }
 
@@ -290,6 +291,30 @@ QString CallManager::sanitizeLocalSdp(const QString &sdp) const
   }
   out.append(QString());
   return out.join(QStringLiteral("\r\n"));
+}
+
+void CallManager::onCallSessionStarted()
+{
+  if (m_calls.size() == 1) {
+    pauseExternalMedia();
+  }
+}
+
+void CallManager::onCallSessionEnded()
+{
+  if (m_calls.isEmpty()) {
+    resumeExternalMedia();
+  }
+}
+
+void CallManager::pauseExternalMedia()
+{
+  m_externalMedia.pause();
+}
+
+void CallManager::resumeExternalMedia()
+{
+  m_externalMedia.resume();
 }
 
 void CallManager::startAudio()
@@ -718,6 +743,7 @@ QString CallManager::startOutgoingCall(const QString &peer)
   session.incoming = false;
   session.phase = CallPhase::Negotiating;
   m_calls.insert(leg, session);
+  onCallSessionStarted();
 
   beginNegotiation(leg, true);
   emit callStateChanged(leg, QStringLiteral("connecting"), peer);
@@ -757,6 +783,7 @@ QString CallManager::startConferenceCall(const QString &subject, const QList<Con
       {QStringLiteral("participants"), partsArray},
   };
   m_calls.insert(leg, session);
+  onCallSessionStarted();
 
   beginNegotiation(leg, true);
   emit callStateChanged(leg, QStringLiteral("connecting"), subject);
@@ -917,6 +944,7 @@ void CallManager::teardownCall(const QString &leg)
   } else {
     stopRingback();
   }
+  onCallSessionEnded();
 }
 
 void CallManager::handleServerCallEvent(const QString &leg, const QString &what, const QJsonObject &payload)
@@ -942,6 +970,7 @@ void CallManager::handleServerCallEvent(const QString &leg, const QString &what,
     session.realName = dest.value(QStringLiteral("From")).toObject().value(QStringLiteral("@realName")).toString();
 
     m_calls.insert(leg, session);
+    onCallSessionStarted();
     m_api->provisionCall(leg);
     // Do NOT begin WebRTC while ringing. Early ICE/DTLS to the media gateway fails
     // until AcceptCall, then DTLS waits on retransmission backoff (~several seconds

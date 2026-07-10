@@ -25,6 +25,17 @@ CallWindow::CallWindow(QWidget *parent)
   itl::applyDialogStyle(this);
 }
 
+namespace {
+QString avatarLetter(const QString &displayName)
+{
+  const QString trimmed = displayName.trimmed();
+  if (trimmed.isEmpty()) {
+    return QStringLiteral("?");
+  }
+  return trimmed.left(1).toUpper();
+}
+} // namespace
+
 void CallWindow::refreshAppearance()
 {
   itl::applyDialogStyle(this);
@@ -54,7 +65,7 @@ void CallWindow::buildUi()
 
   auto *avatarRow = new QHBoxLayout;
   avatarRow->addStretch();
-  m_avatar = new QLabel(QStringLiteral("👤"));
+  m_avatar = new QLabel(QStringLiteral("?"));
   m_avatar->setObjectName(QStringLiteral("callAvatar"));
   m_avatar->setFixedSize(140, 140);
   m_avatar->setAlignment(Qt::AlignCenter);
@@ -163,6 +174,24 @@ void CallWindow::setAvatarColor(const QString &color)
   refreshAvatarBorder();
 }
 
+void CallWindow::setAvatarLetter(const QString &displayName)
+{
+  if (!m_avatar) {
+    return;
+  }
+  m_avatar->setText(avatarLetter(displayName));
+}
+
+void CallWindow::setRemoteSpeakingIndicator(bool speaking)
+{
+  m_calibrated = true;
+  if (m_speaking == speaking) {
+    return;
+  }
+  m_speaking = speaking;
+  refreshAvatarBorder();
+}
+
 void CallWindow::resetAudioLevel()
 {
   m_calibrationSamples = 0;
@@ -184,9 +213,11 @@ void CallWindow::refreshAvatarBorder()
   m_avatar->setStyleSheet(
       QStringLiteral("QLabel {"
                      "  background-color: %1;"
+                     "  color: palette(window-text);"
                      "  border-radius: 70px;"
                      "  border: 3px solid %2;"
                      "  font-size: 64px;"
+                     "  font-weight: bold;"
                      "}")
           .arg(bg, border));
 }
@@ -227,6 +258,7 @@ void CallWindow::showOutgoing(const QString &peer, const QString &displayName, c
   m_detailLabel->setText(detail);
   m_statusLabel->setText(tr("Дозвон"));
   m_timerLabel->clear();
+  setAvatarLetter(displayName);
   setMode(Mode::Outgoing);
   stopTimer();
   show();
@@ -243,6 +275,7 @@ void CallWindow::showIncoming(const QString &peer, const QString &displayName, c
   m_detailLabel->setText(detail);
   m_statusLabel->setText(tr("Входящий"));
   m_timerLabel->clear();
+  setAvatarLetter(displayName);
   setMode(Mode::Incoming);
   stopTimer();
   show();
@@ -257,6 +290,7 @@ void CallWindow::showActive(const QString &peer, const QString &displayName)
   setWindowTitle(tr("%1 — разговор").arg(displayName));
   m_nameLabel->setText(displayName);
   m_statusLabel->setText(tr("Разговор"));
+  setAvatarLetter(displayName);
   setMode(Mode::Active);
   stopTimer();
   show();
@@ -283,6 +317,7 @@ void CallWindow::updateState(const QString &state, const QString &detail)
       if (!detail.isEmpty()) {
         m_displayName = detail;
         m_nameLabel->setText(detail);
+        setAvatarLetter(detail);
       }
       m_statusLabel->setText(tr("Разговор"));
       setMode(Mode::Active);
@@ -321,6 +356,7 @@ void CallWindow::beginConversationTimer()
 void CallWindow::closeCall()
 {
   stopTimer();
+  setRemoteSpeakingIndicator(false);
   hide();
   setMode(Mode::Hidden);
 }

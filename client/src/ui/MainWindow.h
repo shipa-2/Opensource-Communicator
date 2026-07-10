@@ -16,6 +16,7 @@ class QLabel;
 class QButtonGroup;
 class QDragEnterEvent;
 class QDropEvent;
+class QShowEvent;
 class QLineEdit;
 class QListWidget;
 class QListWidgetItem;
@@ -25,6 +26,7 @@ class QTabWidget;
 class QJsonObject;
 class QAction;
 class QMenu;
+class QTimer;
 
 class CallWindow;
 class ChatDialog;
@@ -50,6 +52,8 @@ protected:
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dragMoveEvent(QDragMoveEvent *event) override;
     void dropEvent(QDropEvent *event) override;
+    void showEvent(QShowEvent *event) override;
+    void changeEvent(QEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private slots:
@@ -157,10 +161,12 @@ private:
     void enterDemoInterface();
     void exitDemoInterface();
     void stopDemoCallSimulation();
+    void startDemoVoiceSimulation();
     void startDemoCallSimulation(const QString &peer, const QString &displayName, const QString &detail);
     void beginCallTracking(const QString &leg, const QString &peer, const QString &displayName, bool incoming);
     void markCallConnected(const QString &leg);
     void finalizeCallHistory(const QString &leg, const QString &state, const QString &transferTo = {});
+    void resumeExternalMediaIfIdle();
     static QString formatHistoryDuration(int seconds);
     static QString formatHistoryTime(qint64 ms);
     static QString formatHistoryWhen(qint64 ms);
@@ -215,6 +221,8 @@ private:
     QString m_historySearch;
     QHash<QString, CallTracking> m_callTracking;
     QString m_demoCallLeg;
+    QTimer *m_demoVoiceTimer = nullptr;
+    bool m_demoVoiceActive = false;
     QList<itl::CallHistoryEntry> m_demoCallHistory;
     QList<itl::CallHistoryEntry> m_serverHistory;
     QList<itl::CallHistoryEntry> m_companyHistory;
