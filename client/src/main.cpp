@@ -15,17 +15,21 @@ namespace {
 
 void configureLogging()
 {
-#ifdef OSC_DEBUG_BUILD
   qSetMessagePattern(QStringLiteral("[%{time HH:mm:ss.zzz}] %{type} %{category}: %{message}"));
+#ifdef OSC_DEBUG_BUILD
   QLoggingCategory::setFilterRules(QStringLiteral(
       "itl.*.debug=true\n"
       "itl.*.info=true\n"
       "itl.*.warning=true\n"
       "itl.*.critical=true"));
 #else
+  // Release: keep call/signaling info visible in journalctl for troubleshooting.
   QLoggingCategory::setFilterRules(QStringLiteral(
       "*.debug=false\n"
-      "*.info=false\n"
+      "itl.call.info=true\n"
+      "itl.ws.info=true\n"
+      "itl.api.info=true\n"
+      "itl.client.info=true\n"
       "*.warning=true\n"
       "*.critical=true"));
 #endif

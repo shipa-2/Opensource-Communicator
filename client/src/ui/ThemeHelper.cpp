@@ -6,6 +6,7 @@
 #include <QApplication>
 #include <QEvent>
 #include <QKeyEvent>
+#include <QPointer>
 #include <QStyleHints>
 #include <QTimer>
 #include <QWindow>
@@ -42,11 +43,17 @@ void attachWindowStateGuard(QWidget *widget)
   widget->setProperty("itlNoFullscreenHook", true);
 
   const auto hookWindow = [widget]() {
-    if (QWindow *window = widget->windowHandle()) {
-      QObject::connect(window, &QWindow::windowStateChanged, widget, [widget](Qt::WindowState) {
-        stripForbiddenWindowState(widget);
-      }, Qt::UniqueConnection);
-      stripForbiddenWindowState(widget);
+    QPointer<QWidget> alive{widget};
+    if (!alive) {
+      return;
+    }
+    if (QWindow *window = alive->windowHandle()) {
+      QObject::connect(window, &QWindow::windowStateChanged, alive, [widget](Qt::WindowState) {
+        if (QPointer<QWidget> w{widget}; w) {
+          stripForbiddenWindowState(w);
+        }
+      });
+      stripForbiddenWindowState(alive);
     }
   };
 
@@ -57,24 +64,35 @@ void attachWindowStateGuard(QWidget *widget)
 
 void refreshApplicationThemeNow()
 {
-  for (QWidget *widget : QApplication::allWidgets()) {
-    if (widget->property("itlDialogStyle").toBool()) {
-      applyDialogStyle(widget);
-    }
-  }
-
   for (QWidget *widget : QApplication::topLevelWidgets()) {
     if (auto *mainWindow = qobject_cast<MainWindow *>(widget)) {
       mainWindow->refreshTheme();
+      continue;
+    }
+    if (widget->property("itlDialogStyle").toBool()) {
+      refreshDialogStyle(widget);
     }
   }
+}
+
+QTimer *themeRefreshTimer()
+{
+  static QTimer *timer = []() {
+    auto *t = new QTimer(qApp);
+    t->setSingleShot(true);
+    t->setInterval(150);
+    QObject::connect(t, &QTimer::timeout, t, []() { refreshApplicationThemeNow(); });
+    return t;
+  }();
+  return timer;
 }
 
 } // namespace
 
 void refreshApplicationTheme()
 {
-  QTimer::singleShot(0, qApp, []() { refreshApplicationThemeNow(); });
+  // Coalesce bursts; defer until Plasma/QApplication::setStyle() finishes.
+  themeRefreshTimer()->start();
 }
 
 void preventFullscreen(QWidget *widget)
@@ -104,8 +122,9 @@ void ThemeWatcher::connectStyleHints()
 
 bool ThemeWatcher::eventFilter(QObject *watched, QEvent *event)
 {
-  if (watched == qApp
-      && (event->type() == QEvent::ApplicationPaletteChange || event->type() == QEvent::ThemeChange)) {
+  // ApplicationPaletteChange fires while KDE is still inside QApplication::setStyle();
+  // touching widgets then crashes in QWidgetPrivate::inheritStyle. ThemeChange is enough.
+  if (watched == qApp && event->type() == QEvent::ThemeChange) {
     refreshApplicationTheme();
   }
 

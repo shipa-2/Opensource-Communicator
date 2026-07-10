@@ -41,6 +41,7 @@ struct PeerContext {
     uint32_t nextRtpTimestamp = 0;
     bool sdpSent = false;
     bool remoteSdpApplied = false;
+    QString appliedRemoteSdp;
 };
 
 class CallManager : public QObject {
@@ -88,6 +89,7 @@ private:
     void publishLocalSdp(const QString &leg, const std::shared_ptr<rtc::PeerConnection> &pc);
     void schedulePublishFallback(const QString &leg, const std::shared_ptr<rtc::PeerConnection> &pc);
     void cancelPublishFallback(const QString &leg);
+    void maybePreNegotiateIncoming(const QString &leg);
     void teardownCall(const QString &leg);
     bool hasActiveOutgoing() const;
     QString primaryOutgoingLeg() const;

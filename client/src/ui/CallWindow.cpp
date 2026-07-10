@@ -39,8 +39,7 @@ QString avatarLetter(const QString &displayName)
 
 void CallWindow::refreshAppearance()
 {
-  itl::applyDialogStyle(this);
-  update();
+  itl::refreshDialogStyle(this);
 }
 
 void CallWindow::buildUi()

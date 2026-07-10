@@ -18,7 +18,7 @@ namespace itl {
 
 namespace {
 constexpr uint8_t kOpusPayload = 111;
-constexpr int kPublishFallbackMs = 1500;
+constexpr int kPublishFallbackMs = 500;
 
 uint32_t randomSsrc()
 {
@@ -600,6 +600,7 @@ void CallManager::beginNegotiation(const QString &leg, bool createOffer)
       pc->setRemoteDescription(
           rtc::Description(m_calls[leg].remoteSdp.toStdString(), rtc::Description::Type::Offer));
       m_peers[leg].remoteSdpApplied = true;
+      m_peers[leg].appliedRemoteSdp = m_calls[leg].remoteSdp;
     }
 
     pc->setLocalDescription(createOffer ? rtc::Description::Type::Offer : rtc::Description::Type::Answer);
@@ -631,21 +632,32 @@ void CallManager::beginNegotiation(const QString &leg, bool createOffer)
 void CallManager::applyRemoteSdp(const QString &leg, const QString &sdp, SdpType type, bool force)
 {
   if (!m_peers.contains(leg) || sdp.isEmpty() || !m_peers[leg].pc) {
+    qCInfo(lcCall) << "applyRemoteSdp skipped for" << leg << "peerReady:" << m_peers.contains(leg)
+                   << "sdpEmpty:" << sdp.isEmpty();
     return;
   }
 
   PeerContext &ctx = m_peers[leg];
-  if (ctx.remoteSdpApplied && !force) {
+  if (sdp == ctx.appliedRemoteSdp) {
+    qCInfo(lcCall) << "Skipping unchanged remote SDP for" << leg;
     return;
   }
 
+  if (ctx.remoteSdpApplied && !force) {
+    qCInfo(lcCall) << "Remote SDP already applied for" << leg << "(no force)";
+    return;
+  }
+
+  const auto rtcType = type == SdpType::Offer ? rtc::Description::Type::Offer : rtc::Description::Type::Answer;
+  const char *typeLabel = type == SdpType::Offer ? "offer" : "answer";
+
   try {
-    const auto rtcType = type == SdpType::Offer ? rtc::Description::Type::Offer : rtc::Description::Type::Answer;
     ctx.pc->setRemoteDescription(rtc::Description(sdp.toStdString(), rtcType));
     ctx.remoteSdpApplied = true;
-    qCInfo(lcCall) << "Applied remote SDP for" << leg;
+    ctx.appliedRemoteSdp = sdp;
+    qCInfo(lcCall) << "Applied remote SDP" << typeLabel << "for" << leg << "bytes:" << sdp.size();
   } catch (const std::exception &e) {
-    qCWarning(lcCall) << "Failed to apply remote SDP:" << e.what();
+    qCWarning(lcCall) << "Failed to apply remote SDP" << typeLabel << "for" << leg << ":" << e.what();
   }
 }
 
@@ -723,6 +735,7 @@ void CallManager::sendLocalSdp(const QString &leg)
   cancelPublishFallback(leg);
 
   if (session.incoming) {
+    qCInfo(lcCall) << "Sending AcceptCall for" << leg << "sdpBytes:" << session.localSdp.size();
     m_api->acceptCall(leg, session.localSdp);
     emit callStateChanged(leg, QStringLiteral("accepting"), session.peer);
   } else if (session.phase == CallPhase::Negotiating) {
@@ -923,6 +936,19 @@ CallSession *CallManager::call(const QString &leg)
   return m_calls.contains(leg) ? &m_calls[leg] : nullptr;
 }
 
+void CallManager::maybePreNegotiateIncoming(const QString &leg)
+{
+  if (!m_calls.contains(leg)) {
+    return;
+  }
+  const CallSession &session = m_calls[leg];
+  if (!session.incoming || session.connected || session.remoteSdp.isEmpty() || m_peers.contains(leg)) {
+    return;
+  }
+  qCInfo(lcCall) << "Pre-negotiating incoming call while ringing:" << leg;
+  beginNegotiation(leg, false);
+}
+
 void CallManager::teardownCall(const QString &leg)
 {
   const bool incoming = m_calls.value(leg).incoming;
@@ -971,10 +997,13 @@ void CallManager::handleServerCallEvent(const QString &leg, const QString &what,
 
     m_calls.insert(leg, session);
     onCallSessionStarted();
+    qCInfo(lcCall) << "Incoming call" << leg << "from"
+                   << (session.realName.isEmpty() ? session.peer : session.realName)
+                   << "offerSdpBytes:" << session.remoteSdp.size();
     m_api->provisionCall(leg);
-    // Do NOT begin WebRTC while ringing. Early ICE/DTLS to the media gateway fails
-    // until AcceptCall, then DTLS waits on retransmission backoff (~several seconds
-    // of silence after answer). Negotiate only when the user answers.
+    // Incoming SDP arrives with incomingCall; PBX acks ProvisionCall with a bare
+    // "response", not "provisioned". Start WebRTC prep once that round-trip settles.
+    QTimer::singleShot(100, this, [this, leg]() { maybePreNegotiateIncoming(leg); });
     startIncomingRing();
     emit callStateChanged(leg, QStringLiteral("incoming"),
                            session.realName.isEmpty() ? session.peer : session.realName);
@@ -989,11 +1018,9 @@ void CallManager::handleServerCallEvent(const QString &leg, const QString &what,
     if (!payload.value(QStringLiteral("sdp")).toString().isEmpty()) {
       session.remoteSdp = payload.value(QStringLiteral("sdp")).toString();
     }
-    // Incoming: keep offer SDP for acceptIncomingCall; start PC only if already answering.
-    if (session.incoming && session.acceptPending && !session.remoteSdp.isEmpty()
-        && !m_peers.contains(leg)) {
-      beginNegotiation(leg, false);
-    } else if (!session.incoming && !session.remoteSdp.isEmpty()) {
+    if (session.incoming) {
+      maybePreNegotiateIncoming(leg);
+    } else if (!session.remoteSdp.isEmpty()) {
       applyRemoteSdp(leg, session.remoteSdp, SdpType::Answer);
       session.phase = CallPhase::Ringing;
       emit callStateChanged(leg, QStringLiteral("ringing"), session.peer);
@@ -1012,6 +1039,7 @@ void CallManager::handleServerCallEvent(const QString &leg, const QString &what,
     session.phase = CallPhase::Connected;
     session.remoteSdp = payload.value(QStringLiteral("sdp")).toString();
     stopRingback();
+    qCInfo(lcCall) << "Call accepted (outgoing) for" << leg;
     applyRemoteSdp(leg, session.remoteSdp, SdpType::Answer);
     if (!session.incoming) {
       m_api->ackAccept(leg);
@@ -1026,6 +1054,7 @@ void CallManager::handleServerCallEvent(const QString &leg, const QString &what,
     session.connected = true;
     session.phase = CallPhase::Connected;
     stopRingback();
+    qCInfo(lcCall) << "Call acceptAcked (incoming) for" << leg;
     m_activeLeg = leg;
     startAudio();
     emit callStateChanged(leg, QStringLiteral("connected"), session.peer);
@@ -1033,18 +1062,39 @@ void CallManager::handleServerCallEvent(const QString &leg, const QString &what,
   }
 
   if (what == QStringLiteral("updated") || what == QStringLiteral("updateAccepted")) {
-    session.remoteSdp = payload.value(QStringLiteral("sdp")).toString();
-    if (m_peers.contains(leg)) {
-      m_peers[leg].remoteSdpApplied = false;
+    const QString newSdp = payload.value(QStringLiteral("sdp")).toString();
+    if (newSdp.isEmpty()) {
+      return;
     }
-    applyRemoteSdp(leg, session.remoteSdp, SdpType::Offer, true);
-    if (session.localSdp.isEmpty() && m_peers.contains(leg)) {
+    session.remoteSdp = newSdp;
+
+    // Mid-ring offer refresh from PBX: keep stored SDP but don't re-apply while answering.
+    if (session.incoming && !session.connected) {
+      if (m_peers.contains(leg) && m_peers[leg].remoteSdpApplied) {
+        qCInfo(lcCall) << "Ignoring mid-ring SDP update for" << leg;
+        return;
+      }
+      if (!m_peers.contains(leg)) {
+        qCInfo(lcCall) << "Starting negotiation after mid-ring SDP update for" << leg;
+        beginNegotiation(leg, false);
+      }
+      return;
+    }
+
+    const SdpType sdpType =
+        what == QStringLiteral("updateAccepted") ? SdpType::Answer : SdpType::Offer;
+    qCInfo(lcCall) << "Call" << what << "for" << leg << "sdpBytes:" << newSdp.size();
+    applyRemoteSdp(leg, newSdp, sdpType, true);
+    if (sdpType == SdpType::Offer && session.localSdp.isEmpty() && m_peers.contains(leg)) {
       m_peers[leg].pc->setLocalDescription(rtc::Description::Type::Answer);
     }
     return;
   }
 
-  if (what == QStringLiteral("terminated") || what == QStringLiteral("rejected") || what == QStringLiteral("cancelled")) {
+  if (what == QStringLiteral("terminated") || what == QStringLiteral("rejected")
+      || what == QStringLiteral("cancelled")) {
+    qCInfo(lcCall) << "Call ended:" << leg << what
+                   << payload.value(QStringLiteral("reason")).toString();
     teardownCall(leg);
     emit callStateChanged(leg, QStringLiteral("ended"), payload.value(QStringLiteral("reason")).toString());
   }

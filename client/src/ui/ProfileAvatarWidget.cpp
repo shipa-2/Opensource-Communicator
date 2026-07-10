@@ -87,9 +87,6 @@ void ProfileAvatarWidget::refreshAppearance()
 void ProfileAvatarWidget::changeEvent(QEvent *event)
 {
   QWidget::changeEvent(event);
-  if (event->type() == QEvent::PaletteChange || event->type() == QEvent::ApplicationPaletteChange) {
-    refreshAppearance();
-  }
 }
 
 void ProfileAvatarWidget::paintEvent(QPaintEvent *)

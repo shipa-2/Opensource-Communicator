@@ -117,9 +117,6 @@ void DialKeypadWidget::refreshAppearance()
 void DialKeypadWidget::changeEvent(QEvent *event)
 {
   QWidget::changeEvent(event);
-  if (event->type() == QEvent::PaletteChange || event->type() == QEvent::StyleChange) {
-    refreshAppearance();
-  }
 }
 
 void DialKeypadWidget::applyButtonStyle(QPushButton *button, bool backspace) const

@@ -26,6 +26,6 @@
 Thumbs.db
 *.swp
 *~
-
+.session
 /client/build-*/
 /client/opensource-communicator-git/

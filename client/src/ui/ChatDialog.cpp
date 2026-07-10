@@ -41,6 +41,11 @@ ChatDialog::ChatDialog(itl::CommunicatorClient *client, QWidget *parent)
   itl::applyDialogStyle(this);
 }
 
+void ChatDialog::refreshAppearance()
+{
+  itl::refreshDialogStyle(this);
+}
+
 void ChatDialog::openForPeer(const QString &peer, const QString &peerDisplayName, const QString &selfDisplayName)
 {
   m_peer = peer;

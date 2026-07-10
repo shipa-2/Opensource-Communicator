@@ -20,6 +20,8 @@ public:
     void openForPeer(const QString &peer, const QString &peerDisplayName, const QString &selfDisplayName);
     bool isOpenForPeer(const QString &peer) const;
 
+    void refreshAppearance();
+
 private slots:
     void onSend();
     void onChatMessage(const QString &peer, const QString &text, bool incoming, const QDateTime &timestamp);

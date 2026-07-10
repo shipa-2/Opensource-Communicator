@@ -11,6 +11,7 @@ namespace itl {
 
 QString dialogStyleSheet();
 void applyDialogStyle(QWidget *widget);
+void refreshDialogStyle(QWidget *widget);
 void applyFormDialogStyle(QWidget *widget);
 void applyNativeButtons(QWidget *root);
 QFormLayout *createDialogForm();

@@ -356,9 +356,6 @@ bool ContactRowWidget::isInteractiveChild(QWidget *target) const
 void ContactRowWidget::changeEvent(QEvent *event)
 {
   QWidget::changeEvent(event);
-  if (event->type() == QEvent::PaletteChange || event->type() == QEvent::ApplicationPaletteChange) {
-    refreshAppearance();
-  }
 }
 
 void ContactRowWidget::refreshAppearance()

@@ -4,6 +4,7 @@
 #include <QApplication>
 #include <QChildEvent>
 #include <QEvent>
+#include <QPointer>
 #include <QScrollBar>
 #include <QShowEvent>
 #include <QTimer>
@@ -19,7 +20,8 @@ void applyNativeScrollBarStyle(QScrollBar *scrollBar)
 
   scrollBar->setAttribute(Qt::WA_StyleSheetTarget, false);
   scrollBar->setStyleSheet({});
-  scrollBar->setStyle(QApplication::style());
+  scrollBar->setStyle(nullptr);
+  scrollBar->update();
 }
 
 void applyNativeScrollBars(QWidget *root)
@@ -28,16 +30,31 @@ void applyNativeScrollBars(QWidget *root)
     return;
   }
 
-  const auto scrollBars = root->findChildren<QScrollBar *>();
-  for (QScrollBar *scrollBar : scrollBars) {
-    applyNativeScrollBarStyle(scrollBar);
-  }
+  // Defer: re-styling scroll bars during PaletteChange/ThemeChange can re-enter
+  // QAbstractScrollArea::event and crash in QScrollBar::sizeHint().
+  QPointer<QWidget> guard(root);
+  QTimer::singleShot(0, root, [guard]() {
+    if (!guard) {
+      return;
+    }
 
-  const auto scrollAreas = root->findChildren<QAbstractScrollArea *>();
-  for (QAbstractScrollArea *area : scrollAreas) {
-    applyNativeScrollBarStyle(area->verticalScrollBar());
-    applyNativeScrollBarStyle(area->horizontalScrollBar());
-  }
+    const auto scrollBars = guard->findChildren<QScrollBar *>();
+    for (QScrollBar *scrollBar : scrollBars) {
+      QPointer<QScrollBar> bar(scrollBar);
+      if (bar) {
+        applyNativeScrollBarStyle(bar);
+      }
+    }
+
+    const auto scrollAreas = guard->findChildren<QAbstractScrollArea *>();
+    for (QAbstractScrollArea *area : scrollAreas) {
+      QPointer<QAbstractScrollArea> areaGuard(area);
+      if (areaGuard) {
+        applyNativeScrollBarStyle(areaGuard->verticalScrollBar());
+        applyNativeScrollBarStyle(areaGuard->horizontalScrollBar());
+      }
+    }
+  });
 }
 
 NativeScrollBarHelper::NativeScrollBarHelper(QObject *parent)

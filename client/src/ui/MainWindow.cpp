@@ -463,6 +463,10 @@ void MainWindow::refreshTheme()
     m_callWindow->refreshAppearance();
   }
 
+  if (m_chatDialog && m_chatDialog->isVisible()) {
+    m_chatDialog->refreshAppearance();
+  }
+
   for (ContactRowWidget *row : findChildren<ContactRowWidget *>()) {
     row->refreshAppearance();
   }
