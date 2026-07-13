@@ -649,7 +649,7 @@ void CallManager::beginNegotiation(const QString &leg, bool createOffer, bool de
     // Clear any SDP produced by a half-finished negotiation so AcceptCall cannot
     // be sent without a live PeerConnection (silent call, hold still "works").
     if (m_peers.contains(leg)) {
-      m_peers.remove(leg);
+      releasePeer(leg);
     }
     if (m_calls.contains(leg)) {
       m_calls[leg].localSdp.clear();
@@ -974,11 +974,23 @@ void CallManager::maybePreNegotiateIncoming(const QString &leg)
   beginNegotiation(leg, false, true);
 }
 
+void CallManager::releasePeer(const QString &leg)
+{
+  if (!m_peers.contains(leg)) {
+    return;
+  }
+  PeerContext ctx = m_peers.take(leg);
+  if (ctx.pc) {
+    ctx.pc->resetCallbacks();
+    ctx.pc->close();
+  }
+}
+
 void CallManager::teardownCall(const QString &leg)
 {
   const bool incoming = m_calls.value(leg).incoming;
   cancelPublishFallback(leg);
-  m_peers.remove(leg);
+  releasePeer(leg);
   m_calls.remove(leg);
   m_recordingNames.remove(leg);
   if (m_remoteAudioStartedLeg == leg) {

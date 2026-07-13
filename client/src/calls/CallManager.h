@@ -91,6 +91,7 @@ private:
     void publishLocalSdp(const QString &leg, const std::shared_ptr<rtc::PeerConnection> &pc);
     void schedulePublishFallback(const QString &leg, const std::shared_ptr<rtc::PeerConnection> &pc);
     void cancelPublishFallback(const QString &leg);
+    void releasePeer(const QString &leg);
     void maybePreNegotiateIncoming(const QString &leg);
     void teardownCall(const QString &leg);
     bool hasActiveOutgoing() const;
