@@ -19,6 +19,9 @@ protected:
 
 private:
     void connectStyleHints();
+
+private slots:
+    void onColorSchemeChanged();
 };
 
 class NoFullscreenGuard : public QObject {

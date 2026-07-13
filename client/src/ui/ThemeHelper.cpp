@@ -48,6 +48,11 @@ void attachWindowStateGuard(QWidget *widget)
       return;
     }
     if (QWindow *window = alive->windowHandle()) {
+      if (window->property("itlWindowStateGuard").toBool()) {
+        stripForbiddenWindowState(alive);
+        return;
+      }
+      window->setProperty("itlWindowStateGuard", true);
       QObject::connect(window, &QWindow::windowStateChanged, alive, [widget](Qt::WindowState) {
         if (QPointer<QWidget> w{widget}; w) {
           stripForbiddenWindowState(w);
@@ -115,9 +120,16 @@ void ThemeWatcher::connectStyleHints()
 {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
   if (QStyleHints *hints = QApplication::styleHints()) {
-    connect(hints, &QStyleHints::colorSchemeChanged, this, []() { refreshApplicationTheme(); });
+    // UniqueConnection is only valid with a member slot, not a lambda (debug Qt asserts).
+    connect(hints, &QStyleHints::colorSchemeChanged, this, &ThemeWatcher::onColorSchemeChanged,
+            Qt::UniqueConnection);
   }
 #endif
+}
+
+void ThemeWatcher::onColorSchemeChanged()
+{
+  refreshApplicationTheme();
 }
 
 bool ThemeWatcher::eventFilter(QObject *watched, QEvent *event)
@@ -125,6 +137,7 @@ bool ThemeWatcher::eventFilter(QObject *watched, QEvent *event)
   // ApplicationPaletteChange fires while KDE is still inside QApplication::setStyle();
   // touching widgets then crashes in QWidgetPrivate::inheritStyle. ThemeChange is enough.
   if (watched == qApp && event->type() == QEvent::ThemeChange) {
+    connectStyleHints();
     refreshApplicationTheme();
   }
 
