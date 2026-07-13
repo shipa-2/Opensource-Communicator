@@ -199,7 +199,8 @@ void AudioBridge::decodeAndPlayOpus(const QByteArray &opus)
 
   float sum = 0;
   for (int i = 0; i < samples; ++i) {
-    sum += static_cast<float>(qAbs(pcm[i]));
+    // qAbs(int16_t) asserts on INT16_MIN (-32768); promote to int first.
+    sum += static_cast<float>(qAbs(static_cast<int>(pcm[i])));
   }
   const float avgLevel = sum / samples / 32768.0f;
   emit remoteAudioLevel(avgLevel);
