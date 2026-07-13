@@ -18,6 +18,7 @@
 #include "audio/MessageNotifyPlayer.h"
 #include "audio/AudioDeviceUtils.h"
 #include "demo/DemoData.h"
+#include "protocol/AddressBookManager.h"
 #include "protocol/CommunicatorClient.h"
 #include "protocol/CallHistoryParser.h"
 #include "protocol/ProtocolTypes.h"
@@ -79,6 +80,19 @@ int countDigits(const QString &value)
     }
   }
   return digits;
+}
+
+bool isDialableNumber(const QString &value)
+{
+  if (value.isEmpty()) {
+    return false;
+  }
+  for (const QChar ch : value) {
+    if (!ch.isDigit() && ch != QLatin1Char('+') && ch != QLatin1Char('*') && ch != QLatin1Char('#')) {
+      return false;
+    }
+  }
+  return true;
 }
 
 QColor textOnAccentBackground(const QColor &background)
@@ -526,24 +540,33 @@ QString MainWindow::resolvePeer(QString input) const
   if (input.isEmpty()) {
     return {};
   }
+
+  const QString domain = m_client->credentials().domain;
+
   if (input.contains(QLatin1Char('@'))) {
+    const int at = input.indexOf(QLatin1Char('@'));
+    const QString normalizedLocal = itl::AddressBookManager::normalizePhone(input.left(at));
+    if (isDialableNumber(normalizedLocal)) {
+      return normalizedLocal;
+    }
     return input;
   }
-  const QString domain = m_client->credentials().domain;
+
+  const QString normalized = itl::AddressBookManager::normalizePhone(input);
   for (auto it = m_contacts.cbegin(); it != m_contacts.cend(); ++it) {
-    if (it.key().startsWith(input + QLatin1Char('@')) || it.value().ext == input
-        || it.value().login == input || it.value().phone == input) {
+    if (it.key().startsWith(input + QLatin1Char('@')) || it.key().startsWith(normalized + QLatin1Char('@'))
+        || it.value().ext == input || it.value().ext == normalized || it.value().login == input
+        || it.value().login == normalized || it.value().phone == input || it.value().phone == normalized
+        || (!it.value().phone.isEmpty()
+            && itl::AddressBookManager::normalizePhone(it.value().phone) == normalized)) {
       return it.key();
     }
   }
-  bool dialAsNumber = true;
-  for (const QChar ch : input) {
-    if (!ch.isDigit() && ch != QLatin1Char('+') && ch != QLatin1Char('*') && ch != QLatin1Char('#')) {
-      dialAsNumber = false;
-      break;
-    }
+
+  if (isDialableNumber(normalized)) {
+    return normalized;
   }
-  return dialAsNumber ? input : input + QLatin1Char('@') + domain;
+  return input + QLatin1Char('@') + domain;
 }
 
 QString MainWindow::displayNameForPeer(const QString &peer) const
@@ -2025,7 +2048,7 @@ void MainWindow::applyTelUriToDial(const QString &raw)
   if (semicolon >= 0) {
     value = value.left(semicolon);
   }
-  value = value.trimmed();
+  value = itl::AddressBookManager::normalizePhone(value.trimmed());
   if (value.isEmpty() || !m_dialInput) {
     return;
   }

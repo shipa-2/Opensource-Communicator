@@ -62,17 +62,31 @@ QString AddressBookManager::normalizeSubId(const QString &raw)
 QString AddressBookManager::normalizePhone(QString phone)
 {
   phone = phone.trimmed();
-  const QString digitsOnly = phone;
-  const int digits = countDigits(digitsOnly);
-  if (digits == digitsOnly.size() && digits >= 8 && digits <= 20) {
-    if (!phone.startsWith(QLatin1Char('+')) && phone.startsWith(QLatin1Char('8')) && digits == 11) {
-      return QStringLiteral("+7") + phone.mid(1);
-    }
-    if (!phone.startsWith(QLatin1Char('+')) && phone.startsWith(QLatin1Char('7')) && digits == 11) {
-      return QLatin1Char('+') + phone;
+  if (phone.isEmpty()) {
+    return phone;
+  }
+
+  QString stripped;
+  stripped.reserve(phone.size());
+  for (const QChar ch : phone) {
+    if (ch.isDigit() || ch == QLatin1Char('+') || ch == QLatin1Char('*') || ch == QLatin1Char('#')) {
+      stripped.append(ch);
     }
   }
-  return phone;
+  if (stripped.isEmpty()) {
+    return phone;
+  }
+
+  const int digits = countDigits(stripped);
+  if (digits >= 8 && digits <= 20) {
+    if (!stripped.startsWith(QLatin1Char('+')) && stripped.startsWith(QLatin1Char('8')) && digits == 11) {
+      return QStringLiteral("+7") + stripped.mid(1);
+    }
+    if (!stripped.startsWith(QLatin1Char('+')) && stripped.startsWith(QLatin1Char('7')) && digits == 11) {
+      return QLatin1Char('+') + stripped;
+    }
+  }
+  return stripped;
 }
 
 QString AddressBookManager::peerFromAbObject(const QJsonObject &obj, const QString &domain)

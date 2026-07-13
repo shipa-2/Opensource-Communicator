@@ -29,6 +29,8 @@ public:
     void handleResponse(int requestId, const QJsonObject &response);
     void clear();
 
+    static QString normalizePhone(QString phone);
+
 signals:
     void contactsChanged();
     void uploadCompleted(bool success);
@@ -36,7 +38,6 @@ signals:
 
 private:
     static QString normalizeSubId(const QString &raw);
-    static QString normalizePhone(QString phone);
     static bool peersMatch(const QString &a, const QString &b, const QString &domain);
     static QString buildServerId(const QString &rawId, const QString &subId);
     QString findServerIdForPeer(const QString &peer) const;
