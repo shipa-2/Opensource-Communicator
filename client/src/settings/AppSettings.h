@@ -73,6 +73,9 @@ public:
     bool showCallButtons() const { return m_showCallButtons; }
     void setShowCallButtons(bool show);
 
+    QString networkInterfaceName() const { return m_networkInterfaceName; }
+    void setNetworkInterfaceName(const QString &name);
+
     bool recordingDualTrack() const { return m_recordingDualTrack; }
     bool recordingCombinedTrack() const { return m_recordingCombinedTrack; }
     QString recordingFilenameTemplate() const { return m_recordingFilenameTemplate; }
@@ -119,6 +122,7 @@ private:
     QString m_profileAvatarColor = QStringLiteral("#5a9e2f");
     bool m_showChatButtons = true;
     bool m_showCallButtons = true;
+    QString m_networkInterfaceName;
     bool m_recordingDualTrack = false;
     bool m_recordingCombinedTrack = false;
     bool m_recordingEnabled = true;

@@ -70,6 +70,8 @@ add_executable(opensource-communicator
     src/audio/MessageNotifyPlayer.h
     src/audio/AudioDeviceUtils.cpp
     src/audio/AudioDeviceUtils.h
+    src/network/NetworkUtils.cpp
+    src/network/NetworkUtils.h
     src/settings/AppSettings.cpp
     src/settings/AppSettings.h
     src/settings/UserDataStore.cpp

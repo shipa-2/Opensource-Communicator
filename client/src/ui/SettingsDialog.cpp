@@ -4,6 +4,7 @@
 #include "audio/AudioDeviceUtils.h"
 #include "audio/IncomingRingPlayer.h"
 #include "audio/RingbackPlayer.h"
+#include "network/NetworkUtils.h"
 #include "calls/CallManager.h"
 #include "protocol/CommunicatorClient.h"
 #include "settings/AppSettings.h"
@@ -175,6 +176,11 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
   });
   nameRow->addWidget(resetNameBtn);
   accountForm->addRow(tr("Имя:"), nameRow);
+
+  m_networkInterface = new QComboBox;
+  m_networkInterface->setToolTip(tr("Интерфейс для WebRTC-звонков (SDP и ICE). Не влияет на вход в систему."));
+  accountForm->addRow(tr("Сеть для звонков:"), m_networkInterface);
+
   accountLayout->addLayout(accountForm);
 
   accountLayout->addStretch();
@@ -298,6 +304,7 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
   connect(m_incomingPath, &QLineEdit::textChanged, this, &SettingsDialog::updatePreviewButtons);
 
   loadDevices();
+  loadNetworkInterfaces();
   loadFromSettings();
 
   itl::applyFormDialogStyle(this);
@@ -332,6 +339,16 @@ void SettingsDialog::loadDevices()
   }
 }
 
+void SettingsDialog::loadNetworkInterfaces()
+{
+  m_networkInterface->clear();
+  m_networkInterface->addItem(tr("Автоматически (первая доступная)"), QString());
+
+  for (const itl::NetworkUtils::NetworkInterfaceEntry &entry : itl::NetworkUtils::ipv4Interfaces()) {
+    m_networkInterface->addItem(itl::NetworkUtils::interfaceLabel(entry), entry.systemName);
+  }
+}
+
 void SettingsDialog::loadFromSettings()
 {
   const int inputIndex = m_inputDevice->findData(m_settings->inputDeviceId());
@@ -357,6 +374,9 @@ void SettingsDialog::loadFromSettings()
   m_incomingPath->setEnabled(incomingCustom);
   m_incomingBrowse->setEnabled(incomingCustom);
   updatePreviewButtons();
+
+  const int networkIndex = m_networkInterface->findData(m_settings->networkInterfaceName());
+  m_networkInterface->setCurrentIndex(networkIndex >= 0 ? networkIndex : 0);
 }
 
 itl::AppSettings::RingtoneKind SettingsDialog::ringtoneKindForIndex(int index) const
@@ -453,6 +473,7 @@ void SettingsDialog::onAccept()
   m_settings->setRingbackCustomPath(m_ringbackPath->text().trimmed());
   m_settings->setIncomingRingKind(static_cast<itl::AppSettings::RingtoneKind>(m_incomingTone->currentData().toInt()));
   m_settings->setIncomingRingCustomPath(m_incomingPath->text().trimmed());
+  m_settings->setNetworkInterfaceName(m_networkInterface->currentData().toString());
 
   m_settings->setRecordingEnabled(m_recordingEnabledCheck->isChecked());
   m_settings->setRecordingDualTrack(m_recordingDualTrackCheck->isChecked());

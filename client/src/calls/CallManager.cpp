@@ -1,6 +1,6 @@
 #include "CallManager.h"
 
-#include "protocol/ProtocolTypes.h"
+#include "network/NetworkUtils.h"
 #include "settings/AppSettings.h"
 
 #include <rtc/rtc.hpp>
@@ -25,21 +25,6 @@ uint32_t randomSsrc()
   return static_cast<uint32_t>(QUuid::createUuid().data1);
 }
 
-QString localIPv4()
-{
-  for (const QNetworkInterface &iface : QNetworkInterface::allInterfaces()) {
-    if (!(iface.flags() & QNetworkInterface::IsUp) || (iface.flags() & QNetworkInterface::IsLoopBack)) {
-      continue;
-    }
-    for (const QNetworkAddressEntry &entry : iface.addressEntries()) {
-      const QHostAddress ip = entry.ip();
-      if (ip.protocol() == QAbstractSocket::IPv4Protocol && !ip.isLoopback() && !ip.isLinkLocal()) {
-        return ip.toString();
-      }
-    }
-  }
-  return {};
-}
 } // namespace
 
 CallManager::CallManager(WsApiClient *api, AppSettings *settings, QObject *parent)
@@ -110,9 +95,17 @@ QString CallManager::modifySdpForHold(const QString &sdp, bool hold) const
               : result.replace(QRegularExpression(QStringLiteral("a=sendonly")), QStringLiteral("a=sendrecv"));
 }
 
+QString CallManager::bindIPv4() const
+{
+  if (!m_settings) {
+    return NetworkUtils::ipv4ForBinding({});
+  }
+  return NetworkUtils::ipv4ForBinding(m_settings->networkInterfaceName());
+}
+
 QString CallManager::patchSdpLocalAddress(const QString &sdp) const
 {
-  const QString ip = localIPv4();
+  const QString ip = bindIPv4();
   if (ip.isEmpty()) {
     return sdp;
   }
@@ -502,13 +495,44 @@ void CallManager::attachIncomingTrack(const QString &leg, const std::shared_ptr<
   });
 }
 
-void CallManager::beginNegotiation(const QString &leg, bool createOffer)
+void CallManager::beginIncomingIceGathering(const QString &leg)
+{
+  if (!m_calls.contains(leg) || !m_peers.contains(leg)) {
+    return;
+  }
+
+  CallSession &session = m_calls[leg];
+  PeerContext &ctx = m_peers[leg];
+  if (!session.acceptPending || !ctx.pc) {
+    return;
+  }
+
+  ctx.sdpSent = false;
+
+  if (!ctx.iceGatheringStarted) {
+    ctx.iceGatheringStarted = true;
+    qCInfo(lcCall) << "Starting ICE gathering for accepted incoming" << leg;
+    try {
+      ctx.pc->gatherLocalCandidates();
+    } catch (const std::exception &e) {
+      qCWarning(lcCall) << "gatherLocalCandidates failed for" << leg << ":" << e.what();
+    }
+  }
+
+  if (ctx.pc->gatheringState() == rtc::PeerConnection::GatheringState::Complete) {
+    publishLocalSdp(leg, ctx.pc);
+  } else {
+    schedulePublishFallback(leg, ctx.pc);
+  }
+}
+
+void CallManager::beginNegotiation(const QString &leg, bool createOffer, bool deferIceGathering)
 {
   if (!m_calls.contains(leg) || m_peers.contains(leg)) {
     return;
   }
 
-  const QString localIp = localIPv4();
+  const QString localIp = bindIPv4();
 
   rtc::Configuration config;
   config.enableIceUdpMux = true;
@@ -518,8 +542,16 @@ void CallManager::beginNegotiation(const QString &leg, bool createOffer)
   // setLocalDescription(Answer) then throws ("answer in signaling state stable"),
   // the peer is dropped, and AcceptCall goes out with orphan SDP → hold works, no audio.
   config.disableAutoNegotiation = true;
+  if (!createOffer && deferIceGathering) {
+    // Prepare answer SDP while ringing but do not probe the media gateway until AcceptCall.
+    config.disableAutoGathering = true;
+  }
   if (!localIp.isEmpty()) {
     config.bindAddress = localIp.toStdString();
+    qCInfo(lcCall) << "WebRTC bind address" << localIp
+                   << (m_settings && !m_settings->networkInterfaceName().isEmpty()
+                           ? m_settings->networkInterfaceName()
+                           : QStringLiteral("auto"));
   }
 
   auto pc = std::make_shared<rtc::PeerConnection>(config);
@@ -605,10 +637,11 @@ void CallManager::beginNegotiation(const QString &leg, bool createOffer)
 
     pc->setLocalDescription(createOffer ? rtc::Description::Type::Offer : rtc::Description::Type::Answer);
     m_calls[leg].phase = CallPhase::Negotiating;
-    schedulePublishFallback(leg, pc);
-
-    if (pc->gatheringState() == rtc::PeerConnection::GatheringState::Complete) {
-      publishLocalSdp(leg, pc);
+    if (!deferIceGathering) {
+      schedulePublishFallback(leg, pc);
+      if (pc->gatheringState() == rtc::PeerConnection::GatheringState::Complete) {
+        publishLocalSdp(leg, pc);
+      }
     }
   } catch (const std::exception &e) {
     qCCritical(lcCall) << "WebRTC negotiation failed:" << e.what();
@@ -817,22 +850,14 @@ void CallManager::acceptIncomingCall(const QString &leg)
   qCInfo(lcCall) << "Accepting incoming" << leg << "localSdpReady:" << !session.localSdp.isEmpty()
                  << "peerReady:" << m_peers.contains(leg);
 
-  // Never AcceptCall with cached SDP if the PeerConnection was torn down — that
-  // yields acceptAcked/hold without media.
-  if (!session.localSdp.isEmpty() && m_peers.contains(leg)) {
-    sendLocalSdp(leg);
+  if (m_peers.contains(leg)) {
+    beginIncomingIceGathering(leg);
     return;
-  }
-  if (!session.localSdp.isEmpty() && !m_peers.contains(leg)) {
-    qCWarning(lcCall) << "Dropping orphan local SDP for" << leg << "; renegotiating";
-    session.localSdp.clear();
   }
 
-  // Negotiation may already be in progress from incomingCall (offer SDP present).
-  if (m_peers.contains(leg)) {
-    qCInfo(lcCall) << "Waiting for local SDP before AcceptCall for" << leg;
-    schedulePublishFallback(leg, m_peers[leg].pc);
-    return;
+  if (!session.localSdp.isEmpty()) {
+    qCWarning(lcCall) << "Dropping orphan local SDP for" << leg << "; renegotiating";
+    session.localSdp.clear();
   }
 
   beginNegotiation(leg, false);
@@ -946,7 +971,7 @@ void CallManager::maybePreNegotiateIncoming(const QString &leg)
     return;
   }
   qCInfo(lcCall) << "Pre-negotiating incoming call while ringing:" << leg;
-  beginNegotiation(leg, false);
+  beginNegotiation(leg, false, true);
 }
 
 void CallManager::teardownCall(const QString &leg)
@@ -1076,7 +1101,7 @@ void CallManager::handleServerCallEvent(const QString &leg, const QString &what,
       }
       if (!m_peers.contains(leg)) {
         qCInfo(lcCall) << "Starting negotiation after mid-ring SDP update for" << leg;
-        beginNegotiation(leg, false);
+        beginNegotiation(leg, false, true);
       }
       return;
     }

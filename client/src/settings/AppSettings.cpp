@@ -22,6 +22,7 @@ constexpr auto kRecordingCombinedTrack = "recording/combinedTrack";
 constexpr auto kRecordingFilenameTemplate = "recording/filenameTemplate";
 constexpr auto kRecordingEnabled = "recording/enabled";
 constexpr auto kRecordingDirectory = "recording/directory";
+constexpr auto kNetworkInterface = "network/bindInterface";
 } // namespace
 
 namespace itl {
@@ -50,6 +51,7 @@ void AppSettings::load(QSettings &settings)
       settings.value(QString::fromUtf8(kRecordingFilenameTemplate), QStringLiteral("%dmy_%h-%m-%s_%name")).toString();
   m_recordingEnabled = settings.value(QString::fromUtf8(kRecordingEnabled), true).toBool();
   m_recordingDirectory = settings.value(QString::fromUtf8(kRecordingDirectory)).toString();
+  m_networkInterfaceName = settings.value(QString::fromUtf8(kNetworkInterface)).toString();
 }
 
 void AppSettings::save(QSettings &settings) const
@@ -70,6 +72,7 @@ void AppSettings::save(QSettings &settings) const
   settings.setValue(QString::fromUtf8(kRecordingFilenameTemplate), m_recordingFilenameTemplate);
   settings.setValue(QString::fromUtf8(kRecordingEnabled), m_recordingEnabled);
   settings.setValue(QString::fromUtf8(kRecordingDirectory), m_recordingDirectory);
+  settings.setValue(QString::fromUtf8(kNetworkInterface), m_networkInterfaceName);
 }
 
 void AppSettings::loadUserData(QSettings &settings)
@@ -236,6 +239,15 @@ void AppSettings::setShowCallButtons(bool show)
     return;
   }
   m_showCallButtons = show;
+  emit settingsChanged();
+}
+
+void AppSettings::setNetworkInterfaceName(const QString &name)
+{
+  if (m_networkInterfaceName == name) {
+    return;
+  }
+  m_networkInterfaceName = name;
   emit settingsChanged();
 }
 

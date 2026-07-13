@@ -41,6 +41,7 @@ struct PeerContext {
     uint32_t nextRtpTimestamp = 0;
     bool sdpSent = false;
     bool remoteSdpApplied = false;
+    bool iceGatheringStarted = false;
     QString appliedRemoteSdp;
 };
 
@@ -80,7 +81,8 @@ public slots:
 
 private:
     QString createLegId() const;
-    void beginNegotiation(const QString &leg, bool createOffer);
+    void beginNegotiation(const QString &leg, bool createOffer, bool deferIceGathering = false);
+    void beginIncomingIceGathering(const QString &leg);
     void setupAudioTrack(const QString &leg, const std::shared_ptr<rtc::PeerConnection> &pc,
                          const QString &audioMid = QStringLiteral("audio"));
     void attachIncomingTrack(const QString &leg, const std::shared_ptr<rtc::Track> &track);
@@ -97,6 +99,7 @@ private:
     QString patchSdpLocalAddress(const QString &sdp) const;
     QString extractAudioMid(const QString &sdp) const;
     QString sanitizeLocalSdp(const QString &sdp) const;
+    QString bindIPv4() const;
     void startAudio();
     void stopAudio();
     void startRingback();

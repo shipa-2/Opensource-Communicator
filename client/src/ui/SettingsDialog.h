@@ -35,6 +35,7 @@ protected:
 
 private:
     void loadDevices();
+    void loadNetworkInterfaces();
     void loadFromSettings();
     void updatePreviewButtons();
     itl::AppSettings::RingtoneKind ringtoneKindForIndex(int index) const;
@@ -62,6 +63,7 @@ private:
 
     ProfileAvatarWidget *m_accountAvatar = nullptr;
     class QLineEdit *m_displayNameEdit = nullptr;
+    class QComboBox *m_networkInterface = nullptr;
     QString m_selfName;
 
     class QCheckBox *m_recordingEnabledCheck = nullptr;
