@@ -35,6 +35,7 @@ public:
     bool isSmsPeer(const QString &peer) const;
     QString normalizedPeer(const QString &peer) const;
     int sendMessage(const QString &peer, const QString &text);
+    void setColorAdvertisementPeers(const QStringList &peers);
     void sendColorAdvertisement(const QString &color);
     QString peerColor(const QString &peer) const;
     static bool isColorAdvertisement(const QString &body);
@@ -74,6 +75,7 @@ private:
     QHash<QString, QList<InstantMessage>> m_messages;
     QHash<QString, QStringList> m_unreadByPeer;
     QHash<QString, QString> m_peerColors;
+    QStringList m_colorAdvertisementPeers;
     int m_historyRequestId = -1;
     int m_smsTelnumsRequestId = -1;
     bool m_demoMode = false;

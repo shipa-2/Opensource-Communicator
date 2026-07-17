@@ -929,6 +929,7 @@ void MainWindow::onProfileAvatarChanged()
   m_client->saveSettings();
   m_headerAvatar->refreshFromSettings();
   if (m_online) {
+    refreshColorAdvertisementPeers();
     m_client->chat()->sendColorAdvertisement(m_client->appSettings().profileAvatarColor());
   }
 }
@@ -1853,6 +1854,7 @@ void MainWindow::enterDemoInterface()
   }
 
   itl::DemoData::seedChatMessages(m_client->chat());
+  refreshColorAdvertisementPeers();
   m_client->chat()->sendColorAdvertisement(m_client->appSettings().profileAvatarColor());
   updateSelfHeader();
   rebuildContactList();
@@ -1967,6 +1969,7 @@ void MainWindow::onSettings()
     }
     m_headerAvatar->refreshFromSettings();
     if (m_online) {
+      refreshColorAdvertisementPeers();
       m_client->chat()->sendColorAdvertisement(m_client->appSettings().profileAvatarColor());
     }
   } else if (result == 3) {

@@ -215,7 +215,7 @@ void ChatManager::handlePayload(const QJsonObject &payload)
       const QString color = extractColor(im.body);
       if (!color.isEmpty()) {
         m_peerColors[im.peer] = color;
-        qCDebug(lcChat) << "Color advertisement from" << im.peer << ":" << color;
+        qCInfo(lcChat) << "Color advertisement received from" << im.peer << ":" << color;
         emit peerColorReceived(im.peer, color);
       }
       return;
@@ -252,7 +252,7 @@ void ChatManager::handlePayload(const QJsonObject &payload)
         const QString color = extractColor(im.body);
         if (!color.isEmpty()) {
           m_peerColors[im.peer] = color;
-          qCDebug(lcChat) << "Color advertisement from" << im.peer << ":" << color;
+          qCInfo(lcChat) << "Color advertisement received from" << im.peer << "(history):" << color;
           emit peerColorReceived(im.peer, color);
         }
         continue;
@@ -448,17 +448,41 @@ QString ChatManager::extractColor(const QString &body)
   return {};
 }
 
+void ChatManager::setColorAdvertisementPeers(const QStringList &peers)
+{
+  m_colorAdvertisementPeers.clear();
+  for (const QString &peer : peers) {
+    const QString normalized = normalizePeer(peer);
+    if (normalized.isEmpty() || isPhonePeer(normalized)) {
+      continue;
+    }
+    if (!m_colorAdvertisementPeers.contains(normalized)) {
+      m_colorAdvertisementPeers.append(normalized);
+    }
+  }
+  qCInfo(lcChat) << "Color advertisement peers:" << m_colorAdvertisementPeers.size();
+}
+
 void ChatManager::sendColorAdvertisement(const QString &color)
 {
   if (color.isEmpty()) {
     return;
   }
   if (m_demoMode || !m_api) {
-    qCDebug(lcChat) << "Color advertisement (demo/local):" << color;
+    qCInfo(lcChat) << "Color advertisement (demo/local):" << color;
     return;
   }
+  if (m_colorAdvertisementPeers.isEmpty()) {
+    qCInfo(lcChat) << "Color advertisement skipped: no same-domain peers";
+    return;
+  }
+
   const QString body = QStringLiteral("**%1**").arg(color);
-  m_api->sendIm(normalizePeer(QStringLiteral("__broadcast__")), body);
+  qCInfo(lcChat) << "Color advertisement sent:" << color << "to" << m_colorAdvertisementPeers.size()
+                 << "peers";
+  for (const QString &peer : m_colorAdvertisementPeers) {
+    m_api->sendIm(peer, body, {}, false, false);
+  }
 }
 
 QString ChatManager::peerColor(const QString &peer) const

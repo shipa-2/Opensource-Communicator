@@ -20,10 +20,13 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QTabWidget>
 #include <QTimer>
 #include <QVBoxLayout>
+
+#include "chat/ChatManager.h"
 
 SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager *calls,
                                const QString &displayName, QWidget *parent)
@@ -134,6 +137,22 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
   avatarBtns->addWidget(photoBtn);
   avatarBtns->addWidget(colorBtn);
   avatarBtns->addWidget(removePhotoBtn);
+#ifdef OSC_DEBUG_BUILD
+  auto *broadcastColorBtn = new QPushButton(tr("Рассылка цвета"));
+  broadcastColorBtn->setObjectName(QStringLiteral("avatarMenuBtn"));
+  broadcastColorBtn->setToolTip(tr("Отправить цвет аватарки всем контактам домена"));
+  avatarBtns->addWidget(broadcastColorBtn);
+  connect(broadcastColorBtn, &QPushButton::clicked, this, [this]() {
+    const QString color = m_settings->profileAvatarColor();
+    if (color.isEmpty()) {
+      QMessageBox::information(this, tr("Рассылка цвета"), tr("Цвет аватарки не задан"));
+      return;
+    }
+    m_client->chat()->sendColorAdvertisement(color);
+    QMessageBox::information(this, tr("Рассылка цвета"),
+                             tr("Цвет %1 отправлен контактам домена").arg(color));
+  });
+#endif
   avatarBtns->addStretch();
   avatarRow->addLayout(avatarBtns);
   accountLayout->addLayout(avatarRow);

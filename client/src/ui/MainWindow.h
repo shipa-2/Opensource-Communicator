@@ -121,6 +121,7 @@ private:
     QVector<ContactRowWidget::CallNumber> callNumbersForPeer(const QString &peer) const;
     void updateSelfHeader();
     void mergeCustomContacts();
+    void refreshColorAdvertisementPeers();
     bool useServerContacts() const;
     void setupDragDrop();
     void registerDropTarget(QWidget *widget);
