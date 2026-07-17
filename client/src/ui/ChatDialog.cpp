@@ -10,16 +10,23 @@
 #include <QApplication>
 #include <QDate>
 #include <QFrame>
+#include <QDialog>
 #include <QLocale>
+#include <QFileDialog>
+#include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QScrollBar>
 #include <QShowEvent>
 #include <QTextBrowser>
+#include <QTextCursor>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QDesktopServices>
+#include <QFile>
 
 namespace {
 
@@ -39,6 +46,42 @@ QString chatInputStyleSheet()
       "  border: 2px solid palette(highlight);"
       "  padding: 3px 7px;"
       "}");
+}
+
+QString themeShareKeyFromUrl(const QUrl &url)
+{
+  if (url.scheme() != QStringLiteral("osc-theme")) {
+    return {};
+  }
+  QString encoded = url.toString(QUrl::FullyEncoded);
+  const int colon = encoded.indexOf(QLatin1Char(':'));
+  if (colon >= 0) {
+    encoded = encoded.mid(colon + 1);
+  }
+  return QUrl::fromPercentEncoding(encoded.toUtf8());
+}
+
+QString fileShareKeyFromUrl(const QUrl &url)
+{
+  if (url.scheme() != QStringLiteral("osc-file")) {
+    return {};
+  }
+  QString encoded = url.toString(QUrl::FullyEncoded);
+  const int colon = encoded.indexOf(QLatin1Char(':'));
+  if (colon >= 0) {
+    encoded = encoded.mid(colon + 1);
+  }
+  return QUrl::fromPercentEncoding(encoded.toUtf8());
+}
+
+void configureAttachButton(QPushButton *button)
+{
+  if (!button) {
+    return;
+  }
+  const QFontMetrics metrics(button->font());
+  const int side = qMax(metrics.height() + 8, metrics.horizontalAdvance(QStringLiteral("+")) + 14);
+  button->setFixedSize(side, side);
 }
 
 } // namespace
@@ -70,18 +113,23 @@ ChatDialog::ChatDialog(itl::CommunicatorClient *client, QWidget *parent)
   root->addWidget(m_viewFrame, 1);
 
   auto *row = new QHBoxLayout;
+  m_attachBtn = new QPushButton(QStringLiteral("+"));
+  m_attachBtn->setToolTip(tr("Приложить файл"));
+  configureAttachButton(m_attachBtn);
   m_input = new QLineEdit;
   m_input->setPlaceholderText(tr("Введите сообщение..."));
   auto *sendBtn = new QPushButton(tr("Отправить"));
+  row->addWidget(m_attachBtn);
   row->addWidget(m_input, 1);
   row->addWidget(sendBtn);
   root->addLayout(row);
 
+  connect(m_attachBtn, &QPushButton::clicked, this, &ChatDialog::onAttachFile);
   connect(sendBtn, &QPushButton::clicked, this, &ChatDialog::onSend);
   connect(m_input, &QLineEdit::returnPressed, this, &ChatDialog::onSend);
   connect(m_client, &itl::CommunicatorClient::chatMessage, this, &ChatDialog::onChatMessage);
   connect(m_client->chat(), &itl::ChatManager::historyLoaded, this, &ChatDialog::onHistoryLoaded);
-  connect(m_view, &QTextBrowser::anchorClicked, this, &ChatDialog::onThemeLinkActivated);
+  connect(m_view, &QTextBrowser::anchorClicked, this, &ChatDialog::onAnchorActivated);
 
   refreshAppearance();
 }
@@ -148,7 +196,17 @@ void ChatDialog::openForPeer(const QString &peer, const QString &peerDisplayName
   activateWindow();
   m_input->setFocus();
   m_client->chat()->markPeerRead(peer);
+  updateAttachEnabled();
   refreshAppearance();
+}
+
+void ChatDialog::updateAttachEnabled()
+{
+  if (!m_attachBtn || !m_client) {
+    return;
+  }
+  const bool smsPeer = !m_peer.isEmpty() && m_client->chat()->isSmsPeer(m_peer);
+  m_attachBtn->setEnabled(!m_peer.isEmpty() && !smsPeer);
 }
 
 void ChatDialog::updatePeerDisplayName(const QString &peerDisplayName)
@@ -209,15 +267,51 @@ QString ChatDialog::htmlEscape(const QString &text)
   escaped.replace(QLatin1Char('&'), QStringLiteral("&amp;"));
   escaped.replace(QLatin1Char('<'), QStringLiteral("&lt;"));
   escaped.replace(QLatin1Char('>'), QStringLiteral("&gt;"));
+  escaped.replace(QLatin1Char('"'), QStringLiteral("&quot;"));
   return escaped;
+}
+
+QString ChatDialog::linkifyHtml(const QString &text)
+{
+  static const QRegularExpression urlRe(
+      R"((?:https?://|www\.)[^\s<&]+)", QRegularExpression::CaseInsensitiveOption);
+
+  QString html;
+  int last = 0;
+  auto it = urlRe.globalMatch(text);
+  while (it.hasNext()) {
+    const QRegularExpressionMatch match = it.next();
+    html += htmlEscape(text.mid(last, match.capturedStart() - last));
+
+    QString url = match.captured(0);
+    while (url.endsWith(QLatin1Char('.')) || url.endsWith(QLatin1Char(',')) || url.endsWith(QLatin1Char(')'))
+           || url.endsWith(QLatin1Char(']'))) {
+      url.chop(1);
+    }
+    QString href = url;
+    if (href.startsWith(QStringLiteral("www."), Qt::CaseInsensitive)) {
+      href.prepend(QStringLiteral("https://"));
+    }
+    const QString safeHref = QString::fromLatin1(QUrl(href).toEncoded());
+    html += QStringLiteral("<a href=\"%1\">%2</a>").arg(safeHref, htmlEscape(url));
+    last = match.capturedStart() + url.size();
+  }
+  html += htmlEscape(text.mid(last));
+  return html;
 }
 
 void ChatDialog::reloadMessages()
 {
-  m_view->clear();
-  for (const auto &im : m_client->chat()->messagesForPeer(m_peer)) {
-    appendMessage(im);
+  if (!m_client || m_peer.isEmpty()) {
+    m_view->clear();
+    return;
   }
+
+  QStringList lines;
+  for (const auto &im : m_client->chat()->messagesForPeer(m_peer)) {
+    lines.append(buildMessageHtml(im));
+  }
+  m_view->setHtml(lines.join(QStringLiteral("<br/>")));
   QScrollBar *bar = m_view->verticalScrollBar();
   bar->setValue(bar->maximum());
 }
@@ -230,82 +324,167 @@ void ChatDialog::onHistoryLoaded(const QString &peer)
   reloadMessages();
 }
 
-void ChatDialog::appendMessage(const itl::InstantMessage &im)
+QString ChatDialog::buildMessageHtml(const itl::InstantMessage &im) const
 {
   if (itl::ChatManager::isThemeShareNotice(im.body)) {
-    appendThemeShareNotice(im.body, im.incoming, im.timestamp);
-    return;
+    return buildThemeShareNoticeHtml(im.body, im.incoming, im.timestamp);
+  }
+  if (itl::ChatManager::isFileShareNotice(im.body)) {
+    return buildFileShareNoticeHtml(im.body, im.incoming, im.timestamp);
   }
   if (itl::ChatManager::isThemeAppliedNotice(im.body)) {
-    appendThemeAppliedNotice(im.incoming, im.timestamp);
-    return;
+    return buildThemeAppliedNoticeHtml(im.incoming, im.timestamp);
   }
-  appendMessage(im.body, im.incoming, im.timestamp);
+  return buildPlainMessageHtml(im.body, im.incoming, im.timestamp);
 }
 
-void ChatDialog::appendMessage(const QString &text, bool incoming, const QDateTime &timestamp)
+QString ChatDialog::buildPlainMessageHtml(const QString &text, bool incoming,
+                                          const QDateTime &timestamp) const
 {
   const QString name = incoming ? m_peerDisplayName : m_selfDisplayName;
   const QString stamp = formatTimestamp(timestamp);
-  const QString line = stamp.isEmpty()
-      ? QStringLiteral("%1: %2").arg(htmlEscape(name), htmlEscape(text))
-      : QStringLiteral("%1 %2: %3").arg(htmlEscape(stamp), htmlEscape(name), htmlEscape(text));
-  m_view->append(line);
-  QScrollBar *bar = m_view->verticalScrollBar();
-  bar->setValue(bar->maximum());
+  const QString linkedText = linkifyHtml(text);
+  if (stamp.isEmpty()) {
+    return QStringLiteral("%1: %2").arg(htmlEscape(name), linkedText);
+  }
+  return QStringLiteral("%1 %2: %3").arg(htmlEscape(stamp), htmlEscape(name), linkedText);
 }
 
-void ChatDialog::appendThemeShareNotice(const QString &noticeBody, bool incoming,
-                                        const QDateTime &timestamp)
+QString ChatDialog::buildThemeShareNoticeHtml(const QString &noticeBody, bool incoming,
+                                              const QDateTime &timestamp) const
 {
   const QString name = incoming ? m_peerDisplayName : m_selfDisplayName;
   const QString stamp = formatTimestamp(timestamp);
   const QString key = itl::ChatManager::themeShareNoticeKey(noticeBody);
   const QString text =
       incoming ? tr("%1 поделился с вами темой").arg(name) : tr("Вы поделились темой");
-  QString line;
   if (incoming && !key.isEmpty()) {
     const QString encodedKey = QString::fromLatin1(QUrl::toPercentEncoding(key));
     const QString link = QStringLiteral("<a href=\"osc-theme:%1\">%2</a>")
                              .arg(encodedKey, htmlEscape(text));
-    line = stamp.isEmpty() ? link : QStringLiteral("%1 %2").arg(htmlEscape(stamp), link);
-  } else {
-    line = stamp.isEmpty() ? htmlEscape(text)
-                           : QStringLiteral("%1 %2").arg(htmlEscape(stamp), htmlEscape(text));
+    if (stamp.isEmpty()) {
+      return link;
+    }
+    return QStringLiteral("%1 %2").arg(htmlEscape(stamp), link);
   }
-  m_view->append(line);
-  QScrollBar *bar = m_view->verticalScrollBar();
-  bar->setValue(bar->maximum());
+  if (stamp.isEmpty()) {
+    return htmlEscape(text);
+  }
+  return QStringLiteral("%1 %2").arg(htmlEscape(stamp), htmlEscape(text));
 }
 
-void ChatDialog::appendThemeAppliedNotice(bool incoming, const QDateTime &timestamp)
+QString ChatDialog::buildFileShareNoticeHtml(const QString &noticeBody, bool incoming,
+                                             const QDateTime &timestamp) const
+{
+  const QString name = incoming ? m_peerDisplayName : m_selfDisplayName;
+  const QString stamp = formatTimestamp(timestamp);
+  const QString key = itl::ChatManager::fileShareNoticeKey(noticeBody);
+  const itl::ChatFilePayload payload =
+      key.isEmpty() ? itl::ChatFilePayload{} : m_client->chat()->chatFileOffer(key);
+  const QString fileName =
+      payload.fileName.isEmpty() ? tr("файл") : payload.fileName;
+  const QString text = incoming ? tr("%1 отправил файл: %2").arg(name, fileName)
+                                : tr("Вы отправили файл: %1").arg(fileName);
+  if (!key.isEmpty()) {
+    const QString encodedKey = QString::fromLatin1(QUrl::toPercentEncoding(key));
+    const QString link = QStringLiteral("<a href=\"osc-file:%1\">%2</a>")
+                             .arg(encodedKey, htmlEscape(text));
+    if (stamp.isEmpty()) {
+      return link;
+    }
+    return QStringLiteral("%1 %2").arg(htmlEscape(stamp), link);
+  }
+  if (stamp.isEmpty()) {
+    return htmlEscape(text);
+  }
+  return QStringLiteral("%1 %2").arg(htmlEscape(stamp), htmlEscape(text));
+}
+
+QString ChatDialog::buildThemeAppliedNoticeHtml(bool incoming, const QDateTime &timestamp) const
 {
   if (!incoming) {
-    return;
+    return {};
   }
   const QString text = tr("%1 применил вашу тему").arg(m_peerDisplayName);
   const QString stamp = formatTimestamp(timestamp);
-  const QString line = stamp.isEmpty() ? htmlEscape(text)
-                                       : QStringLiteral("%1 %2").arg(htmlEscape(stamp), htmlEscape(text));
-  m_view->append(line);
-  QScrollBar *bar = m_view->verticalScrollBar();
-  bar->setValue(bar->maximum());
+  if (stamp.isEmpty()) {
+    return htmlEscape(text);
+  }
+  return QStringLiteral("%1 %2").arg(htmlEscape(stamp), htmlEscape(text));
 }
 
-void ChatDialog::onThemeLinkActivated(const QUrl &url)
+void ChatDialog::onAnchorActivated(const QUrl &url)
 {
-  if (url.scheme() != QStringLiteral("osc-theme")) {
+  QTextCursor cursor = m_view->textCursor();
+  cursor.clearSelection();
+  QTextCharFormat plainFormat;
+  plainFormat.setAnchor(false);
+  cursor.setCharFormat(plainFormat);
+  m_view->setTextCursor(cursor);
+
+  const QString scheme = url.scheme().toLower();
+  if (scheme == QStringLiteral("osc-theme")) {
+    openThemePreview(themeShareKeyFromUrl(url));
     return;
   }
-  QString encoded = url.toString(QUrl::FullyEncoded);
-  const int colon = encoded.indexOf(QLatin1Char(':'));
-  if (colon >= 0) {
-    encoded = encoded.mid(colon + 1);
+  if (scheme == QStringLiteral("osc-file")) {
+    saveChatFile(fileShareKeyFromUrl(url));
+    reloadMessages();
+    return;
   }
-  openThemePreview(QUrl::fromPercentEncoding(encoded.toUtf8()));
+  if (scheme == QStringLiteral("http") || scheme == QStringLiteral("https")
+      || scheme == QStringLiteral("ftp")) {
+    QDesktopServices::openUrl(url);
+  }
 }
 
-void ChatDialog::openThemePreview(const QString &key)
+void ChatDialog::saveChatFile(const QString &key)
+{
+  if (!m_client || key.isEmpty()) {
+    return;
+  }
+  const itl::ChatFilePayload payload = m_client->chat()->chatFileOffer(key);
+  if (payload.data.isEmpty()) {
+    QMessageBox::information(this, tr("Файл"), tr("Файл больше недоступен."));
+    return;
+  }
+
+  const QString path = QFileDialog::getSaveFileName(this, tr("Сохранить файл"), payload.fileName);
+  if (path.isEmpty()) {
+    return;
+  }
+  QFile file(path);
+  if (!file.open(QIODevice::WriteOnly)) {
+    QMessageBox::warning(this, tr("Файл"), tr("Не удалось сохранить файл."));
+    return;
+  }
+  if (file.write(payload.data) != payload.data.size()) {
+    QMessageBox::warning(this, tr("Файл"), tr("Не удалось сохранить файл."));
+    return;
+  }
+}
+
+void ChatDialog::onAttachFile()
+{
+  if (!m_client || m_peer.isEmpty() || m_client->chat()->isSmsPeer(m_peer)) {
+    return;
+  }
+
+  const QString path = QFileDialog::getOpenFileName(this, tr("Приложить файл"));
+  if (path.isEmpty()) {
+    return;
+  }
+
+  if (!m_client->chat()->sendFileShare(m_peer, path)) {
+    QMessageBox::warning(this, tr("Приложить файл"),
+                         tr("Не удалось отправить файл (лимит %1 КБ).")
+                             .arg(96));
+    return;
+  }
+  reloadMessages();
+}
+
+void ChatDialog::applyThemeFromPreview(const QString &key)
 {
   if (!m_client || key.isEmpty()) {
     return;
@@ -313,11 +492,6 @@ void ChatDialog::openThemePreview(const QString &key)
   const itl::ThemeSharePayload payload = m_client->chat()->themeShareOffer(key);
   if (payload.wallpaper.isNull()) {
     QMessageBox::information(this, tr("Тема"), tr("Предложение темы больше недоступно."));
-    return;
-  }
-
-  ThemePreviewDialog preview(payload.wallpaper, payload.uiOpacity, payload.listOpacity, this);
-  if (preview.exec() != QDialog::Accepted) {
     return;
   }
 
@@ -334,6 +508,30 @@ void ChatDialog::openThemePreview(const QString &key)
   m_client->chat()->sendThemeApplied(m_peer);
 }
 
+void ChatDialog::openThemePreview(const QString &key)
+{
+  if (!m_client || key.isEmpty()) {
+    return;
+  }
+  const itl::ThemeSharePayload payload = m_client->chat()->themeShareOffer(key);
+  if (payload.wallpaper.isNull()) {
+    QMessageBox::information(this, tr("Тема"), tr("Предложение темы больше недоступно."));
+    return;
+  }
+
+  auto *preview =
+      new ThemePreviewDialog(payload.wallpaper, payload.uiOpacity, payload.listOpacity, this);
+  preview->setAttribute(Qt::WA_DeleteOnClose);
+  preview->setWindowModality(Qt::ApplicationModal);
+  connect(preview, &QDialog::finished, this, [this, preview, key](int result) {
+    if (result == QDialog::Accepted) {
+      applyThemeFromPreview(key);
+    }
+    reloadMessages();
+  });
+  preview->open();
+}
+
 void ChatDialog::onSend()
 {
   const QString text = m_input->text().trimmed();
@@ -346,16 +544,14 @@ void ChatDialog::onSend()
 
 void ChatDialog::onChatMessage(const QString &peer, const QString &text, bool incoming, const QDateTime &timestamp)
 {
+  Q_UNUSED(text)
+  Q_UNUSED(incoming)
+  Q_UNUSED(timestamp)
+
   if (!isVisible() || m_client->chat()->normalizedPeer(peer) != m_client->chat()->normalizedPeer(m_peer)) {
     return;
   }
-  if (itl::ChatManager::isThemeShareNotice(text)) {
-    appendThemeShareNotice(text, incoming, timestamp);
-  } else if (itl::ChatManager::isThemeAppliedNotice(text)) {
-    appendThemeAppliedNotice(incoming, timestamp);
-  } else {
-    appendMessage(text, incoming, timestamp);
-  }
+  reloadMessages();
   if (incoming) {
     m_client->chat()->markPeerRead(peer);
   }

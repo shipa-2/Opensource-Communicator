@@ -35,7 +35,29 @@
 #include "chat/ChatManager.h"
 #include "ui/TransferDialog.h"
 
+#include <functional>
+
 #include <QPixmap>
+
+namespace {
+void openShareTransferDialog(SettingsDialog *parent, const QHash<QString, QString> &sharePeers,
+                             const QString &selfPeer, const QString &title, const QString &prompt,
+                             const QString &acceptLabel,
+                             const std::function<void(const QString &peer, const QString &displayName)> &onAccepted)
+{
+  auto *dlg = new TransferDialog(sharePeers, selfPeer, {}, parent, title, prompt, acceptLabel);
+  dlg->setWindowModality(Qt::ApplicationModal);
+  dlg->setAttribute(Qt::WA_DeleteOnClose);
+  QObject::connect(dlg, &QDialog::accepted, parent, [dlg, onAccepted]() {
+    const QString peer = dlg->selectedPeer();
+    if (peer.isEmpty()) {
+      return;
+    }
+    onAccepted(peer, dlg->selectedDisplayName());
+  });
+  dlg->open();
+}
+} // namespace
 
 SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager *calls,
                                const QString &displayName, const QHash<QString, QString> &sharePeers,
@@ -733,20 +755,15 @@ void SettingsDialog::onShareAvatar()
       QMessageBox::warning(this, title, tr("Не удалось открыть фото аватарки."));
       return;
     }
-    TransferDialog dlg(m_sharePeers, m_selfPeer, {}, this, title,
-                       tr("Выберите контакт, которому отправить аватарку:"), tr("Отправить"));
-    if (dlg.exec() != QDialog::Accepted) {
-      return;
-    }
-    const QString peer = dlg.selectedPeer();
-    if (peer.isEmpty()) {
-      return;
-    }
-    if (!m_client->chat()->sendAvatarShare(peer, photo)) {
-      QMessageBox::warning(this, title, tr("Не удалось отправить аватарку."));
-      return;
-    }
-    QMessageBox::information(this, title, tr("Аватарка отправлена: %1").arg(dlg.selectedDisplayName()));
+    openShareTransferDialog(
+        this, m_sharePeers, m_selfPeer, title, tr("Выберите контакт, которому отправить аватарку:"),
+        tr("Отправить"), [this, photo, title](const QString &peer, const QString &displayName) {
+          if (!m_client->chat()->sendAvatarShare(peer, photo)) {
+            QMessageBox::warning(this, title, tr("Не удалось отправить аватарку."));
+            return;
+          }
+          QMessageBox::information(this, title, tr("Аватарка отправлена: %1").arg(displayName));
+        });
     return;
   }
 
@@ -756,21 +773,16 @@ void SettingsDialog::onShareAvatar()
     return;
   }
   m_client->chat()->setSelfShareProfile(color, {});
-  TransferDialog dlg(m_sharePeers, m_selfPeer, {}, this, title,
-                     tr("Выберите контакт, которому отправить цвет:"), tr("Отправить"));
-  if (dlg.exec() != QDialog::Accepted) {
-    return;
-  }
-  const QString peer = dlg.selectedPeer();
-  if (peer.isEmpty()) {
-    return;
-  }
-  if (!m_client->chat()->sendColorShare(peer)) {
-    QMessageBox::warning(this, title, tr("Не удалось отправить цвет."));
-    return;
-  }
-  QMessageBox::information(this, title,
-                           tr("Цвет %1 отправлен: %2").arg(color, dlg.selectedDisplayName()));
+  openShareTransferDialog(
+      this, m_sharePeers, m_selfPeer, title, tr("Выберите контакт, которому отправить цвет:"),
+      tr("Отправить"), [this, color, title](const QString &peer, const QString &displayName) {
+        if (!m_client->chat()->sendColorShare(peer)) {
+          QMessageBox::warning(this, title, tr("Не удалось отправить цвет."));
+          return;
+        }
+        QMessageBox::information(this, title,
+                                 tr("Цвет %1 отправлен: %2").arg(color, displayName));
+      });
 }
 
 void SettingsDialog::onShareTheme()
@@ -796,21 +808,16 @@ void SettingsDialog::onShareTheme()
     return;
   }
 
-  TransferDialog dlg(m_sharePeers, m_selfPeer, {}, this, title,
-                     tr("Выберите контакт, которому отправить тему:"), tr("Отправить"));
-  if (dlg.exec() != QDialog::Accepted) {
-    return;
-  }
-  const QString peer = dlg.selectedPeer();
-  if (peer.isEmpty()) {
-    return;
-  }
-  if (!m_client->chat()->sendThemeShare(peer, wallpaper, m_settings->appWallpaperOpacity(),
-                                        m_settings->appWallpaperListOpacity())) {
-    QMessageBox::warning(this, title, tr("Не удалось отправить тему."));
-    return;
-  }
-  QMessageBox::information(this, title, tr("Тема отправлена: %1").arg(dlg.selectedDisplayName()));
+  openShareTransferDialog(
+      this, m_sharePeers, m_selfPeer, title, tr("Выберите контакт, которому отправить тему:"),
+      tr("Отправить"), [this, wallpaper, title](const QString &peer, const QString &displayName) {
+        if (!m_client->chat()->sendThemeShare(peer, wallpaper, m_settings->appWallpaperOpacity(),
+                                              m_settings->appWallpaperListOpacity())) {
+          QMessageBox::warning(this, title, tr("Не удалось отправить тему."));
+          return;
+        }
+        QMessageBox::information(this, title, tr("Тема отправлена: %1").arg(displayName));
+      });
 }
 
 void SettingsDialog::onAccept()

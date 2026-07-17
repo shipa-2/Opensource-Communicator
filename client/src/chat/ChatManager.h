@@ -30,6 +30,11 @@ struct ThemeSharePayload {
     int listOpacity = 85;
 };
 
+struct ChatFilePayload {
+    QString fileName;
+    QByteArray data;
+};
+
 class ChatManager : public QObject {
     Q_OBJECT
 
@@ -54,7 +59,13 @@ public:
     void sendOpenpingBroadcast();
     QStringList oscPeers() const;
     bool isOscPeer(const QString &peer) const;
+    /// Register a newly discovered OSC peer (Openping / demo simulation).
+    bool discoverOscPeer(const QString &peer);
     void seedDemoOscPeers(const QStringList &peers);
+    /// Demo: peer shares a theme with the local user (incoming chat notice + preview).
+    void demoIncomingThemeShare(const QString &peer, const QPixmap &wallpaper, int uiOpacity, int listOpacity);
+    /// Demo: peer sends a file attachment into chat.
+    void demoIncomingFileShare(const QString &peer, const QString &fileName, const QByteArray &data);
     /// Color + optional photo used when replying to Openping! / advertising.
     void setSelfShareProfile(const QString &color, const QPixmap &avatarPhoto = {});
     void sendColorAdvertisement(const QString &color);
@@ -67,11 +78,15 @@ public:
     bool sendThemeApplied(const QString &peer);
     /// Share profile color to one OSC peer (when no photo is set).
     bool sendColorShare(const QString &peer);
+    /// Share a file in chat (`**fnm=…;enc=b64;cnt=…**`, persist=true).
+    bool sendFileShare(const QString &peer, const QString &filePath);
     QString peerColor(const QString &peer) const;
     QPixmap peerAvatar(const QString &peer) const;
     static bool isColorAdvertisement(const QString &body);
     static QString extractColor(const QString &body);
     static bool isFileTransfer(const QString &body);
+    static bool isAvatarFileTransfer(const QString &body);
+    static bool isChatFileTransfer(const QString &body);
     static bool isThemeShare(const QString &body);
     static bool isThemeShareNotice(const QString &body);
     static QString themeShareNoticeKey(const QString &body);
@@ -80,6 +95,10 @@ public:
     static bool isThemeAppliedNotice(const QString &body);
     static QString themeAppliedNoticeBody();
     ThemeSharePayload themeShareOffer(const QString &key) const;
+    static bool isFileShareNotice(const QString &body);
+    static QString fileShareNoticeKey(const QString &body);
+    static QString fileShareNoticeBody(const QString &key);
+    ChatFilePayload chatFileOffer(const QString &key) const;
     static bool isOpenping(const QString &body);
     static QString extractFileTransferName(const QString &body);
     static QByteArray extractFileTransferData(const QString &body);
@@ -103,6 +122,8 @@ signals:
     void peerColorReceived(const QString &peer, const QString &color);
     void peerAvatarReceived(const QString &peer, const QPixmap &avatar);
     void oscPeersChanged();
+    /// Emitted once when a contact is newly confirmed as OpenSource Communicator.
+    void oscPeerDiscovered(const QString &peer);
     /// Demo only: outbound «Теперь ты …» renames the contact in the UI.
     void demoPeerRenameRequested(const QString &peer, const QString &newName);
 
@@ -133,9 +154,11 @@ private:
     static QString phoneFromPeer(QString peer);
     static QPixmap scaleAvatarForShare(const QPixmap &pixmap);
     static QString encodeAvatarShareBody(const QPixmap &scaledPngPixmap, QByteArray *outPng = nullptr);
+    static QString encodeChatFileBody(const QString &fileName, const QByteArray &data);
     static QString encodeThemeShareBody(const QPixmap &wallpaper, int uiOpacity, int listOpacity,
                                         QByteArray *outJpeg = nullptr);
     QString registerThemeShare(const QString &peer, const ThemeSharePayload &payload, const QString &msgId = {});
+    QString registerChatFile(const QString &peer, const QString &body, const QString &msgId = {});
     bool parseThemeShareBody(const QString &body, ThemeSharePayload *out) const;
     void loadSmsTelnums();
     void handleSmsTelnumsResponse(const QJsonObject &response);
@@ -153,6 +176,7 @@ private:
     QHash<QString, QString> m_peerColors;
     QHash<QString, QPixmap> m_peerAvatars;
     QHash<QString, ThemeSharePayload> m_themeShares;
+    QHash<QString, ChatFilePayload> m_chatFiles;
     QStringList m_openpingCandidates;
     QSet<QString> m_oscPeers;
     int m_historyRequestId = -1;

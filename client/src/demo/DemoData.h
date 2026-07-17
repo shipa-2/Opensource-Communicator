@@ -22,6 +22,7 @@ struct DemoContact {
 
 bool isDemoCredentials(const QString &login, const QString &password);
 QString demoDomain();
+QString adminPeer();
 
 QList<DemoContact> contacts();
 QList<CallHistoryEntry> callHistory();

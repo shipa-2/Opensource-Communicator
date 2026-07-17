@@ -5,6 +5,7 @@
 
 class QFrame;
 class QLineEdit;
+class QPushButton;
 class QTextBrowser;
 class QShowEvent;
 
@@ -30,19 +31,27 @@ protected:
 
 private slots:
     void onSend();
+    void onAttachFile();
     void onChatMessage(const QString &peer, const QString &text, bool incoming, const QDateTime &timestamp);
     void onHistoryLoaded(const QString &peer);
-    void onThemeLinkActivated(const QUrl &url);
+    void onAnchorActivated(const QUrl &url);
 
 private:
     void reloadMessages();
-    void appendMessage(const itl::InstantMessage &im);
-    void appendMessage(const QString &text, bool incoming, const QDateTime &timestamp);
-    void appendThemeShareNotice(const QString &noticeBody, bool incoming, const QDateTime &timestamp);
-    void appendThemeAppliedNotice(bool incoming, const QDateTime &timestamp);
+    void applyThemeFromPreview(const QString &key);
+    void saveChatFile(const QString &key);
+    QString buildMessageHtml(const itl::InstantMessage &im) const;
+    QString buildPlainMessageHtml(const QString &text, bool incoming, const QDateTime &timestamp) const;
+    QString buildThemeShareNoticeHtml(const QString &noticeBody, bool incoming,
+                                      const QDateTime &timestamp) const;
+    QString buildFileShareNoticeHtml(const QString &noticeBody, bool incoming,
+                                     const QDateTime &timestamp) const;
+    QString buildThemeAppliedNoticeHtml(bool incoming, const QDateTime &timestamp) const;
     void openThemePreview(const QString &key);
     void refreshViewChrome();
+    void updateAttachEnabled();
     static QString htmlEscape(const QString &text);
+    static QString linkifyHtml(const QString &text);
     static QString shortDisplayName(const QString &fullName, const QString &fallback);
     static QString formatTimestamp(const QDateTime &timestamp);
 
@@ -53,5 +62,6 @@ private:
 
     QFrame *m_viewFrame = nullptr;
     QTextBrowser *m_view = nullptr;
+    QPushButton *m_attachBtn = nullptr;
     QLineEdit *m_input = nullptr;
 };

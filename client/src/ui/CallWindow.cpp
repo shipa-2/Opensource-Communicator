@@ -41,6 +41,114 @@ QString avatarLetter(const QString &displayName)
   }
   return trimmed.left(1).toUpper();
 }
+
+class CallAvatarWidget : public QWidget {
+public:
+  explicit CallAvatarWidget(QWidget *parent = nullptr)
+      : QWidget(parent)
+  {
+    setObjectName(QStringLiteral("callAvatar"));
+    setFixedSize(140, 140);
+    setAttribute(Qt::WA_StyledBackground, false);
+  }
+
+  void setLetter(const QString &letter)
+  {
+    m_letter = letter.isEmpty() ? QStringLiteral("?") : letter;
+    update();
+  }
+
+  void setBaseColor(const QString &color)
+  {
+    m_baseColor = color;
+    update();
+  }
+
+  void setPhoto(const QPixmap &photo)
+  {
+    m_photo = photo;
+    update();
+  }
+
+  void setSpeaking(bool speaking)
+  {
+    if (m_speaking == speaking) {
+      return;
+    }
+    m_speaking = speaking;
+    update();
+  }
+
+protected:
+  void paintEvent(QPaintEvent *) override
+  {
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+
+    const QRectF outer = QRectF(1.0, 1.0, width() - 2.0, height() - 2.0);
+
+    if (!m_photo.isNull()) {
+      const QColor bg = m_baseColor.isEmpty() ? palette().color(QPalette::Midlight) : QColor(m_baseColor);
+      painter.setPen(Qt::NoPen);
+      painter.setBrush(bg);
+      painter.drawEllipse(outer);
+
+      QPainterPath clip;
+      clip.addEllipse(outer);
+      painter.setClipPath(clip);
+      const QPixmap scaled =
+          m_photo.scaled(outer.size().toSize(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+      const QPointF topLeft(outer.center().x() - scaled.width() / 2.0,
+                            outer.center().y() - scaled.height() / 2.0);
+      painter.drawPixmap(topLeft, scaled);
+      painter.setClipping(false);
+    } else {
+      const QColor bg = m_baseColor.isEmpty() ? palette().color(QPalette::Midlight) : QColor(m_baseColor);
+      painter.setPen(Qt::NoPen);
+      painter.setBrush(bg);
+      painter.drawEllipse(outer);
+      painter.setPen(palette().color(QPalette::WindowText));
+      QFont font = painter.font();
+      font.setPixelSize(64);
+      font.setBold(true);
+      painter.setFont(font);
+      painter.drawText(outer, Qt::AlignCenter, m_letter);
+    }
+
+    if (!m_speaking) {
+      painter.setPen(QPen(palette().color(QPalette::Mid), 2.0));
+      painter.setBrush(Qt::NoBrush);
+      painter.drawEllipse(outer);
+      return;
+    }
+
+    const QColor accent = palette().color(QPalette::Highlight);
+    QPen glowPen(accent, 4.0);
+    glowPen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(glowPen);
+    painter.setBrush(Qt::NoBrush);
+    painter.drawEllipse(outer);
+
+    QColor soft = accent;
+    soft.setAlpha(70);
+    QPen softPen(soft, 8.0);
+    softPen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(softPen);
+    painter.drawEllipse(outer);
+  }
+
+private:
+  QString m_letter = QStringLiteral("?");
+  QString m_baseColor;
+  QPixmap m_photo;
+  bool m_speaking = false;
+};
+
+CallAvatarWidget *callAvatarWidget(QWidget *widget)
+{
+  return static_cast<CallAvatarWidget *>(widget);
+}
 } // namespace
 
 void CallWindow::refreshAppearance()
@@ -74,13 +182,7 @@ void CallWindow::buildUi()
 
   auto *avatarRow = new QHBoxLayout;
   avatarRow->addStretch();
-  m_avatar = new QLabel(QStringLiteral("?"));
-  m_avatar->setObjectName(QStringLiteral("callAvatar"));
-  m_avatar->setFixedSize(140, 140);
-  m_avatar->setAlignment(Qt::AlignCenter);
-  QFont avatarFont = m_avatar->font();
-  avatarFont.setPixelSize(64);
-  m_avatar->setFont(avatarFont);
+  m_avatar = new CallAvatarWidget(this);
   avatarRow->addWidget(m_avatar);
   avatarRow->addStretch();
   root->addLayout(avatarRow);
@@ -440,11 +542,10 @@ void CallWindow::setAvatarPixmap(const QPixmap &pixmap)
 void CallWindow::setRemoteSpeakingIndicator(bool speaking)
 {
   m_calibrated = true;
-  if (m_speaking == speaking) {
-    return;
-  }
   m_speaking = speaking;
-  refreshAvatarBorder();
+  if (CallAvatarWidget *avatar = callAvatarWidget(m_avatar)) {
+    avatar->setSpeaking(speaking);
+  }
 }
 
 void CallWindow::resetAudioLevel()
@@ -455,62 +556,29 @@ void CallWindow::resetAudioLevel()
   m_speaking = false;
   m_noiseFloor = 0.005f;
   m_speechThreshold = 0.02f;
+  if (CallAvatarWidget *avatar = callAvatarWidget(m_avatar)) {
+    avatar->setSpeaking(false);
+  }
 }
 
 void CallWindow::refreshAvatarContent()
 {
-  if (!m_avatar) {
+  CallAvatarWidget *avatar = callAvatarWidget(m_avatar);
+  if (!avatar) {
     return;
   }
 
-  if (!m_avatarPhoto.isNull()) {
-    constexpr int side = 140;
-    QPixmap scaled =
-        m_avatarPhoto.scaled(side, side, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
-    if (scaled.width() != side || scaled.height() != side) {
-      const int x = qMax(0, (scaled.width() - side) / 2);
-      const int y = qMax(0, (scaled.height() - side) / 2);
-      scaled = scaled.copy(x, y, side, side);
-    }
-    QPixmap rounded(side, side);
-    rounded.fill(Qt::transparent);
-    QPainter painter(&rounded);
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    QPainterPath clip;
-    clip.addEllipse(QRectF(0, 0, side, side));
-    painter.setClipPath(clip);
-    painter.drawPixmap(0, 0, scaled);
-    painter.end();
-
-    m_avatar->setText({});
-    m_avatar->setPixmap(rounded);
-  } else {
-    m_avatar->setPixmap({});
-    m_avatar->setText(m_avatarLetter.isEmpty() ? QStringLiteral("?") : m_avatarLetter);
-  }
-  refreshAvatarBorder();
+  avatar->setLetter(m_avatarLetter);
+  avatar->setBaseColor(m_avatarBaseColor);
+  avatar->setPhoto(m_avatarPhoto);
+  avatar->setSpeaking(m_speaking);
 }
 
 void CallWindow::refreshAvatarBorder()
 {
-  if (!m_avatar) {
-    return;
+  if (CallAvatarWidget *avatar = callAvatarWidget(m_avatar)) {
+    avatar->setSpeaking(m_speaking);
   }
-  const QColor borderColor = m_speaking ? palette().color(QPalette::Highlight) : palette().color(QPalette::Mid);
-  const bool hasPhoto = !m_avatarPhoto.isNull();
-  const QString bg = hasPhoto
-      ? QStringLiteral("transparent")
-      : (m_avatarBaseColor.isEmpty() ? QStringLiteral("palette(midlight)") : m_avatarBaseColor);
-  m_avatar->setStyleSheet(
-      QStringLiteral("QLabel {"
-                     "  background-color: %1;"
-                     "  color: palette(window-text);"
-                     "  border-radius: 70px;"
-                     "  border: 3px solid %2;"
-                     "  font-size: 64px;"
-                     "  font-weight: bold;"
-                     "}")
-          .arg(bg, borderColor.name()));
 }
 
 void CallWindow::updateRemoteAudioLevel(float level)

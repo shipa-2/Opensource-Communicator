@@ -3,6 +3,7 @@
 #include "ui/StyleHelper.h"
 
 #include <QApplication>
+#include <QDateTime>
 #include <QContextMenuEvent>
 #include <QCursor>
 #include <QEnterEvent>
@@ -10,6 +11,7 @@
 #include <QFont>
 #include <QFontMetrics>
 #include <QHBoxLayout>
+#include <QLinearGradient>
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QMenu>
@@ -23,7 +25,12 @@
 #include <QTimer>
 #include <QWidgetAction>
 
+#include <QtMath>
+
 namespace {
+
+constexpr int kOscWaveDurationMs = 1500;
+constexpr int kOscWaveFrameMs = 16;
 
 class ContactAvatarLabel : public QWidget {
 public:
@@ -56,50 +63,95 @@ public:
     update();
   }
 
+  void setPresenceRingEnabled(bool enabled)
+  {
+    if (m_presenceRingEnabled == enabled) {
+      return;
+    }
+    m_presenceRingEnabled = enabled;
+    update();
+  }
+
+  void setPresenceRingColor(const QColor &color)
+  {
+    if (m_presenceRingColor == color) {
+      return;
+    }
+    m_presenceRingColor = color;
+    update();
+  }
+
 protected:
   void paintEvent(QPaintEvent *) override
   {
     QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
 
     const QColor background =
         m_background.isValid() ? m_background : palette().color(QPalette::Midlight);
     const QColor text = palette().color(QPalette::ButtonText);
     const QColor border = palette().color(QPalette::WindowText);
-    const QRectF circle = QRectF(rect()).adjusted(1.0, 1.0, -1.0, -1.0);
-
-    painter.setPen(QPen(border, 2));
-    painter.setBrush(background);
-    painter.drawEllipse(circle);
+    const QRectF outer = QRectF(1.0, 1.0, width() - 2.0, height() - 2.0);
+    constexpr qreal kRingWidth = 2.5;
+    const bool ring = m_presenceRingEnabled && m_presenceRingColor.isValid();
+    const QRectF face = ring ? outer.adjusted(kRingWidth, kRingWidth, -kRingWidth, -kRingWidth) : outer;
 
     if (!m_photo.isNull()) {
+      painter.setPen(Qt::NoPen);
+      painter.setBrush(background);
+      painter.drawEllipse(face);
+
       QPainterPath clip;
-      clip.addEllipse(circle.adjusted(1.0, 1.0, -1.0, -1.0));
+      clip.addEllipse(face);
       painter.setClipPath(clip);
       const QPixmap scaled =
-          m_photo.scaled(circle.size().toSize(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
-      const QPointF topLeft(circle.center().x() - scaled.width() / 2.0,
-                            circle.center().y() - scaled.height() / 2.0);
+          m_photo.scaled(face.size().toSize(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+      const QPointF topLeft(face.center().x() - scaled.width() / 2.0,
+                            face.center().y() - scaled.height() / 2.0);
       painter.drawPixmap(topLeft, scaled);
       painter.setClipping(false);
-      painter.setPen(QPen(border, 2));
-      painter.setBrush(Qt::NoBrush);
-      painter.drawEllipse(circle);
+
+      if (ring) {
+        QPen ringPen(m_presenceRingColor, kRingWidth);
+        ringPen.setJoinStyle(Qt::RoundJoin);
+        painter.setPen(ringPen);
+        painter.setBrush(Qt::NoBrush);
+        painter.drawEllipse(outer);
+      } else {
+        painter.setPen(QPen(border, 2));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawEllipse(face);
+      }
       return;
     }
+
+    painter.setPen(ring ? Qt::NoPen : QPen(border, 2));
+    painter.setBrush(background);
+    painter.drawEllipse(face);
 
     painter.setPen(text);
     QFont font = painter.font();
     font.setBold(true);
     font.setPixelSize(14);
     painter.setFont(font);
-    painter.drawText(rect(), Qt::AlignCenter, m_letter);
+    painter.drawText(face, Qt::AlignCenter, m_letter);
+
+    if (ring) {
+      QPen ringPen(m_presenceRingColor, kRingWidth);
+      ringPen.setJoinStyle(Qt::RoundJoin);
+      painter.setPen(ringPen);
+      painter.setBrush(Qt::NoBrush);
+      painter.drawEllipse(outer);
+    }
   }
 
 private:
   QString m_letter = QStringLiteral("?");
   QColor m_background;
   QPixmap m_photo;
+  bool m_presenceRingEnabled = false;
+  QColor m_presenceRingColor;
 };
 
 QString presenceColor(const QString &presence)
@@ -516,37 +568,103 @@ void ContactRowWidget::leaveEvent(QEvent *event)
   });
 }
 
+void ContactRowWidget::startOscDiscoveryWave()
+{
+  m_waveStartedMs = QDateTime::currentMSecsSinceEpoch();
+  m_waveProgress = 0.0;
+  if (!m_waveTimer) {
+    m_waveTimer = new QTimer(this);
+    m_waveTimer->setInterval(kOscWaveFrameMs);
+    connect(m_waveTimer, &QTimer::timeout, this, &ContactRowWidget::onOscWaveTick);
+  }
+  if (!m_waveTimer->isActive()) {
+    m_waveTimer->start();
+  }
+  update();
+}
+
+void ContactRowWidget::onOscWaveTick()
+{
+  const qint64 elapsed = QDateTime::currentMSecsSinceEpoch() - m_waveStartedMs;
+  if (elapsed >= kOscWaveDurationMs) {
+    m_waveTimer->stop();
+    m_waveProgress = 0.0;
+    update();
+    return;
+  }
+  m_waveProgress = qBound(0.0, elapsed / static_cast<qreal>(kOscWaveDurationMs), 1.0);
+  update();
+}
+
+void ContactRowWidget::paintOscWave(QPainter &painter, const QRectF &frame) const
+{
+  if (m_waveProgress <= 0.0) {
+    return;
+  }
+
+  const QColor base = QApplication::palette().color(QPalette::Highlight);
+  const qreal fade = qSin(m_waveProgress * M_PI);
+  const qreal bandWidth = frame.width() * 0.42;
+
+  auto drawBand = [&](qreal progress, int alphaPeak) {
+    if (alphaPeak <= 0) {
+      return;
+    }
+    const qreal centerX = frame.left() + progress * (frame.width() + bandWidth) - bandWidth * 0.5;
+    QLinearGradient gradient(centerX - bandWidth * 0.5, frame.top(), centerX + bandWidth * 0.5, frame.top());
+    QColor transparent = base;
+    transparent.setAlpha(0);
+    gradient.setColorAt(0.0, transparent);
+    QColor peak = base;
+    peak.setAlpha(alphaPeak);
+    gradient.setColorAt(0.5, peak);
+    gradient.setColorAt(1.0, transparent);
+    painter.fillRect(frame, gradient);
+  };
+
+  drawBand(m_waveProgress, int(85 * fade));
+  drawBand(qMax<qreal>(0.0, m_waveProgress - 0.14), int(55 * fade));
+  drawBand(qMin<qreal>(1.0, m_waveProgress + 0.08), int(35 * fade));
+}
+
 void ContactRowWidget::paintEvent(QPaintEvent *event)
 {
   QWidget::paintEvent(event);
-  if (!m_hovered && !m_selected) {
+  const bool drawChrome = m_hovered || m_selected;
+  const bool drawWave = m_waveProgress > 0.0;
+  if (!drawChrome && !drawWave) {
     return;
   }
 
   QPainter painter(this);
   painter.setRenderHint(QPainter::Antialiasing, true);
-  // Keep the whole chrome inside the row — AA stroke is centered on the path.
   painter.setClipRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5));
 
   const QColor accent = QApplication::palette().color(QPalette::Highlight);
-  QColor fill = accent;
-  fill.setAlpha(m_selected ? 55 : 35);
   const qreal margin = 2.0;
   const qreal radius = 6.0;
   const QRectF frame = QRectF(rect()).adjusted(margin, margin, -margin, -margin);
 
-  painter.setPen(Qt::NoPen);
-  painter.setBrush(fill);
-  painter.drawRoundedRect(frame, radius, radius);
-
-  // Selection is fill-only; hover keeps a light accent rim.
-  if (m_hovered && !m_selected) {
-    QPen pen(accent, 1.0);
-    pen.setJoinStyle(Qt::RoundJoin);
-    pen.setCapStyle(Qt::RoundCap);
-    painter.setBrush(Qt::NoBrush);
-    painter.setPen(pen);
+  if (drawChrome) {
+    QColor fill = accent;
+    fill.setAlpha(m_selected ? 55 : 35);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(fill);
     painter.drawRoundedRect(frame, radius, radius);
+
+    if (m_hovered && !m_selected) {
+      QPen pen(accent, 1.0);
+      pen.setJoinStyle(Qt::RoundJoin);
+      pen.setCapStyle(Qt::RoundCap);
+      painter.setBrush(Qt::NoBrush);
+      painter.setPen(pen);
+      painter.drawRoundedRect(frame, radius, radius);
+    }
+  }
+
+  if (drawWave) {
+    painter.setPen(Qt::NoPen);
+    paintOscWave(painter, frame);
   }
 }
 
@@ -587,6 +705,16 @@ void ContactRowWidget::refreshTextLabels()
   }
 }
 
+void ContactRowWidget::setOscPeerStyle(bool enabled)
+{
+  if (m_oscPeerStyle == enabled) {
+    return;
+  }
+  m_oscPeerStyle = enabled;
+  refreshStatusDot();
+  refreshAvatarStyle();
+}
+
 void ContactRowWidget::refreshAvatarStyle()
 {
   auto *avatar = dynamic_cast<ContactAvatarLabel *>(m_avatar);
@@ -600,6 +728,12 @@ void ContactRowWidget::refreshAvatarStyle()
     avatar->setBackgroundColor(QColor(m_peerColor));
   }
   avatar->setPhoto(m_peerAvatar);
+  if (m_oscPeerStyle) {
+    avatar->setPresenceRingEnabled(true);
+    avatar->setPresenceRingColor(QColor(presenceColor(m_presence)));
+  } else {
+    avatar->setPresenceRingEnabled(false);
+  }
   avatar->update();
 }
 
@@ -633,6 +767,17 @@ void ContactRowWidget::setSelected(bool selected)
 
 void ContactRowWidget::refreshStatusDot()
 {
+  if (m_oscPeerStyle) {
+    if (m_statusDot) {
+      m_statusDot->hide();
+    }
+    refreshAvatarStyle();
+    return;
+  }
+
+  if (m_statusDot) {
+    m_statusDot->show();
+  }
   const QString color = presenceColor(m_presence);
   const QString borderColor = palette().color(QPalette::Window).name();
   m_statusDot->setStyleSheet(

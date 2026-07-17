@@ -133,10 +133,7 @@ QDialog#loginDialog QCheckBox {
 }
 
 QLabel#callAvatar {
-    background: palette(midlight);
-    border-radius: 70px;
-    font-size: 64px;
-    border: 2px solid palette(highlight);
+    background: transparent;
 }
 
 QLabel#callNameLabel {

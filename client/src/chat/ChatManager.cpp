@@ -4,6 +4,8 @@
 #include "settings/UserDataStore.h"
 
 #include <QBuffer>
+#include <QFile>
+#include <QFileInfo>
 #include <QImage>
 #include <QJsonArray>
 #include <QLoggingCategory>
@@ -20,7 +22,19 @@ constexpr int kAvatarShareSide = 140;
 constexpr int kMaxFileTransferBytes = 96 * 1024;
 constexpr int kMaxThemeShareBytes = 384 * 1024;
 const QString kThemeShareNoticePrefix = QStringLiteral("__osc_theme__:");
+const QString kFileShareNoticePrefix = QStringLiteral("__osc_file__:");
 const QString kThemeAppliedNoticeBody = QStringLiteral("__osc_theme_applied__");
+
+QString sanitizeTransferFileName(QString name)
+{
+  name = name.trimmed();
+  if (name.isEmpty()) {
+    name = QStringLiteral("file.bin");
+  }
+  name.replace(QLatin1Char(';'), QLatin1Char('_'));
+  name.replace(QLatin1Char('*'), QLatin1Char('_'));
+  return name;
+}
 
 bool charIsDialable(QChar ch)
 {
@@ -30,7 +44,7 @@ bool charIsDialable(QChar ch)
 QRegularExpression fileTransferRe()
 {
   return QRegularExpression(
-      QStringLiteral("^\\*\\*fnm=([^;\\s]+);enc=b64;cnt=([A-Za-z0-9+/=]+)\\*\\*$"));
+      QStringLiteral("^\\*\\*fnm=([^;]+);enc=b64;cnt=([A-Za-z0-9+/=]+)\\*\\*$"));
 }
 
 QRegularExpression themeShareRe()
@@ -435,7 +449,7 @@ void ChatManager::handlePayload(const QJsonObject &payload)
       }
       return;
     }
-    if (!body.isEmpty() && isEphemeralFileTransfer(raw, body) && !isThemeShare(body)) {
+    if (!body.isEmpty() && isEphemeralFileTransfer(raw, body) && isAvatarFileTransfer(body)) {
       const QString sender = imColorAdPeer(payload, raw);
       if (!sender.isEmpty()) {
         addOscPeer(sender);
@@ -489,9 +503,29 @@ void ChatManager::handlePayload(const QJsonObject &payload)
       emit messageReceived(notice);
       return;
     }
+    if (isChatFileTransfer(im.body)) {
+      InstantMessage notice = im;
+      const QString key = registerChatFile(im.peer, im.body, im.id);
+      if (key.isEmpty()) {
+        return;
+      }
+      if (im.incoming) {
+        addOscPeer(im.peer);
+      }
+      notice.body = fileShareNoticeBody(key);
+      if (!storeMessage(notice, /*replaceOptimisticOutgoing=*/true)) {
+        return;
+      }
+      if (notice.incoming && !notice.origId.isEmpty()) {
+        m_unreadByPeer[notice.peer].append(notice.origId);
+        emit unreadChanged(notice.peer);
+      }
+      emit messageReceived(notice);
+      return;
+    }
     if (isFileTransfer(im.body) || isColorAdvertisement(im.body)) {
       // Persisted system footers must not appear as chat lines.
-      if (isFileTransfer(im.body) && im.incoming) {
+      if (isAvatarFileTransfer(im.body) && im.incoming) {
         ingestFileTransfer(im.peer, im.body);
       } else if (isColorAdvertisement(im.body) && im.incoming) {
         storePeerColor(im.peer, extractColor(im.body));
@@ -553,10 +587,27 @@ void ChatManager::handlePayload(const QJsonObject &payload)
         storeMessage(notice, /*replaceOptimisticOutgoing=*/true);
         continue;
       }
-      if (isFileTransfer(im.body)) {
+      if (isChatFileTransfer(im.body)) {
+        const QString key = registerChatFile(im.peer, im.body, im.id);
+        if (key.isEmpty()) {
+          continue;
+        }
+        if (im.incoming) {
+          addOscPeer(im.peer);
+        }
+        InstantMessage notice = im;
+        notice.body = fileShareNoticeBody(key);
+        chatPeer = notice.peer;
+        storeMessage(notice, /*replaceOptimisticOutgoing=*/true);
+        continue;
+      }
+      if (isAvatarFileTransfer(im.body)) {
         if (im.incoming) {
           ingestFileTransfer(im.peer, im.body);
         }
+        continue;
+      }
+      if (isFileTransfer(im.body)) {
         continue;
       }
       if (isColorAdvertisement(im.body)) {
@@ -638,8 +689,13 @@ int ChatManager::sendMessage(const QString &peer, const QString &text)
           const QString key = registerThemeShare(normalized, payload, {});
           addDemoMessage(normalized, themeShareNoticeBody(key), true, true);
         }
-      } else {
+      } else if (isAvatarFileTransfer(trimmed)) {
         ingestFileTransfer(normalized, trimmed);
+      } else if (isChatFileTransfer(trimmed)) {
+        const QString key = registerChatFile(normalized, trimmed, {});
+        if (!key.isEmpty()) {
+          addDemoMessage(normalized, fileShareNoticeBody(key), true, true);
+        }
       }
       return -1;
     }
@@ -785,6 +841,17 @@ bool ChatManager::isFileTransfer(const QString &body)
   return fileTransferRe().match(body.trimmed()).hasMatch() && !isThemeShare(body);
 }
 
+bool ChatManager::isAvatarFileTransfer(const QString &body)
+{
+  return isFileTransfer(body)
+      && extractFileTransferName(body).compare(QStringLiteral("avatar.png"), Qt::CaseInsensitive) == 0;
+}
+
+bool ChatManager::isChatFileTransfer(const QString &body)
+{
+  return isFileTransfer(body) && !isAvatarFileTransfer(body);
+}
+
 bool ChatManager::isThemeShare(const QString &body)
 {
   return themeShareRe().match(body.trimmed()).hasMatch();
@@ -828,6 +895,29 @@ ThemeSharePayload ChatManager::themeShareOffer(const QString &key) const
   return m_themeShares.value(key);
 }
 
+bool ChatManager::isFileShareNotice(const QString &body)
+{
+  return body.startsWith(kFileShareNoticePrefix);
+}
+
+QString ChatManager::fileShareNoticeKey(const QString &body)
+{
+  if (!isFileShareNotice(body)) {
+    return {};
+  }
+  return body.mid(kFileShareNoticePrefix.size());
+}
+
+QString ChatManager::fileShareNoticeBody(const QString &key)
+{
+  return kFileShareNoticePrefix + key;
+}
+
+ChatFilePayload ChatManager::chatFileOffer(const QString &key) const
+{
+  return m_chatFiles.value(key);
+}
+
 bool ChatManager::parseThemeShareBody(const QString &body, ThemeSharePayload *out) const
 {
   if (!out) {
@@ -864,6 +954,26 @@ QString ChatManager::registerThemeShare(const QString &peer, const ThemeSharePay
               .arg(QDateTime::currentMSecsSinceEpoch());
   }
   m_themeShares.insert(key, payload);
+  return key;
+}
+
+QString ChatManager::registerChatFile(const QString &peer, const QString &body, const QString &msgId)
+{
+  const QByteArray raw = extractFileTransferData(body);
+  if (raw.isEmpty() || raw.size() > kMaxFileTransferBytes) {
+    return {};
+  }
+  ChatFilePayload payload;
+  payload.fileName = sanitizeTransferFileName(extractFileTransferName(body));
+  payload.data = raw;
+
+  QString key = msgId.trimmed();
+  if (key.isEmpty()) {
+    key = QStringLiteral("%1:%2")
+              .arg(canonicalPeer(peer))
+              .arg(QDateTime::currentMSecsSinceEpoch());
+  }
+  m_chatFiles.insert(key, payload);
   return key;
 }
 
@@ -915,6 +1025,15 @@ QString ChatManager::encodeAvatarShareBody(const QPixmap &scaledPngPixmap, QByte
   return QStringLiteral("**fnm=avatar.png;enc=b64;cnt=%1**").arg(QString::fromLatin1(png.toBase64()));
 }
 
+QString ChatManager::encodeChatFileBody(const QString &fileName, const QByteArray &data)
+{
+  if (data.isEmpty() || data.size() > kMaxFileTransferBytes) {
+    return {};
+  }
+  return QStringLiteral("**fnm=%1;enc=b64;cnt=%2**")
+      .arg(sanitizeTransferFileName(fileName), QString::fromLatin1(data.toBase64()));
+}
+
 QString ChatManager::encodeThemeShareBody(const QPixmap &wallpaper, int uiOpacity, int listOpacity,
                                           QByteArray *outJpeg)
 {
@@ -957,12 +1076,14 @@ bool ChatManager::sendThemeShare(const QString &peer, const QPixmap &wallpaper, 
   }
 
   if (m_demoMode) {
+    if (!isOscPeer(normalized)) {
+      return false;
+    }
     ThemeSharePayload payload;
     payload.wallpaper = wallpaper;
     payload.uiOpacity = qBound(0, uiOpacity, 100);
     payload.listOpacity = qBound(0, listOpacity, 100);
     const QString key = registerThemeShare(normalized, payload, {});
-    addDemoMessage(normalized, themeShareNoticeBody(key), true, true);
     InstantMessage outgoing;
     outgoing.peer = normalized;
     outgoing.body = tr("Вы поделились темой");
@@ -989,6 +1110,64 @@ bool ChatManager::sendThemeShare(const QString &peer, const QPixmap &wallpaper, 
   return true;
 }
 
+bool ChatManager::sendFileShare(const QString &peer, const QString &filePath)
+{
+  const QString normalized = normalizePeer(peer);
+  if (normalized.isEmpty() || isPhonePeer(normalized) || filePath.isEmpty()) {
+    return false;
+  }
+
+  QFile file(filePath);
+  if (!file.open(QIODevice::ReadOnly)) {
+    return false;
+  }
+  const QByteArray data = file.readAll();
+  if (data.isEmpty() || data.size() > kMaxFileTransferBytes) {
+    return false;
+  }
+
+  const QString fileName = sanitizeTransferFileName(QFileInfo(filePath).fileName());
+  const QString body = encodeChatFileBody(fileName, data);
+  if (body.isEmpty()) {
+    return false;
+  }
+
+  if (m_demoMode) {
+    const QString key = registerChatFile(normalized, body, {});
+    if (key.isEmpty()) {
+      return false;
+    }
+    InstantMessage outgoing;
+    outgoing.peer = normalized;
+    outgoing.body = fileShareNoticeBody(key);
+    outgoing.incoming = false;
+    outgoing.timestamp = QDateTime::currentDateTime();
+    m_messages[normalized].append(outgoing);
+    emit messageReceived(outgoing);
+    return true;
+  }
+  if (!m_api) {
+    return false;
+  }
+
+  const QString key = registerChatFile(normalized, body, {});
+  if (key.isEmpty()) {
+    return false;
+  }
+
+  m_api->sendIm(normalized, body, {}, true, false);
+  qCInfo(lcChat) << "File share sent to" << normalized << "name" << fileName << "bytes" << data.size();
+
+  InstantMessage outgoing;
+  outgoing.peer = normalized;
+  outgoing.body = fileShareNoticeBody(key);
+  outgoing.incoming = false;
+  outgoing.timestamp = QDateTime::currentDateTime();
+  m_messages[normalized].append(outgoing);
+  emit messageReceived(outgoing);
+  return true;
+}
+
 bool ChatManager::sendThemeApplied(const QString &peer)
 {
   const QString normalized = normalizePeer(peer);
@@ -1000,7 +1179,9 @@ bool ChatManager::sendThemeApplied(const QString &peer)
     return false;
   }
   if (m_demoMode) {
-    qCInfo(lcChat) << "Themeapplied skipped (demo)" << normalized;
+    if (!isOscPeer(normalized)) {
+      return false;
+    }
     return true;
   }
   if (!m_api) {
@@ -1049,6 +1230,9 @@ bool ChatManager::sendAvatarShare(const QString &peer, const QPixmap &pixmap)
   }
 
   if (m_demoMode) {
+    if (!isOscPeer(normalized)) {
+      return false;
+    }
     // Solo demo: apply to the selected contact so the list preview is visible.
     storePeerAvatar(normalized, scaled, QString::fromLatin1(png.toBase64()));
     return true;
@@ -1071,6 +1255,9 @@ bool ChatManager::sendColorShare(const QString &peer)
     return false;
   }
   if (m_demoMode) {
+    if (!isOscPeer(normalized)) {
+      return false;
+    }
     storePeerColor(normalized, m_lastAdvertisedColor);
     return true;
   }
@@ -1146,6 +1333,11 @@ bool ChatManager::recentlySentOpenping(const QString &peer) const
   return (QDateTime::currentMSecsSinceEpoch() - sentAt) < 15000;
 }
 
+bool ChatManager::discoverOscPeer(const QString &peer)
+{
+  return addOscPeer(peer);
+}
+
 bool ChatManager::addOscPeer(const QString &peer)
 {
   const QString key = canonicalPeer(peer);
@@ -1164,6 +1356,7 @@ bool ChatManager::addOscPeer(const QString &peer)
     m_userData->addOscPeer(key);
   }
   qCInfo(lcChat) << "OSC peer discovered:" << key;
+  emit oscPeerDiscovered(key);
   emit oscPeersChanged();
   return true;
 }
@@ -1270,6 +1463,44 @@ void ChatManager::seedDemoOscPeers(const QStringList &peers)
     }
   }
   emit oscPeersChanged();
+}
+
+void ChatManager::demoIncomingThemeShare(const QString &peer, const QPixmap &wallpaper, int uiOpacity,
+                                         int listOpacity)
+{
+  if (!m_demoMode || wallpaper.isNull()) {
+    return;
+  }
+  const QString normalized = normalizePeer(peer);
+  if (normalized.isEmpty()) {
+    return;
+  }
+  ThemeSharePayload payload;
+  payload.wallpaper = wallpaper;
+  payload.uiOpacity = qBound(0, uiOpacity, 100);
+  payload.listOpacity = qBound(0, listOpacity, 100);
+  const QString key = registerThemeShare(normalized, payload, {});
+  addDemoMessage(normalized, themeShareNoticeBody(key), true, true);
+}
+
+void ChatManager::demoIncomingFileShare(const QString &peer, const QString &fileName, const QByteArray &data)
+{
+  if (!m_demoMode || data.isEmpty()) {
+    return;
+  }
+  const QString normalized = normalizePeer(peer);
+  if (normalized.isEmpty()) {
+    return;
+  }
+  const QString body = encodeChatFileBody(fileName, data);
+  if (body.isEmpty()) {
+    return;
+  }
+  const QString key = registerChatFile(normalized, body, {});
+  if (key.isEmpty()) {
+    return;
+  }
+  addDemoMessage(normalized, fileShareNoticeBody(key), true, true);
 }
 
 void ChatManager::sendColorAdvertisement(const QString &color)

@@ -37,6 +37,10 @@ public:
     void setUnreadBlink(bool enabled);
     void setSelected(bool selected);
     void refreshAppearance();
+    /// ~1.5 s highlight wave when a contact is discovered as OSC.
+    void startOscDiscoveryWave();
+    /// OSC peers show presence as a colored ring around the avatar instead of a dot.
+    void setOscPeerStyle(bool enabled);
 
 protected:
     void changeEvent(QEvent *event) override;
@@ -67,6 +71,8 @@ private:
     void refreshChatButtonStyle();
     void refreshBackground();
     void showCallMenu(const QPoint &globalPos);
+    void paintOscWave(QPainter &painter, const QRectF &frame) const;
+    void onOscWaveTick();
     bool isInteractiveChild(QWidget *target) const;
 
     QString m_peer;
@@ -79,6 +85,7 @@ private:
     bool m_canDelete = false;
     bool m_selected = false;
     bool m_hovered = false;
+    bool m_oscPeerStyle = false;
     QVector<CallNumber> m_numbers;
 
     QWidget *m_avatar = nullptr;
@@ -88,6 +95,9 @@ private:
     QPushButton *m_callBtn = nullptr;
     QPushButton *m_chatBtn = nullptr;
     QTimer *m_blinkTimer = nullptr;
+    QTimer *m_waveTimer = nullptr;
+    qint64 m_waveStartedMs = 0;
+    qreal m_waveProgress = 0.0;
     bool m_unreadBlink = false;
     bool m_blinkAccentOn = false;
 };

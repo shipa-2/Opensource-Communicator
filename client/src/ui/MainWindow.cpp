@@ -1088,6 +1088,20 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
           [this](const QString &peer, const QPixmap &avatar) {
             applyPeerAvatarForPeer(peer, avatar);
           });
+  connect(m_client->chat(), &itl::ChatManager::oscPeerDiscovered, this, [this](const QString &peer) {
+    ContactRowWidget *row = rowWidgetForPeer(peer);
+    if (!row) {
+      return;
+    }
+    row->setOscPeerStyle(true);
+    for (auto it = m_contacts.cbegin(); it != m_contacts.cend(); ++it) {
+      if (isSamePeer(it.key(), peer)) {
+        row->updatePresence(it.value().presence);
+        break;
+      }
+    }
+    row->startOscDiscoveryWave();
+  });
   connect(m_client->chat(), &itl::ChatManager::demoPeerRenameRequested, this,
           [this](const QString &peer, const QString &newName) {
             if (!m_demoMode || newName.trimmed().isEmpty()) {
@@ -1746,6 +1760,9 @@ void MainWindow::addOrUpdateContactRow(const QString &peer)
   const QPixmap peerAvatar = m_client->chat()->peerAvatar(peer);
   if (!peerAvatar.isNull()) {
     row->setPeerAvatar(peerAvatar);
+  }
+  if (!entry.isSelf && m_client->chat()->isOscPeer(peer)) {
+    row->setOscPeerStyle(true);
   }
   auto *item = new QListWidgetItem;
   item->setData(Qt::UserRole, peer);
@@ -2837,13 +2854,8 @@ void MainWindow::enterDemoInterface()
   }
 
   itl::DemoData::seedChatMessages(m_client->chat());
-  QStringList demoOsc;
-  for (auto it = m_contacts.cbegin(); it != m_contacts.cend(); ++it) {
-    if (!it.value().isSelf) {
-      demoOsc.append(it.key());
-    }
-  }
-  m_client->chat()->seedDemoOscPeers(demoOsc);
+  m_client->chat()->seedDemoOscPeers({});
+  scheduleDemoOscDiscovery();
   refreshColorAdvertisementPeers();
   m_client->chat()->sendColorAdvertisement(m_client->appSettings().profileAvatarColor());
   updateSelfHeader();
@@ -2854,9 +2866,44 @@ void MainWindow::enterDemoInterface()
   setOnlineUi(true);
 }
 
+void MainWindow::scheduleDemoOscDiscovery()
+{
+  if (!m_demoOscDiscoverTimer) {
+    m_demoOscDiscoverTimer = new QTimer(this);
+    m_demoOscDiscoverTimer->setSingleShot(true);
+    connect(m_demoOscDiscoverTimer, &QTimer::timeout, this, &MainWindow::discoverDemoOscAdmin);
+  }
+  m_demoOscDiscoverTimer->start(5000);
+}
+
+void MainWindow::discoverDemoOscAdmin()
+{
+  if (!m_demoMode) {
+    return;
+  }
+  const QString admin = itl::DemoData::adminPeer();
+  m_client->chat()->discoverOscPeer(admin);
+  m_client->chat()->demoIncomingFileShare(
+      admin, QStringLiteral("Hello world.txt"),
+      QByteArray("Hello world\n"));
+
+  const QString wallpaperPath = m_client->appSettings().appWallpaperPath();
+  if (!wallpaperPath.isEmpty()) {
+    const QPixmap wallpaper(wallpaperPath);
+    if (!wallpaper.isNull()) {
+      m_client->chat()->demoIncomingThemeShare(
+          admin, wallpaper, m_client->appSettings().appWallpaperOpacity(),
+          m_client->appSettings().appWallpaperListOpacity());
+    }
+  }
+}
+
 void MainWindow::exitDemoInterface()
 {
   stopDemoCallSimulation();
+  if (m_demoOscDiscoverTimer) {
+    m_demoOscDiscoverTimer->stop();
+  }
   m_demoMode = false;
   m_demoCallHistory.clear();
   m_contacts.clear();
@@ -2954,7 +3001,7 @@ void MainWindow::onSettings()
     if (it.value().isSelf) {
       continue;
     }
-    if (!m_demoMode && !m_client->chat()->isOscPeer(it.key())) {
+    if (!m_client->chat()->isOscPeer(it.key())) {
       continue;
     }
     const QString name = it.value().name.isEmpty() ? displayNameForPeer(it.key()) : it.value().name;

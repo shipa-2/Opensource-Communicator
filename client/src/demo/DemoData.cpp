@@ -28,6 +28,11 @@ QString demoDomain()
   return QStringLiteral("demo.local");
 }
 
+QString adminPeer()
+{
+  return QStringLiteral("admin@") + demoDomain();
+}
+
 QList<DemoContact> contacts()
 {
   const QString domain = demoDomain();
@@ -64,10 +69,8 @@ void seedChatMessages(ChatManager *chat)
   }
 
   chat->clearDemoMessages();
-  const QString domain = demoDomain();
-  const QString adminPeer = QStringLiteral("admin@") + domain;
+  const QString adminPeer = DemoData::adminPeer();
   chat->setDemoPeerColor(adminPeer, QStringLiteral("#c0392b"));
-  chat->addDemoMessage(adminPeer, QStringLiteral("ты уволен"), true, true);
 }
 
 } // namespace itl::DemoData

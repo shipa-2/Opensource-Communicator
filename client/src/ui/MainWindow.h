@@ -174,6 +174,8 @@ private:
     void applyContactViewSettings();
     void updateUnreadIndicators();
     bool shouldNotifyForChatMessage(const QString &peer) const;
+    void scheduleDemoOscDiscovery();
+    void discoverDemoOscAdmin();
     void enterDemoInterface();
     void exitDemoInterface();
     void stopDemoCallSimulation();
@@ -256,6 +258,7 @@ private:
     QHash<QString, CallTracking> m_callTracking;
     QString m_demoCallLeg;
     QTimer *m_demoVoiceTimer = nullptr;
+    QTimer *m_demoOscDiscoverTimer = nullptr;
     bool m_demoVoiceActive = false;
     QList<itl::CallHistoryEntry> m_demoCallHistory;
     QList<itl::CallHistoryEntry> m_serverHistory;

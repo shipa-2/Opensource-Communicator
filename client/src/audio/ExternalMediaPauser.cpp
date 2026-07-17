@@ -83,7 +83,7 @@ void ExternalMediaPauser::pause()
   m_playingServices.clear();
   for (const QString &service : mprisServiceNames()) {
     const QString status = playbackStatus(service);
-    if (status == QStringLiteral("Playing") || status.isEmpty()) {
+    if (status == QStringLiteral("Playing")) {
       m_playingServices.append(service);
     }
     // Pause every MPRIS player: browsers often omit or delay PlaybackStatus.

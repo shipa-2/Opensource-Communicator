@@ -75,7 +75,7 @@ private:
     QString m_peer;
     QString m_displayName;
 
-    QLabel *m_avatar = nullptr;
+    QWidget *m_avatar = nullptr;
     QLabel *m_nameLabel = nullptr;
     QLabel *m_detailLabel = nullptr;
     QLabel *m_statusLabel = nullptr;
