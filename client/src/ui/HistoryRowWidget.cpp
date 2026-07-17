@@ -75,6 +75,11 @@ void HistoryRowWidget::setSelected(bool selected)
   refreshBackground();
 }
 
+void HistoryRowWidget::setChromeAlpha(int alpha)
+{
+  m_chromeAlpha = qBound(40, alpha, 255);
+}
+
 void HistoryRowWidget::refreshAppearance()
 {
   if (m_arrowLabel) {
@@ -96,13 +101,28 @@ void HistoryRowWidget::refreshTextLabels()
 
 void HistoryRowWidget::refreshBackground()
 {
-  QPalette pal = QApplication::palette(this);
+  const QPalette app = QApplication::palette();
+  setStyleSheet({});
+
   if (m_selected || m_hovered) {
-    pal.setColor(QPalette::Window, pal.color(QPalette::Highlight).lighter(170));
+    QColor highlight = app.color(QPalette::Highlight).lighter(170);
+    if (m_chromeAlpha < 255) {
+      highlight.setAlpha(m_chromeAlpha);
+    }
+    QPalette pal = app;
+    pal.setColor(QPalette::Window, highlight);
+    setAutoFillBackground(true);
+    setPalette(pal);
+  } else if (m_chromeAlpha < 255) {
+    // Let the dimmed history page show through (wallpaper visible).
+    setAutoFillBackground(false);
+    setPalette(app);
   } else {
-    pal.setColor(QPalette::Window, pal.color(QPalette::Base));
+    QPalette pal = app;
+    pal.setColor(QPalette::Window, app.color(QPalette::Base));
+    setAutoFillBackground(true);
+    setPalette(pal);
   }
-  setPalette(pal);
   update();
 }
 
@@ -143,7 +163,7 @@ void HistoryRowWidget::leaveEvent(QEvent *event)
 void HistoryRowWidget::changeEvent(QEvent *event)
 {
   QWidget::changeEvent(event);
-  if (event->type() == QEvent::PaletteChange || event->type() == QEvent::StyleChange) {
+  if (event->type() == QEvent::PaletteChange) {
     refreshAppearance();
   }
 }

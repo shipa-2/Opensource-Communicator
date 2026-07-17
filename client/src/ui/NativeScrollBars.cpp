@@ -19,8 +19,10 @@ void applyNativeScrollBarStyle(QScrollBar *scrollBar)
 
   scrollBar->setAttribute(Qt::WA_StyleSheetTarget, false);
   scrollBar->setStyleSheet({});
-  // Follow the current application style (Breeze under KDE); do not pin a pointer.
-  scrollBar->setStyle(nullptr);
+  // Use the application style directly so parent QSS wrappers do not restyle the bar.
+  if (QStyle *appStyle = QApplication::style()) {
+    scrollBar->setStyle(appStyle);
+  }
   scrollBar->update();
 }
 

@@ -1,6 +1,9 @@
 #include "ContactRowWidget.h"
 
+#include <QApplication>
 #include <QContextMenuEvent>
+#include <QCursor>
+#include <QEnterEvent>
 #include <QEvent>
 #include <QFont>
 #include <QFontMetrics>
@@ -10,8 +13,8 @@
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPaintEvent>
 #include <QPushButton>
-#include <QApplication>
 #include <QStyle>
 #include <QTimer>
 #include <QWidgetAction>
@@ -105,6 +108,24 @@ void configureEmojiButton(QPushButton *button)
   const int width = metrics.horizontalAdvance(button->text()) + 14;
   button->setFixedSize(width, naturalSize.height());
   button->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+  button->setFlat(true);
+  button->setAttribute(Qt::WA_Hover, true);
+  // Contour hover for flat emoji buttons (Breeze draws almost nothing when flat+transparent).
+  button->setStyleSheet(QStringLiteral(
+      "QPushButton {"
+      "  background-color: transparent;"
+      "  border: 1px solid transparent;"
+      "  border-radius: 4px;"
+      "  padding: 0px;"
+      "}"
+      "QPushButton:hover {"
+      "  background-color: transparent;"
+      "  border: 1px solid palette(mid);"
+      "}"
+      "QPushButton:pressed {"
+      "  background-color: palette(midlight);"
+      "  border: 1px solid palette(mid);"
+      "}"));
 }
 } // namespace
 
@@ -119,6 +140,8 @@ ContactRowWidget::ContactRowWidget(const QString &peer, const QString &name, con
 {
   setObjectName(isSelf ? QStringLiteral("contactRowSelf") : QStringLiteral("contactRow"));
   setMinimumHeight(48);
+  setAttribute(Qt::WA_Hover, true);
+  setMouseTracking(true);
   setAutoFillBackground(false);
   if (!isSelf) {
     setToolTip(tr("Двойной щелчок — заметка\nПКМ — действия с контактом"));
@@ -175,14 +198,12 @@ ContactRowWidget::ContactRowWidget(const QString &peer, const QString &name, con
   m_chatBtn = new QPushButton(QStringLiteral("💬"));
   m_chatBtn->setObjectName(QStringLiteral("rowChatBtn"));
   m_chatBtn->setToolTip(tr("Сообщение"));
-  m_chatBtn->setFlat(true);
   configureEmojiButton(m_chatBtn);
   layout->addWidget(m_chatBtn);
 
   m_callBtn = new QPushButton(QStringLiteral("📞"));
   m_callBtn->setObjectName(QStringLiteral("rowCallBtn"));
   m_callBtn->setToolTip(tr("Позвонить (ПКМ — выбор номера)"));
-  m_callBtn->setFlat(true);
   configureEmojiButton(m_callBtn);
   m_callBtn->installEventFilter(this);
   layout->addWidget(m_callBtn);
@@ -254,18 +275,25 @@ void ContactRowWidget::refreshChatButtonStyle()
   }
 
   if (m_unreadBlink && m_blinkAccentOn) {
-    QPalette pal = palette();
-    pal.setColor(QPalette::Button, pal.color(QPalette::Highlight));
-    pal.setColor(QPalette::ButtonText, pal.color(QPalette::HighlightedText));
-    m_chatBtn->setAutoFillBackground(true);
-    m_chatBtn->setPalette(pal);
+    QPalette pal = QApplication::palette(m_chatBtn);
+    const QColor accent = pal.color(QPalette::Highlight);
+    const QColor accentText = pal.color(QPalette::HighlightedText);
+    m_chatBtn->setStyleSheet(QStringLiteral(
+                                 "QPushButton {"
+                                 "  background-color: %1;"
+                                 "  color: %2;"
+                                 "  border: 1px solid %1;"
+                                 "  border-radius: 4px;"
+                                 "  padding: 0px;"
+                                 "}"
+                                 "QPushButton:hover {"
+                                 "  background-color: %1;"
+                                 "  border: 1px solid palette(light);"
+                                 "}")
+                                 .arg(accent.name(), accentText.name()));
   } else {
-    m_chatBtn->setAutoFillBackground(false);
-    m_chatBtn->setPalette(QApplication::palette(m_chatBtn));
-    m_chatBtn->setStyleSheet({});
+    configureEmojiButton(m_chatBtn);
   }
-  m_chatBtn->style()->unpolish(m_chatBtn);
-  m_chatBtn->style()->polish(m_chatBtn);
   m_chatBtn->update();
 }
 
@@ -414,6 +442,55 @@ bool ContactRowWidget::isInteractiveChild(QWidget *target) const
 void ContactRowWidget::changeEvent(QEvent *event)
 {
   QWidget::changeEvent(event);
+  if (event->type() == QEvent::PaletteChange) {
+    refreshAppearance();
+  }
+}
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+void ContactRowWidget::enterEvent(QEnterEvent *event)
+#else
+void ContactRowWidget::enterEvent(QEvent *event)
+#endif
+{
+  if (!m_isSelf) {
+    m_hovered = true;
+    update();
+  }
+  QWidget::enterEvent(event);
+}
+
+void ContactRowWidget::leaveEvent(QEvent *event)
+{
+  QWidget::leaveEvent(event);
+  if (m_isSelf) {
+    return;
+  }
+  // Moving onto 💬/📞 children fires leave on the row — keep hover if cursor is still inside.
+  QTimer::singleShot(0, this, [this]() {
+    const bool inside = rect().contains(mapFromGlobal(QCursor::pos()));
+    if (m_hovered != inside) {
+      m_hovered = inside;
+      update();
+    }
+  });
+}
+
+void ContactRowWidget::paintEvent(QPaintEvent *event)
+{
+  QWidget::paintEvent(event);
+  if (m_isSelf || (!m_hovered && !m_selected)) {
+    return;
+  }
+
+  QPainter painter(this);
+  painter.setRenderHint(QPainter::Antialiasing, true);
+  const QColor accent = QApplication::palette().color(QPalette::Highlight);
+  QColor fill = accent;
+  fill.setAlpha(m_selected ? 55 : 35);
+  painter.setPen(QPen(accent, m_selected ? 1.5 : 1.0));
+  painter.setBrush(fill);
+  painter.drawRoundedRect(QRectF(rect()).adjusted(1.5, 1.5, -1.5, -1.5), 6.0, 6.0);
 }
 
 void ContactRowWidget::refreshAppearance()
@@ -422,11 +499,21 @@ void ContactRowWidget::refreshAppearance()
   refreshStatusDot();
   refreshTextLabels();
   refreshChatButtonStyle();
+  update();
+}
+
+void ContactRowWidget::refreshBackground()
+{
+  // Contour/hover is drawn in paintEvent — keep the row transparent for wallpaper.
+  setStyleSheet({});
+  setAutoFillBackground(false);
+  setPalette(QApplication::palette());
+  update();
 }
 
 void ContactRowWidget::refreshTextLabels()
 {
-  const QPalette appPalette = palette();
+  const QPalette appPalette = QApplication::palette();
 
   if (m_nameLabel) {
     m_nameLabel->setStyleSheet({});
@@ -481,9 +568,11 @@ void ContactRowWidget::setSelected(bool selected)
   if (m_isSelf) {
     return;
   }
+  if (m_selected == selected) {
+    return;
+  }
+  m_selected = selected;
   setProperty("selected", selected);
-  style()->unpolish(this);
-  style()->polish(this);
   update();
 }
 

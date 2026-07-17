@@ -41,6 +41,7 @@ private:
     itl::AppSettings::RingtoneKind ringtoneKindForIndex(int index) const;
     itl::AppSettings::RingtoneKind incomingRingtoneKindForIndex(int index) const;
     void syncPreviewSettings(itl::AppSettings *target) const;
+    void updateWallpaperPreview();
 
     itl::CommunicatorClient *m_client = nullptr;
     itl::CallManager *m_calls = nullptr;
@@ -72,4 +73,9 @@ private:
     class QLineEdit *m_recordingDirEdit = nullptr;
     class QLineEdit *m_recordingTemplateEdit = nullptr;
     class QLabel *m_recordingPreviewLabel = nullptr;
+    class QLabel *m_wallpaperPreview = nullptr;
+    class QPushButton *m_removeWallpaperBtn = nullptr;
+    class QSlider *m_wallpaperOpacitySlider = nullptr;
+    class QLabel *m_wallpaperOpacityValue = nullptr;
+    class QWidget *m_wallpaperOpacityRow = nullptr;
 };

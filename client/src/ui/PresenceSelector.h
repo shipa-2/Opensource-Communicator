@@ -16,6 +16,7 @@ public:
     QString currentStatus() const;
     void setCurrentStatus(const QString &status);
     void setInCall(bool inCall);
+    void setOpaquePopup(bool enabled, int alpha = 230);
     void refreshAppearance();
 
 signals:

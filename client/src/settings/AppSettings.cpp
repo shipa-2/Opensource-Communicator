@@ -1,6 +1,10 @@
 #include "AppSettings.h"
 
+#include <QDir>
+#include <QFile>
 #include <QJsonObject>
+#include <QPixmap>
+#include <QtGlobal>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QRegularExpression>
@@ -23,6 +27,10 @@ constexpr auto kRecordingFilenameTemplate = "recording/filenameTemplate";
 constexpr auto kRecordingEnabled = "recording/enabled";
 constexpr auto kRecordingDirectory = "recording/directory";
 constexpr auto kNetworkInterface = "network/bindInterface";
+constexpr auto kAppWallpaperPath = "ui/appWallpaperPath";
+constexpr auto kAppWallpaperOpacity = "ui/appWallpaperOpacity";
+constexpr int kMainWindowWidth = 390;
+constexpr int kMainWindowHeight = 620;
 } // namespace
 
 namespace itl {
@@ -52,6 +60,9 @@ void AppSettings::load(QSettings &settings)
   m_recordingEnabled = settings.value(QString::fromUtf8(kRecordingEnabled), true).toBool();
   m_recordingDirectory = settings.value(QString::fromUtf8(kRecordingDirectory)).toString();
   m_networkInterfaceName = settings.value(QString::fromUtf8(kNetworkInterface)).toString();
+  m_appWallpaperPath = settings.value(QString::fromUtf8(kAppWallpaperPath)).toString();
+  m_appWallpaperOpacity =
+      qBound(0, settings.value(QString::fromUtf8(kAppWallpaperOpacity), 85).toInt(), 100);
 }
 
 void AppSettings::save(QSettings &settings) const
@@ -73,6 +84,8 @@ void AppSettings::save(QSettings &settings) const
   settings.setValue(QString::fromUtf8(kRecordingEnabled), m_recordingEnabled);
   settings.setValue(QString::fromUtf8(kRecordingDirectory), m_recordingDirectory);
   settings.setValue(QString::fromUtf8(kNetworkInterface), m_networkInterfaceName);
+  settings.setValue(QString::fromUtf8(kAppWallpaperPath), m_appWallpaperPath);
+  settings.setValue(QString::fromUtf8(kAppWallpaperOpacity), m_appWallpaperOpacity);
 }
 
 void AppSettings::loadUserData(QSettings &settings)
@@ -407,6 +420,60 @@ void AppSettings::customContactsFromJson(const QJsonArray &array)
       m_customContacts.append(contact);
     }
   }
+}
+
+QSize AppSettings::appWallpaperTargetSize()
+{
+  return QSize(kMainWindowWidth, kMainWindowHeight);
+}
+
+QString AppSettings::appWallpaperStoragePath()
+{
+  const QString dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+  QDir().mkpath(dir);
+  return dir + QStringLiteral("/app-wallpaper.png");
+}
+
+QString AppSettings::saveAppWallpaperImage(const QPixmap &pixmap)
+{
+  if (pixmap.isNull()) {
+    return {};
+  }
+
+  const QString path = appWallpaperStoragePath();
+  if (!pixmap.save(path, "PNG")) {
+    return {};
+  }
+  return path;
+}
+
+void AppSettings::setAppWallpaperPath(const QString &path)
+{
+  if (m_appWallpaperPath == path) {
+    return;
+  }
+  m_appWallpaperPath = path;
+  emit settingsChanged();
+}
+
+void AppSettings::clearAppWallpaper()
+{
+  if (m_appWallpaperPath.isEmpty()) {
+    return;
+  }
+  QFile::remove(m_appWallpaperPath);
+  m_appWallpaperPath.clear();
+  emit settingsChanged();
+}
+
+void AppSettings::setAppWallpaperOpacity(int percent)
+{
+  const int clamped = qBound(0, percent, 100);
+  if (m_appWallpaperOpacity == clamped) {
+    return;
+  }
+  m_appWallpaperOpacity = clamped;
+  emit settingsChanged();
 }
 
 } // namespace itl

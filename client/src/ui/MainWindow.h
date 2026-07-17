@@ -22,11 +22,14 @@ class QListWidget;
 class QListWidgetItem;
 class QMimeData;
 class QPushButton;
-class QTabWidget;
+class QTabBar;
+class QStackedWidget;
 class QJsonObject;
 class QAction;
 class QMenu;
 class QTimer;
+class QLabel;
+class QResizeEvent;
 
 class CallWindow;
 class ChatDialog;
@@ -46,9 +49,11 @@ class MainWindow : public QMainWindow {
 public:
     explicit MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls, QWidget *parent = nullptr);
     void refreshTheme();
+    void refreshWallpaper();
     void handleIncomingTelUri(const QString &uri);
 
 protected:
+    void resizeEvent(QResizeEvent *event) override;
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dragMoveEvent(QDragMoveEvent *event) override;
     void dropEvent(QDropEvent *event) override;
@@ -158,6 +163,7 @@ private:
     bool historyEntryMatches(const itl::CallHistoryEntry &entry) const;
     void updateHistoryPeriodLabel();
     void applyLinkButtonStyle(QPushButton *button) const;
+    void applyWallpaperOverlay(bool enabled);
     void updateFilterButtonStyles();
     void updateHistoryButtonStyles();
     void updateDialCallButtonStyle();
@@ -192,6 +198,7 @@ private:
     itl::MessageNotifyPlayer *m_messageNotify = nullptr;
     CallWindow *m_callWindow = nullptr;
     ChatDialog *m_chatDialog = nullptr;
+    QMenu *m_addMenu = nullptr;
     QMenu *m_viewMenu = nullptr;
     QAction *m_viewChatAction = nullptr;
     QAction *m_viewCallAction = nullptr;
@@ -199,8 +206,20 @@ private:
     QLabel *m_headerName = nullptr;
     ProfileAvatarWidget *m_headerAvatar = nullptr;
     PresenceSelector *m_presenceSelector = nullptr;
-    QTabWidget *m_tabs = nullptr;
+    QTabBar *m_tabBar = nullptr;
+    QStackedWidget *m_tabStack = nullptr;
+    QWidget *m_tabStrip = nullptr;
+    QWidget *m_mainHeader = nullptr;
+    QWidget *m_mainFooter = nullptr;
+    QWidget *m_contactsPage = nullptr;
+    QWidget *m_contactsToolbar = nullptr;
+    QWidget *m_historyPage = nullptr;
+    QWidget *m_historyToolbar = nullptr;
+    QWidget *m_historyScopeBar = nullptr;
     QWidget *m_dialPage = nullptr;
+    QMenuBar *m_menuBar = nullptr;
+    QLabel *m_wallpaperBg = nullptr;
+    bool m_wallpaperActive = false;
     QListWidget *m_contactsList = nullptr;
     QListWidget *m_historyList = nullptr;
     QLineEdit *m_searchEdit = nullptr;

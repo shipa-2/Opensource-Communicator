@@ -16,6 +16,7 @@ public:
     void setLineEdit(QLineEdit *edit);
     void setDtmfMode(bool enabled);
     void setCompact(bool compact);
+    void setChromeAlpha(int alpha);
     void refreshAppearance();
 
 signals:
@@ -40,6 +41,7 @@ private:
     void endHold();
     void applyButtonStyle(QPushButton *button, bool backspace = false) const;
     void updateHoldVisual();
+    QString colorCss(const QColor &color) const;
 
     enum class HoldVisual {
         None,
@@ -63,4 +65,5 @@ private:
     QList<QPushButton *> m_keys;
     bool m_dtmfMode = false;
     bool m_compact = false;
+    int m_chromeAlpha = 255;
 };

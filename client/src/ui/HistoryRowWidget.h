@@ -19,6 +19,7 @@ public:
     QString peer() const { return m_peer; }
     QString displayName() const { return m_displayName; }
     void setSelected(bool selected);
+    void setChromeAlpha(int alpha);
     void refreshAppearance();
 
 signals:
@@ -46,6 +47,7 @@ private:
     bool m_missed = false;
     bool m_selected = false;
     bool m_hovered = false;
+    int m_chromeAlpha = 255;
 
     QLabel *m_arrowLabel = nullptr;
     QLabel *m_nameLabel = nullptr;

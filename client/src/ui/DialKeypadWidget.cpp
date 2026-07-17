@@ -151,9 +151,26 @@ void DialKeypadWidget::refreshAppearance()
   }
 }
 
+void DialKeypadWidget::setChromeAlpha(int alpha)
+{
+  m_chromeAlpha = qBound(40, alpha, 255);
+}
+
 void DialKeypadWidget::changeEvent(QEvent *event)
 {
   QWidget::changeEvent(event);
+}
+
+QString DialKeypadWidget::colorCss(const QColor &color) const
+{
+  if (m_chromeAlpha >= 255) {
+    return color.name();
+  }
+  return QStringLiteral("rgba(%1, %2, %3, %4)")
+      .arg(color.red())
+      .arg(color.green())
+      .arg(color.blue())
+      .arg(m_chromeAlpha);
 }
 
 void DialKeypadWidget::applyButtonStyle(QPushButton *button, bool backspace) const
@@ -190,15 +207,15 @@ void DialKeypadWidget::applyButtonStyle(QPushButton *button, bool backspace) con
                             "  background-color: %9;"
                             "  border: 2px solid %3;"
                             "}")
-                            .arg(base.name(),
+                            .arg(colorCss(base),
                                  text.name(),
                                  border.name(),
                                  backspace ? QStringLiteral("18") : QStringLiteral("24"),
                                  accent.name(),
-                                 accent.name(),
+                                 colorCss(accent),
                                  accentText.name(),
                                  pal.color(QPalette::Disabled, QPalette::ButtonText).name(),
-                                 pal.color(QPalette::Disabled, QPalette::Button).name()));
+                                 colorCss(pal.color(QPalette::Disabled, QPalette::Button))));
 }
 
 void DialKeypadWidget::updateHoldVisual()
@@ -254,7 +271,7 @@ void DialKeypadWidget::updateHoldVisual()
                             "  color: %2;"
                             "  border: 2px solid %3;"
                             "}")
-                            .arg(background.name(), foreground.name(), borderColor.name())
+                            .arg(colorCss(background), foreground.name(), borderColor.name())
                             .arg(fontSize);
   m_holdBtn->setStyleSheet(style);
 }

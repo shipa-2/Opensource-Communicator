@@ -5,6 +5,8 @@
 #include <QHash>
 #include <QJsonArray>
 #include <QObject>
+#include <QPixmap>
+#include <QSize>
 #include <QString>
 #include <QStringList>
 #include <QDateTime>
@@ -76,6 +78,16 @@ public:
     QString networkInterfaceName() const { return m_networkInterfaceName; }
     void setNetworkInterfaceName(const QString &name);
 
+    QString appWallpaperPath() const { return m_appWallpaperPath; }
+    void setAppWallpaperPath(const QString &path);
+    void clearAppWallpaper();
+    /// UI panel opacity over wallpaper, 0…100 (100 = fully opaque). Default 85.
+    int appWallpaperOpacity() const { return m_appWallpaperOpacity; }
+    void setAppWallpaperOpacity(int percent);
+    static QSize appWallpaperTargetSize();
+    static QString appWallpaperStoragePath();
+    static QString saveAppWallpaperImage(const QPixmap &pixmap);
+
     bool recordingDualTrack() const { return m_recordingDualTrack; }
     bool recordingCombinedTrack() const { return m_recordingCombinedTrack; }
     QString recordingFilenameTemplate() const { return m_recordingFilenameTemplate; }
@@ -123,6 +135,8 @@ private:
     bool m_showChatButtons = true;
     bool m_showCallButtons = true;
     QString m_networkInterfaceName;
+    QString m_appWallpaperPath;
+    int m_appWallpaperOpacity = 85;
     bool m_recordingDualTrack = false;
     bool m_recordingCombinedTrack = false;
     bool m_recordingEnabled = true;

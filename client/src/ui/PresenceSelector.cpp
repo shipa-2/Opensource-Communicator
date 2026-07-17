@@ -1,8 +1,11 @@
 #include "PresenceSelector.h"
 
+#include <QAbstractItemView>
+#include <QApplication>
 #include <QComboBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QStyle>
 
 PresenceSelector::PresenceSelector(QWidget *parent)
     : QWidget(parent)
@@ -105,12 +108,49 @@ void PresenceSelector::setInCall(bool inCall)
 void PresenceSelector::refreshAppearance()
 {
   refreshDot();
+  if (m_combo) {
+    m_combo->update();
+  }
+}
+
+void PresenceSelector::setOpaquePopup(bool enabled, int alpha)
+{
+  Q_UNUSED(alpha);
+  if (!m_combo) {
+    return;
+  }
+  // Always restore native combo chrome. Custom QSS was breaking the system status look.
+  Q_UNUSED(enabled);
+  m_combo->setStyleSheet(QString());
+  if (QStyle *appStyle = QApplication::style()) {
+    m_combo->setStyle(appStyle);
+  }
+  m_combo->setPalette(QApplication::palette());
+  if (QAbstractItemView *view = m_combo->view()) {
+    view->setStyleSheet(QString());
+    if (QStyle *appStyle = QApplication::style()) {
+      view->setStyle(appStyle);
+    }
+    view->setAutoFillBackground(true);
+    view->setAttribute(Qt::WA_TranslucentBackground, false);
+    view->setAttribute(Qt::WA_StyledBackground, false);
+    view->setPalette(QApplication::palette());
+    if (QWidget *viewport = view->viewport()) {
+      viewport->setStyleSheet(QString());
+      viewport->setAutoFillBackground(true);
+      viewport->setAttribute(Qt::WA_TranslucentBackground, false);
+      viewport->setPalette(QApplication::palette());
+    }
+  }
+  m_combo->style()->unpolish(m_combo);
+  m_combo->style()->polish(m_combo);
+  m_combo->update();
 }
 
 void PresenceSelector::refreshDot()
 {
   const QString color = colorForStatus(currentStatus());
-  const QString borderColor = palette().color(QPalette::Window).name();
+  const QString borderColor = QApplication::palette().color(QPalette::Window).name();
   m_dot->setStyleSheet(
       QStringLiteral("background:%1; border:1px solid %2; border-radius:5px;").arg(color, borderColor));
 }

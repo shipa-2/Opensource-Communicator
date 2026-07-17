@@ -1,6 +1,7 @@
 #include "SettingsDialog.h"
 
 #include "ProfileAvatarWidget.h"
+#include "WallpaperCropDialog.h"
 #include "audio/AudioDeviceUtils.h"
 #include "audio/IncomingRingPlayer.h"
 #include "audio/RingbackPlayer.h"
@@ -14,7 +15,9 @@
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
+#include <QFile>
 #include <QFileDialog>
+#include <QFrame>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -22,6 +25,9 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QSignalBlocker>
+#include <QSizePolicy>
+#include <QSlider>
 #include <QTabWidget>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -40,7 +46,9 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
 {
   setWindowTitle(tr("Настройки"));
   setObjectName(QStringLiteral("settingsDialog"));
-  resize(460, 420);
+  setSizeGripEnabled(false);
+  // Fixed size so live wallpaper opacity updates (parent MainWindow restyle) cannot grow the dialog.
+  setFixedSize(460, 560);
   m_selfName = displayName;
 
   auto *mainLayout = new QVBoxLayout(this);
@@ -201,6 +209,88 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
   accountForm->addRow(tr("Сеть для звонков:"), m_networkInterface);
 
   accountLayout->addLayout(accountForm);
+
+  auto *wallpaperLabel = new QLabel(tr("Фон приложения:"));
+  accountLayout->addWidget(wallpaperLabel);
+
+  m_wallpaperPreview = new QLabel;
+  m_wallpaperPreview->setFixedSize(78, 124);
+  m_wallpaperPreview->setAlignment(Qt::AlignCenter);
+  m_wallpaperPreview->setFrameShape(QFrame::StyledPanel);
+  m_wallpaperPreview->setScaledContents(true);
+  accountLayout->addWidget(m_wallpaperPreview, 0, Qt::AlignLeft);
+
+  auto *wallpaperRow = new QHBoxLayout;
+  auto *wallpaperBtn = new QPushButton(tr("Выбрать обои..."));
+  wallpaperBtn->setObjectName(QStringLiteral("avatarMenuBtn"));
+  m_removeWallpaperBtn = new QPushButton(tr("Убрать обои"));
+  m_removeWallpaperBtn->setObjectName(QStringLiteral("avatarMenuBtn"));
+  wallpaperRow->addWidget(wallpaperBtn);
+  wallpaperRow->addWidget(m_removeWallpaperBtn);
+  accountLayout->addLayout(wallpaperRow);
+
+  m_wallpaperOpacityRow = new QWidget;
+  auto *opacityLayout = new QHBoxLayout(m_wallpaperOpacityRow);
+  opacityLayout->setContentsMargins(0, 0, 0, 0);
+  opacityLayout->addWidget(new QLabel(tr("Непрозрачность интерфейса:")));
+  m_wallpaperOpacitySlider = new QSlider(Qt::Horizontal);
+  m_wallpaperOpacitySlider->setRange(20, 100);
+  m_wallpaperOpacitySlider->setValue(m_settings->appWallpaperOpacity());
+  m_wallpaperOpacitySlider->setToolTip(
+      tr("100%% — обычный непрозрачный интерфейс. Меньше — панели становятся прозрачнее и показывают обои."));
+  opacityLayout->addWidget(m_wallpaperOpacitySlider, 1);
+  m_wallpaperOpacityValue = new QLabel(QStringLiteral("%1%").arg(m_wallpaperOpacitySlider->value()));
+  m_wallpaperOpacityValue->setMinimumWidth(40);
+  m_wallpaperOpacityValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+  opacityLayout->addWidget(m_wallpaperOpacityValue);
+  m_wallpaperOpacityRow->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+  accountLayout->addWidget(m_wallpaperOpacityRow);
+
+  connect(m_wallpaperOpacitySlider, &QSlider::valueChanged, this, [this](int value) {
+    if (m_wallpaperOpacityValue) {
+      m_wallpaperOpacityValue->setText(QStringLiteral("%1%").arg(value));
+    }
+    m_settings->setAppWallpaperOpacity(value);
+    m_client->saveSettings();
+  });
+
+  connect(wallpaperBtn, &QPushButton::clicked, this, [this]() {
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("Выберите изображение"), {},
+        tr("Изображения (*.png *.jpg *.jpeg *.bmp *.webp);;Все файлы (*)"));
+    if (path.isEmpty()) {
+      return;
+    }
+
+    const QPixmap source(path);
+    if (source.isNull()) {
+      QMessageBox::warning(this, tr("Обои"), tr("Не удалось открыть изображение."));
+      return;
+    }
+
+    const QPixmap cropped =
+        WallpaperCropDialog::cropImage(source, itl::AppSettings::appWallpaperTargetSize(), this);
+    if (cropped.isNull()) {
+      return;
+    }
+
+    const QString saved = itl::AppSettings::saveAppWallpaperImage(cropped);
+    if (saved.isEmpty()) {
+      QMessageBox::warning(this, tr("Обои"), tr("Не удалось сохранить обои."));
+      return;
+    }
+
+    m_settings->setAppWallpaperPath(saved);
+    m_client->saveSettings();
+    updateWallpaperPreview();
+  });
+  connect(m_removeWallpaperBtn, &QPushButton::clicked, this, [this]() {
+    m_settings->clearAppWallpaper();
+    m_client->saveSettings();
+    updateWallpaperPreview();
+  });
+
+  updateWallpaperPreview();
 
   accountLayout->addStretch();
 
@@ -463,6 +553,51 @@ void SettingsDialog::onPreviewIncoming()
   m_incomingPreview->applySettings(&m_previewSettings);
   m_incomingPreview->start();
   m_previewTimer->start(5000);
+}
+
+void SettingsDialog::updateWallpaperPreview()
+{
+  if (!m_wallpaperPreview || !m_removeWallpaperBtn) {
+    return;
+  }
+
+  const QString path = m_settings->appWallpaperPath();
+  const bool hasWallpaper = !path.isEmpty() && QFile::exists(path);
+  if (!hasWallpaper) {
+    m_wallpaperPreview->clear();
+    m_wallpaperPreview->setText(tr("Нет"));
+    m_removeWallpaperBtn->setEnabled(false);
+    if (m_wallpaperOpacityRow) {
+      m_wallpaperOpacityRow->setEnabled(false);
+    }
+    return;
+  }
+
+  const QPixmap pixmap(path);
+  if (pixmap.isNull()) {
+    m_wallpaperPreview->clear();
+    m_wallpaperPreview->setText(tr("Нет"));
+    m_removeWallpaperBtn->setEnabled(false);
+    if (m_wallpaperOpacityRow) {
+      m_wallpaperOpacityRow->setEnabled(false);
+    }
+    return;
+  }
+
+  m_wallpaperPreview->setPixmap(
+      pixmap.scaled(m_wallpaperPreview->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+  m_wallpaperPreview->setText({});
+  m_removeWallpaperBtn->setEnabled(true);
+  if (m_wallpaperOpacityRow) {
+    m_wallpaperOpacityRow->setEnabled(true);
+  }
+  if (m_wallpaperOpacitySlider) {
+    const QSignalBlocker blocker(m_wallpaperOpacitySlider);
+    m_wallpaperOpacitySlider->setValue(m_settings->appWallpaperOpacity());
+  }
+  if (m_wallpaperOpacityValue) {
+    m_wallpaperOpacityValue->setText(QStringLiteral("%1%").arg(m_settings->appWallpaperOpacity()));
+  }
 }
 
 void SettingsDialog::onBrowseRingback()

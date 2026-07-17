@@ -7,6 +7,11 @@
 class QLabel;
 class QPushButton;
 class QTimer;
+class QEvent;
+class QContextMenuEvent;
+class QEnterEvent;
+class QMouseEvent;
+class QPaintEvent;
 
 class ContactRowWidget : public QWidget {
     Q_OBJECT
@@ -35,6 +40,13 @@ protected:
     void changeEvent(QEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
+    void paintEvent(QPaintEvent *event) override;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    void enterEvent(QEnterEvent *event) override;
+#else
+    void enterEvent(QEvent *event) override;
+#endif
+    void leaveEvent(QEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 signals:
@@ -51,6 +63,7 @@ private:
     void refreshStatusDot();
     void refreshTextLabels();
     void refreshChatButtonStyle();
+    void refreshBackground();
     void showCallMenu(const QPoint &globalPos);
     bool isInteractiveChild(QWidget *target) const;
 
@@ -61,6 +74,8 @@ private:
     QString m_peerColor;
     bool m_isSelf = false;
     bool m_canDelete = false;
+    bool m_selected = false;
+    bool m_hovered = false;
     QVector<CallNumber> m_numbers;
 
     QWidget *m_avatar = nullptr;
