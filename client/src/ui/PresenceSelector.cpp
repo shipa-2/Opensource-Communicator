@@ -21,6 +21,10 @@ PresenceSelector::PresenceSelector(QWidget *parent)
   m_combo->addItem(labelForStatus(QStringLiteral("away")), QStringLiteral("away"));
   m_combo->addItem(labelForStatus(QStringLiteral("busy")), QStringLiteral("busy"));
   m_combo->addItem(labelForStatus(QStringLiteral("offline")), QStringLiteral("offline"));
+#ifdef OSC_DEBUG_BUILD
+  m_combo->addItem(labelForStatus(QStringLiteral("in-call")), QStringLiteral("in-call"));
+  m_inCallPersistent = true;
+#endif
 
   layout->addWidget(m_combo, 1);
 
@@ -78,12 +82,19 @@ void PresenceSelector::setInCall(bool inCall)
     }
     m_combo->setEnabled(false);
   } else {
-    const int index = m_combo->findData(QStringLiteral("in-call"));
-    if (index >= 0) {
-      m_combo->removeItem(index);
+    if (!m_inCallPersistent) {
+      const int index = m_combo->findData(QStringLiteral("in-call"));
+      if (index >= 0) {
+        m_combo->removeItem(index);
+      }
     }
     if (m_savedIndex >= 0 && m_savedIndex < m_combo->count()) {
-      m_combo->setCurrentIndex(m_savedIndex);
+      const QString savedData = m_combo->itemData(m_savedIndex).toString();
+      if (savedData == QStringLiteral("in-call") && m_inCallPersistent) {
+        m_combo->setCurrentIndex(0);
+      } else {
+        m_combo->setCurrentIndex(m_savedIndex);
+      }
     }
     m_savedIndex = -1;
     m_combo->setEnabled(QWidget::isEnabled());

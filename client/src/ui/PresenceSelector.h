@@ -29,5 +29,6 @@ private:
     QLabel *m_dot = nullptr;
     QComboBox *m_combo = nullptr;
     bool m_inCall = false;
+    bool m_inCallPersistent = false;
     int m_savedIndex = -1;
 };

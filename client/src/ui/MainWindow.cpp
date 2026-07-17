@@ -36,6 +36,7 @@
 #include <QMenuBar>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QSignalBlocker>
 #include <QButtonGroup>
 #include <QAbstractButton>
 #include <QDialog>
@@ -787,19 +788,22 @@ void MainWindow::enterCallPresence()
   m_callPresenceActive = true;
   if (m_presenceSelector && !m_demoMode) {
     m_presenceBeforeCall = m_presenceSelector->currentStatus();
+    if (m_presenceBeforeCall == QStringLiteral("in-call")) {
+      m_presenceBeforeCall = QStringLiteral("online");
+    }
   } else {
     m_presenceBeforeCall = QStringLiteral("online");
   }
 
   if (m_presenceSelector) {
+    const QSignalBlocker blocker(m_presenceSelector);
     m_presenceSelector->setInCall(true);
   }
   if (!m_selfPeer.isEmpty()) {
     m_contacts[m_selfPeer].presence = QStringLiteral("in-call");
   }
-  if (m_online && !m_demoMode) {
-    m_client->api()->setOwnPresence(QStringLiteral("in-call"), false);
-  }
+  // PBX sets voice:"in-call" automatically while a call is active.
+  // SetPresence(status:"in-call") is rejected (Invalid presence status 971).
 }
 
 void MainWindow::leaveCallPresence()
@@ -816,10 +820,13 @@ void MainWindow::leaveCallPresence()
 
   m_callPresenceActive = false;
   const QString restore =
-      m_presenceBeforeCall.isEmpty() ? QStringLiteral("online") : m_presenceBeforeCall;
+      m_presenceBeforeCall.isEmpty() || m_presenceBeforeCall == QStringLiteral("in-call")
+          ? QStringLiteral("online")
+          : m_presenceBeforeCall;
   m_presenceBeforeCall.clear();
 
   if (m_presenceSelector) {
+    const QSignalBlocker blocker(m_presenceSelector);
     m_presenceSelector->setInCall(false);
     m_presenceSelector->setCurrentStatus(restore);
   }
@@ -2665,7 +2672,23 @@ void MainWindow::onPresenceChanged(int index)
   if (!m_online || index < 0 || m_demoMode || m_callPresenceActive) {
     return;
   }
-  m_client->api()->setOwnPresence(m_presenceSelector->currentStatus());
+
+  const QString status = m_presenceSelector->currentStatus();
+#ifdef OSC_DEBUG_BUILD
+  if (status == QStringLiteral("in-call")) {
+    // Local UI only: АТС rejects SetPresence(status:"in-call").
+    // Real in-call voice presence is set by the PBX for active calls.
+    if (!m_selfPeer.isEmpty()) {
+      m_contacts[m_selfPeer].presence = QStringLiteral("in-call");
+    }
+    return;
+  }
+#endif
+
+  if (!m_selfPeer.isEmpty()) {
+    m_contacts[m_selfPeer].presence = status;
+  }
+  m_client->api()->setOwnPresence(status);
 }
 
 void MainWindow::onSearchChanged(const QString &) { rebuildContactList(); }
@@ -2770,6 +2793,7 @@ void MainWindow::onContactsLoaded(const QJsonObject &contacts)
   prefetchCompanyHistory();
   prefetchInternalHistory();
 
+  refreshColorAdvertisementPeers();
   m_client->chat()->sendColorAdvertisement(m_client->appSettings().profileAvatarColor());
 }
 
@@ -2777,11 +2801,33 @@ void MainWindow::onAddressBookChanged()
 {
   mergeCustomContacts();
   rebuildContactList();
+  refreshColorAdvertisementPeers();
 }
 
 bool MainWindow::useServerContacts() const
 {
   return m_online && !m_demoMode;
+}
+
+void MainWindow::refreshColorAdvertisementPeers()
+{
+  QStringList peers;
+  const QString domain = m_client->credentials().domain;
+  for (auto it = m_contacts.cbegin(); it != m_contacts.cend(); ++it) {
+    if (it.value().isSelf) {
+      continue;
+    }
+    const QString &peer = it.key();
+    const int at = peer.indexOf(QLatin1Char('@'));
+    if (at <= 0) {
+      continue;
+    }
+    if (peer.mid(at + 1).compare(domain, Qt::CaseInsensitive) != 0) {
+      continue;
+    }
+    peers.append(peer);
+  }
+  m_client->chat()->setColorAdvertisementPeers(peers);
 }
 
 void MainWindow::mergeCustomContacts()
