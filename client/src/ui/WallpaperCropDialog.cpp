@@ -162,11 +162,12 @@ private:
 
 } // namespace
 
-WallpaperCropDialog::WallpaperCropDialog(const QPixmap &source, const QSize &targetSize, QWidget *parent)
+WallpaperCropDialog::WallpaperCropDialog(const QPixmap &source, const QSize &targetSize, QWidget *parent,
+                                         const QString &dialogTitle)
     : QDialog(parent)
     , m_targetSize(targetSize)
 {
-  setWindowTitle(tr("Обрезка обоев"));
+  setWindowTitle(dialogTitle.isEmpty() ? tr("Обрезка изображения") : dialogTitle);
   resize(420, 520);
 
   auto *layout = new QVBoxLayout(this);
@@ -198,13 +199,14 @@ QPixmap WallpaperCropDialog::croppedPixmap() const
   return static_cast<CropCanvas *>(m_canvas)->croppedPixmap();
 }
 
-QPixmap WallpaperCropDialog::cropImage(const QPixmap &source, const QSize &targetSize, QWidget *parent)
+QPixmap WallpaperCropDialog::cropImage(const QPixmap &source, const QSize &targetSize, QWidget *parent,
+                                       const QString &dialogTitle)
 {
   if (source.isNull() || targetSize.isEmpty()) {
     return {};
   }
 
-  WallpaperCropDialog dialog(source, targetSize, parent);
+  WallpaperCropDialog dialog(source, targetSize, parent, dialogTitle);
   if (dialog.exec() != QDialog::Accepted) {
     return {};
   }

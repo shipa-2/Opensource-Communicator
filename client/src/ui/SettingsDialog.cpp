@@ -168,11 +168,27 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
   connect(photoBtn, &QPushButton::clicked, this, [this, syncPhotoButtons]() {
     const QString path = QFileDialog::getOpenFileName(this, tr("Выберите фото"), {},
                                                        tr("Изображения (*.png *.jpg *.jpeg *.bmp *.webp);;Все файлы (*)"));
-    if (!path.isEmpty()) {
-      m_settings->setProfileAvatarPath(path);
-      m_accountAvatar->refreshFromSettings();
-      syncPhotoButtons();
+    if (path.isEmpty()) {
+      return;
     }
+    const QPixmap source(path);
+    if (source.isNull()) {
+      QMessageBox::warning(this, tr("Фото"), tr("Не удалось открыть изображение."));
+      return;
+    }
+    const QPixmap cropped = WallpaperCropDialog::cropImage(
+        source, itl::AppSettings::profileAvatarTargetSize(), this, tr("Обрезка фото"));
+    if (cropped.isNull()) {
+      return;
+    }
+    const QString saved = itl::AppSettings::saveProfileAvatarImage(cropped);
+    if (saved.isEmpty()) {
+      QMessageBox::warning(this, tr("Фото"), tr("Не удалось сохранить фото."));
+      return;
+    }
+    m_settings->setProfileAvatarPath(saved);
+    m_accountAvatar->refreshFromSettings();
+    syncPhotoButtons();
   });
   connect(colorBtn, &QPushButton::clicked, this, [this, syncPhotoButtons]() {
     const QColor color = QColorDialog::getColor(m_settings->profileAvatarColor(), this, tr("Выберите цвет фона"));
@@ -315,7 +331,8 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
     }
 
     const QPixmap cropped =
-        WallpaperCropDialog::cropImage(source, itl::AppSettings::appWallpaperTargetSize(), this);
+        WallpaperCropDialog::cropImage(source, itl::AppSettings::appWallpaperTargetSize(), this,
+                                       tr("Обрезка обоев"));
     if (cropped.isNull()) {
       return;
     }

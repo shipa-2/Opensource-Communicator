@@ -2,11 +2,13 @@
 
 #include "settings/AppSettings.h"
 #include "ui/StyleHelper.h"
+#include "ui/WallpaperCropDialog.h"
 
 #include <QColorDialog>
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QMenu>
+#include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -187,11 +189,31 @@ void ProfileAvatarWidget::showAvatarMenu()
 void ProfileAvatarWidget::pickPhoto()
 {
   const QString path = QFileDialog::getOpenFileName(
-      this, tr("Выберите фото"), {}, tr("Изображения (*.png *.jpg *.jpeg *.bmp *.webp)"));
+      this, tr("Выберите фото"), {},
+      tr("Изображения (*.png *.jpg *.jpeg *.bmp *.webp);;Все файлы (*)"));
   if (path.isEmpty() || !m_settings) {
     return;
   }
-  m_settings->setProfileAvatarPath(path);
+
+  const QPixmap source(path);
+  if (source.isNull()) {
+    QMessageBox::warning(this, tr("Фото"), tr("Не удалось открыть изображение."));
+    return;
+  }
+
+  const QPixmap cropped = WallpaperCropDialog::cropImage(
+      source, itl::AppSettings::profileAvatarTargetSize(), this, tr("Обрезка фото"));
+  if (cropped.isNull()) {
+    return;
+  }
+
+  const QString saved = itl::AppSettings::saveProfileAvatarImage(cropped);
+  if (saved.isEmpty()) {
+    QMessageBox::warning(this, tr("Фото"), tr("Не удалось сохранить фото."));
+    return;
+  }
+
+  m_settings->setProfileAvatarPath(saved);
   reloadFromSettings();
   emit settingsChanged();
 }

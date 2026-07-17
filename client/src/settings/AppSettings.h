@@ -68,6 +68,9 @@ public:
     QString profileAvatarColor() const { return m_profileAvatarColor; }
     void setProfileAvatarPath(const QString &path);
     void setProfileAvatarColor(const QString &color);
+    static QSize profileAvatarTargetSize();
+    static QString profileAvatarStoragePath();
+    static QString saveProfileAvatarImage(const QPixmap &pixmap);
 
     bool showChatButtons() const { return m_showChatButtons; }
     void setShowChatButtons(bool show);

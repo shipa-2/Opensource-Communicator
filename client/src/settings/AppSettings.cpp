@@ -455,6 +455,31 @@ QString AppSettings::saveAppWallpaperImage(const QPixmap &pixmap)
   return path;
 }
 
+QSize AppSettings::profileAvatarTargetSize()
+{
+  return QSize(140, 140);
+}
+
+QString AppSettings::profileAvatarStoragePath()
+{
+  const QString dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+  QDir().mkpath(dir);
+  return dir + QStringLiteral("/profile-avatar.png");
+}
+
+QString AppSettings::saveProfileAvatarImage(const QPixmap &pixmap)
+{
+  if (pixmap.isNull()) {
+    return {};
+  }
+
+  const QString path = profileAvatarStoragePath();
+  if (!pixmap.save(path, "PNG")) {
+    return {};
+  }
+  return path;
+}
+
 void AppSettings::setAppWallpaperPath(const QString &path)
 {
   if (m_appWallpaperPath == path) {
