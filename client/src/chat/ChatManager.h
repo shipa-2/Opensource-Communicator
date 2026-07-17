@@ -28,6 +28,7 @@ public:
     explicit ChatManager(WsApiClient *api, QObject *parent = nullptr);
 
     void setDomain(const QString &domain);
+    void setSelfLogin(const QString &login);
 
     void handlePayload(const QJsonObject &payload);
     void handleResponse(int requestId, const QJsonObject &response);
@@ -62,6 +63,10 @@ signals:
 private:
     InstantMessage parseMessage(const QJsonObject &msg) const;
     QString normalizePeer(QString peer) const;
+    QString canonicalPeer(QString peer) const;
+    QString imColorAdPeer(const QJsonObject &payload, const QJsonObject &msg) const;
+    static QString messageBody(const QJsonObject &msg);
+    void storePeerColor(const QString &peer, const QString &color);
     bool storeMessage(const InstantMessage &im, bool replaceOptimisticOutgoing);
     static bool looksLikePhone(QString value);
     static bool isPhonePeer(QString peer);
@@ -71,6 +76,7 @@ private:
 
     WsApiClient *m_api = nullptr;
     QString m_domain;
+    QString m_selfLogin;
     QString m_smsFromNumber;
     QHash<QString, QList<InstantMessage>> m_messages;
     QHash<QString, QStringList> m_unreadByPeer;

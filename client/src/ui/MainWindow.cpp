@@ -408,9 +408,10 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
     updateUnreadIndicators();
   });
   connect(m_client->chat(), &itl::ChatManager::peerColorReceived, this, [this](const QString &peer, const QString &color) {
-    if (ContactRowWidget *row = rowWidgetForPeer(peer)) {
-      row->setPeerColor(color);
-    }
+    applyPeerColorForPeer(peer, color);
+  });
+  connect(m_client->chat(), &itl::ChatManager::historyLoaded, this, [this](const QString &) {
+    refreshAllContactPeerColors();
   });
   connect(m_client, &itl::CommunicatorClient::callEvent, this, &MainWindow::onCallEvent);
   connect(m_client->api(), &itl::WsApiClient::domainContactsLoaded, this, &MainWindow::onContactsLoaded);
@@ -671,13 +672,25 @@ bool MainWindow::isSamePeer(const QString &a, const QString &b) const
   }
   const QString ra = resolvePeer(a);
   const QString rb = resolvePeer(b);
-  return !ra.isEmpty() && ra == rb;
+  if (!ra.isEmpty() && ra.compare(rb, Qt::CaseInsensitive) == 0) {
+    return true;
+  }
+  return false;
 }
 
 ContactRowWidget *MainWindow::rowWidgetForPeer(const QString &peer) const
 {
-  QListWidgetItem *item = m_contactItems.value(peer);
-  return item ? qobject_cast<ContactRowWidget *>(m_contactsList->itemWidget(item)) : nullptr;
+  if (QListWidgetItem *item = m_contactItems.value(peer)) {
+    if (auto *row = qobject_cast<ContactRowWidget *>(m_contactsList->itemWidget(item))) {
+      return row;
+    }
+  }
+  for (auto it = m_contactItems.cbegin(); it != m_contactItems.cend(); ++it) {
+    if (isSamePeer(it.key(), peer)) {
+      return qobject_cast<ContactRowWidget *>(m_contactsList->itemWidget(it.value()));
+    }
+  }
+  return nullptr;
 }
 
 void MainWindow::rebuildContactList()
@@ -2789,6 +2802,7 @@ void MainWindow::onContactsLoaded(const QJsonObject &contacts)
   updateSelfHeader();
   mergeCustomContacts();
   rebuildContactList();
+  refreshAllContactPeerColors();
   refreshServerHistory();
   prefetchCompanyHistory();
   prefetchInternalHistory();
@@ -2828,6 +2842,59 @@ void MainWindow::refreshColorAdvertisementPeers()
     peers.append(peer);
   }
   m_client->chat()->setColorAdvertisementPeers(peers);
+}
+
+void MainWindow::applyPeerColorForPeer(const QString &peer, const QString &color)
+{
+  if (color.isEmpty()) {
+    return;
+  }
+
+  int matched = 0;
+  for (auto it = m_contacts.cbegin(); it != m_contacts.cend(); ++it) {
+    if (!contactMatchesSender(it.key(), it.value(), peer)) {
+      continue;
+    }
+    ++matched;
+    if (ContactRowWidget *row = rowWidgetForPeer(it.key())) {
+      row->setPeerColor(color);
+    }
+  }
+
+  if (matched == 0) {
+    qCWarning(lcHistory) << "Color advertisement stored for" << peer << "but no contact matched (color" << color << ')';
+  }
+
+  if (m_callWindow && !m_callWindow->peer().isEmpty() && isSamePeer(m_callWindow->peer(), peer)) {
+    m_callWindow->setAvatarColor(color);
+  }
+}
+
+bool MainWindow::contactMatchesSender(const QString &contactPeer, const ContactEntry &entry,
+                                      const QString &sender) const
+{
+  if (isSamePeer(contactPeer, sender)) {
+    return true;
+  }
+
+  const QString senderLogin = sender.section(QLatin1Char('@'), 0, 0).toLower();
+  if (senderLogin.isEmpty()) {
+    return false;
+  }
+  if (entry.login.compare(senderLogin, Qt::CaseInsensitive) == 0) {
+    return true;
+  }
+  return contactPeer.section(QLatin1Char('@'), 0, 0).compare(senderLogin, Qt::CaseInsensitive) == 0;
+}
+
+void MainWindow::refreshAllContactPeerColors()
+{
+  for (auto it = m_contacts.cbegin(); it != m_contacts.cend(); ++it) {
+    const QString color = m_client->chat()->peerColor(it.key());
+    if (!color.isEmpty()) {
+      applyPeerColorForPeer(it.key(), color);
+    }
+  }
 }
 
 void MainWindow::mergeCustomContacts()

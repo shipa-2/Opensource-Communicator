@@ -30,6 +30,7 @@ void configureLogging()
       "itl.ws.info=true\n"
       "itl.api.info=true\n"
       "itl.client.info=true\n"
+      "itl.chat.info=true\n"
       "*.warning=true\n"
       "*.critical=true"));
 #endif

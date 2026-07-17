@@ -122,6 +122,9 @@ private:
     void updateSelfHeader();
     void mergeCustomContacts();
     void refreshColorAdvertisementPeers();
+    bool contactMatchesSender(const QString &contactPeer, const ContactEntry &entry, const QString &sender) const;
+    void applyPeerColorForPeer(const QString &peer, const QString &color);
+    void refreshAllContactPeerColors();
     bool useServerContacts() const;
     void setupDragDrop();
     void registerDropTarget(QWidget *widget);

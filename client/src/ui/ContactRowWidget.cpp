@@ -9,6 +9,7 @@
 #include <QLabel>
 #include <QMenu>
 #include <QMouseEvent>
+#include <QPainter>
 #include <QPushButton>
 #include <QApplication>
 #include <QStyle>
@@ -16,6 +17,60 @@
 #include <QWidgetAction>
 
 namespace {
+
+class ContactAvatarLabel : public QWidget {
+public:
+  explicit ContactAvatarLabel(QWidget *parent = nullptr)
+      : QWidget(parent)
+  {
+    setFixedSize(36, 36);
+    setAttribute(Qt::WA_TransparentForMouseEvents);
+    setAutoFillBackground(false);
+  }
+
+  void setLetter(const QString &letter)
+  {
+    if (m_letter == letter) {
+      return;
+    }
+    m_letter = letter.isEmpty() ? QStringLiteral("?") : letter;
+    update();
+  }
+
+  void setBackgroundColor(const QColor &color)
+  {
+    m_background = color;
+    update();
+  }
+
+protected:
+  void paintEvent(QPaintEvent *) override
+  {
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    const QColor background =
+        m_background.isValid() ? m_background : palette().color(QPalette::Midlight);
+    const QColor text = palette().color(QPalette::ButtonText);
+    const QColor border = palette().color(QPalette::WindowText);
+
+    painter.setPen(QPen(border, 2));
+    painter.setBrush(background);
+    painter.drawEllipse(rect().adjusted(1, 1, -1, -1));
+
+    painter.setPen(text);
+    QFont font = painter.font();
+    font.setBold(true);
+    font.setPixelSize(14);
+    painter.setFont(font);
+    painter.drawText(rect(), Qt::AlignCenter, m_letter);
+  }
+
+private:
+  QString m_letter = QStringLiteral("?");
+  QColor m_background;
+};
+
 QString presenceColor(const QString &presence)
 {
   const QString p = presence.toLower();
@@ -78,10 +133,10 @@ ContactRowWidget::ContactRowWidget(const QString &peer, const QString &name, con
   auto *avatarLayout = new QVBoxLayout(avatarWrap);
   avatarLayout->setContentsMargins(0, 0, 0, 0);
 
-  m_avatar = new QLabel(avatarLetter(name));
-  m_avatar->setObjectName(QStringLiteral("contactRowAvatar"));
-  m_avatar->setAlignment(Qt::AlignCenter);
-  m_avatar->setFixedSize(36, 36);
+  auto *avatar = new ContactAvatarLabel;
+  avatar->setObjectName(QStringLiteral("contactRowAvatar"));
+  avatar->setLetter(avatarLetter(name));
+  m_avatar = avatar;
   avatarLayout->addWidget(m_avatar, 0, Qt::AlignCenter);
   refreshAvatarStyle();
 
@@ -390,23 +445,17 @@ void ContactRowWidget::refreshTextLabels()
 
 void ContactRowWidget::refreshAvatarStyle()
 {
-  if (!m_avatar) {
+  auto *avatar = dynamic_cast<ContactAvatarLabel *>(m_avatar);
+  if (!avatar) {
     return;
   }
 
-  QColor background = m_peerColor.isEmpty() ? palette().color(QPalette::Midlight) : QColor(m_peerColor);
-  const QColor text = palette().color(QPalette::ButtonText);
-  const QColor border = palette().color(QPalette::WindowText);
-  m_avatar->setStyleSheet(
-      QStringLiteral("QLabel {"
-                     "  background-color: %1;"
-                     "  color: %2;"
-                     "  border: 2px solid %3;"
-                     "  border-radius: 18px;"
-                     "  font-weight: bold;"
-                     "  font-size: 14px;"
-                     "}")
-          .arg(background.name(), text.name(), border.name()));
+  if (m_peerColor.isEmpty()) {
+    avatar->setBackgroundColor({});
+  } else {
+    avatar->setBackgroundColor(QColor(m_peerColor));
+  }
+  avatar->update();
 }
 
 void ContactRowWidget::updatePresence(const QString &presence)
@@ -422,7 +471,9 @@ void ContactRowWidget::updateName(const QString &name)
     displayName += tr(" (Я)");
   }
   m_nameLabel->setText(displayName);
-  m_avatar->setText(avatarLetter(name));
+  if (auto *avatar = dynamic_cast<ContactAvatarLabel *>(m_avatar)) {
+    avatar->setLetter(avatarLetter(name));
+  }
 }
 
 void ContactRowWidget::setSelected(bool selected)

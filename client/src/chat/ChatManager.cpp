@@ -31,6 +31,69 @@ void ChatManager::setDomain(const QString &domain)
   loadSmsTelnums();
 }
 
+void ChatManager::setSelfLogin(const QString &login)
+{
+  m_selfLogin = login.section(QLatin1Char('@'), 0, 0).trimmed().toLower();
+}
+
+QString ChatManager::canonicalPeer(QString peer) const
+{
+  peer = normalizePeer(std::move(peer));
+  const int at = peer.indexOf(QLatin1Char('@'));
+  if (at > 0) {
+    return peer.left(at).toLower() + peer.mid(at).toLower();
+  }
+  return peer.toLower();
+}
+
+QString ChatManager::imColorAdPeer(const QJsonObject &payload, const QJsonObject &msg) const
+{
+  const QString from = msg.value(QStringLiteral("from")).toString().trimmed();
+  if (!from.isEmpty()) {
+    const QString fromLogin = from.section(QLatin1Char('@'), 0, 0).toLower();
+    if (m_selfLogin.isEmpty() || fromLogin != m_selfLogin) {
+      return normalizePeer(from);
+    }
+  }
+
+  const QString chatId = payload.value(QStringLiteral("chatId")).toString().trimmed();
+  if (!chatId.isEmpty()) {
+    const QString chatLogin = chatId.section(QLatin1Char('@'), 0, 0).toLower();
+    if (m_selfLogin.isEmpty() || chatLogin != m_selfLogin) {
+      return normalizePeer(chatId);
+    }
+  }
+
+  return normalizePeer(from);
+}
+
+QString ChatManager::messageBody(const QJsonObject &msg)
+{
+  const QJsonValue bodyValue = msg.value(QStringLiteral("body"));
+  if (bodyValue.isObject()) {
+    return bodyValue.toObject().value(QString::fromUtf8(kEmptyKey)).toString();
+  }
+  if (bodyValue.isArray()) {
+    return {};
+  }
+  return bodyValue.toString();
+}
+
+void ChatManager::storePeerColor(const QString &peer, const QString &color)
+{
+  if (peer.isEmpty() || color.isEmpty()) {
+    return;
+  }
+  const QString key = canonicalPeer(peer);
+  m_peerColors[key] = color;
+  const QString login = key.section(QLatin1Char('@'), 0, 0);
+  if (!login.isEmpty()) {
+    m_peerColors[login] = color;
+  }
+  qCInfo(lcChat) << "Color advertisement received from" << key << ":" << color;
+  emit peerColorReceived(key, color);
+}
+
 bool ChatManager::looksLikePhone(QString value)
 {
   value = value.trimmed();
@@ -132,9 +195,19 @@ InstantMessage ChatManager::parseMessage(const QJsonObject &msg) const
   im.peer = normalizePeer(msg.value(QStringLiteral("from")).toString());
   im.incoming = true;
 
-  if (msg.contains(QStringLiteral("to"))) {
-    im.peer = normalizePeer(msg.value(QStringLiteral("to")).toString());
-    im.incoming = false;
+  const QString fromLogin = msg.value(QStringLiteral("from")).toString().section(QLatin1Char('@'), 0, 0).toLower();
+  const QString toField = msg.value(QStringLiteral("to")).toString();
+  if (!toField.isEmpty()) {
+    if (!m_selfLogin.isEmpty() && fromLogin == m_selfLogin) {
+      im.peer = normalizePeer(toField);
+      im.incoming = false;
+    } else if (!fromLogin.isEmpty()) {
+      im.peer = normalizePeer(msg.value(QStringLiteral("from")).toString());
+      im.incoming = true;
+    } else {
+      im.peer = normalizePeer(toField);
+      im.incoming = false;
+    }
   }
 
   const QString type = msg.value(QStringLiteral("type")).toString();
@@ -147,7 +220,7 @@ InstantMessage ChatManager::parseMessage(const QJsonObject &msg) const
 
   if (msg.value(QStringLiteral("body")).isObject()) {
     im.body = msg.value(QStringLiteral("body")).toObject().value(QString::fromUtf8(kEmptyKey)).toString();
-  } else {
+  } else if (!msg.value(QStringLiteral("body")).isArray()) {
     im.body = msg.value(QStringLiteral("body")).toString();
   }
 
@@ -206,18 +279,17 @@ void ChatManager::handlePayload(const QJsonObject &payload)
       return;
     }
 
-    const InstantMessage im = parseMessage(raw);
-    if (im.body.isEmpty() || im.id == QStringLiteral("0")) {
+    const QString body = messageBody(raw);
+    if (!body.isEmpty() && isColorAdvertisement(body)) {
+      const QString sender = imColorAdPeer(payload, raw);
+      if (!sender.isEmpty()) {
+        storePeerColor(sender, extractColor(body));
+      }
       return;
     }
 
-    if (im.incoming && isColorAdvertisement(im.body)) {
-      const QString color = extractColor(im.body);
-      if (!color.isEmpty()) {
-        m_peerColors[im.peer] = color;
-        qCInfo(lcChat) << "Color advertisement received from" << im.peer << ":" << color;
-        emit peerColorReceived(im.peer, color);
-      }
+    const InstantMessage im = parseMessage(raw);
+    if (im.body.isEmpty() || im.id == QStringLiteral("0")) {
       return;
     }
 
@@ -243,20 +315,21 @@ void ChatManager::handlePayload(const QJsonObject &payload)
     const QJsonArray messages = payload.value(QStringLiteral("messages")).toArray();
     QString chatPeer = normalizePeer(payload.value(QStringLiteral("chatId")).toString());
     for (const auto &value : messages) {
-      const InstantMessage im = parseMessage(value.toObject());
+      const QJsonObject msgObj = value.toObject();
+      const QString body = messageBody(msgObj);
+      if (!body.isEmpty() && isColorAdvertisement(body)) {
+        const QString sender = imColorAdPeer(payload, msgObj);
+        if (!sender.isEmpty()) {
+          storePeerColor(sender, extractColor(body));
+        }
+        continue;
+      }
+
+      const InstantMessage im = parseMessage(msgObj);
       if (im.body.isEmpty()) {
         continue;
       }
       chatPeer = im.peer;
-      if (isColorAdvertisement(im.body)) {
-        const QString color = extractColor(im.body);
-        if (!color.isEmpty()) {
-          m_peerColors[im.peer] = color;
-          qCInfo(lcChat) << "Color advertisement received from" << im.peer << "(history):" << color;
-          emit peerColorReceived(im.peer, color);
-        }
-        continue;
-      }
       // History is applied to the store only; UI reloads via historyLoaded.
       storeMessage(im, /*replaceOptimisticOutgoing=*/true);
     }
@@ -373,12 +446,7 @@ void ChatManager::addDemoMessage(const QString &peer, const QString &text, bool 
 
 void ChatManager::setDemoPeerColor(const QString &peer, const QString &color)
 {
-  if (color.isEmpty()) {
-    return;
-  }
-  const QString normalized = normalizePeer(peer);
-  m_peerColors[normalized] = color;
-  emit peerColorReceived(normalized, color);
+  storePeerColor(peer, color);
 }
 
 bool ChatManager::hasUnread(const QString &peer) const
@@ -441,9 +509,10 @@ bool ChatManager::isColorAdvertisement(const QString &body)
 
 QString ChatManager::extractColor(const QString &body)
 {
-  const QString trimmed = body.trimmed();
-  if (trimmed.length() == 10 && trimmed.startsWith(QStringLiteral("**#")) && trimmed.endsWith(QStringLiteral("**"))) {
-    return trimmed.mid(2, 7);
+  static const QRegularExpression re(QStringLiteral("^\\*\\*(#[0-9a-fA-F]{6})\\*\\*$"));
+  const QRegularExpressionMatch match = re.match(body.trimmed());
+  if (match.hasMatch()) {
+    return match.captured(1);
   }
   return {};
 }
@@ -487,7 +556,22 @@ void ChatManager::sendColorAdvertisement(const QString &color)
 
 QString ChatManager::peerColor(const QString &peer) const
 {
-  return m_peerColors.value(normalizePeer(peer));
+  const QString key = canonicalPeer(peer);
+  if (m_peerColors.contains(key)) {
+    return m_peerColors.value(key);
+  }
+
+  const QString login = key.section(QLatin1Char('@'), 0, 0);
+  if (m_peerColors.contains(login)) {
+    return m_peerColors.value(login);
+  }
+
+  for (auto it = m_peerColors.cbegin(); it != m_peerColors.cend(); ++it) {
+    if (it.key().section(QLatin1Char('@'), 0, 0).compare(login, Qt::CaseInsensitive) == 0) {
+      return it.value();
+    }
+  }
+  return {};
 }
 
 } // namespace itl

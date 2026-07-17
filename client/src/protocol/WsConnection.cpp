@@ -265,21 +265,27 @@ void WsConnection::receivePayload(const QJsonObject &message)
     int curSeq = message.value(QStringLiteral("seq")).toInt();
     const QJsonArray payloads = message.value(QStringLiteral("payloads")).toArray();
     for (const auto &value : payloads) {
-      if (curSeq > m_ack) {
-        m_ack = curSeq++;
-        if (processPayload(value.toObject())) {
-          deferred.append(value.toObject());
+      const QJsonObject payload = value.toObject();
+      if (!payload.isEmpty()) {
+        if (processPayload(payload)) {
+          deferred.append(payload);
         }
       }
+      if (curSeq > m_ack) {
+        m_ack = curSeq;
+      }
+      ++curSeq;
     }
   } else {
     const int seq = message.value(QStringLiteral("seq")).toInt();
-    if (seq > m_ack) {
-      m_ack = seq;
-      const QJsonObject payload = message.value(QStringLiteral("payload")).toObject();
-      if (!payload.isEmpty() && processPayload(payload)) {
+    const QJsonObject payload = message.value(QStringLiteral("payload")).toObject();
+    if (!payload.isEmpty()) {
+      if (processPayload(payload)) {
         deferred.append(payload);
       }
+    }
+    if (seq > m_ack) {
+      m_ack = seq;
     }
   }
 

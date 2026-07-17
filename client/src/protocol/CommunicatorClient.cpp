@@ -287,6 +287,7 @@ void CommunicatorClient::onAuthResult(bool success, const QJsonObject &payload)
     saveSavedAccounts();
   }
   m_chat->setDomain(m_credentials.domain);
+  m_chat->setSelfLogin(m_credentials.login);
   m_addressBook->setDomain(m_credentials.domain);
   m_addressBook->clear();
 
@@ -300,6 +301,7 @@ void CommunicatorClient::onAuthResult(bool success, const QJsonObject &payload)
 
   m_api.bind();
   m_api.bindIm();
+  m_chat->loadHistory();
   m_api.subscribeToAddressBook();
   m_api.getDomainContacts();
   m_api.setOwnPresence(QStringLiteral("online"));

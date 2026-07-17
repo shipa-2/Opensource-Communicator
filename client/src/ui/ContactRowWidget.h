@@ -63,7 +63,7 @@ private:
     bool m_canDelete = false;
     QVector<CallNumber> m_numbers;
 
-    QLabel *m_avatar = nullptr;
+    QWidget *m_avatar = nullptr;
     QLabel *m_statusDot = nullptr;
     QLabel *m_nameLabel = nullptr;
     QLabel *m_numberLabel = nullptr;
