@@ -9,6 +9,7 @@
 
 namespace itl {
 
+class UserDataStore;
 class WsApiClient;
 
 struct InstantMessage {
@@ -29,6 +30,8 @@ public:
 
     void setDomain(const QString &domain);
     void setSelfLogin(const QString &login);
+    void setUserDataStore(UserDataStore *store);
+    void loadStoredPeerColors();
 
     void handlePayload(const QJsonObject &payload);
     void handleResponse(int requestId, const QJsonObject &response);
@@ -75,6 +78,7 @@ private:
     void handleSmsTelnumsResponse(const QJsonObject &response);
 
     WsApiClient *m_api = nullptr;
+    UserDataStore *m_userData = nullptr;
     QString m_domain;
     QString m_selfLogin;
     QString m_smsFromNumber;

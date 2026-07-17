@@ -1,6 +1,7 @@
 #include "ChatManager.h"
 
 #include "protocol/WsApiClient.h"
+#include "settings/UserDataStore.h"
 
 #include <QJsonArray>
 #include <QLoggingCategory>
@@ -34,6 +35,26 @@ void ChatManager::setDomain(const QString &domain)
 void ChatManager::setSelfLogin(const QString &login)
 {
   m_selfLogin = login.section(QLatin1Char('@'), 0, 0).trimmed().toLower();
+}
+
+void ChatManager::setUserDataStore(UserDataStore *store)
+{
+  m_userData = store;
+}
+
+void ChatManager::loadStoredPeerColors()
+{
+  if (!m_userData) {
+    return;
+  }
+
+  for (auto it = m_userData->peerColors().cbegin(); it != m_userData->peerColors().cend(); ++it) {
+    m_peerColors.insert(it.key(), it.value());
+    const QString login = it.key().section(QLatin1Char('@'), 0, 0);
+    if (!login.isEmpty()) {
+      m_peerColors.insert(login, it.value());
+    }
+  }
 }
 
 QString ChatManager::canonicalPeer(QString peer) const
@@ -89,6 +110,9 @@ void ChatManager::storePeerColor(const QString &peer, const QString &color)
   const QString login = key.section(QLatin1Char('@'), 0, 0);
   if (!login.isEmpty()) {
     m_peerColors[login] = color;
+  }
+  if (m_userData && !m_demoMode) {
+    m_userData->setPeerColorForPeer(key, color);
   }
   qCInfo(lcChat) << "Color advertisement received from" << key << ":" << color;
   emit peerColorReceived(key, color);

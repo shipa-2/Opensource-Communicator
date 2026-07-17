@@ -42,6 +42,8 @@ CommunicatorClient::CommunicatorClient(QObject *parent)
       emit chatMessage(im.peer, im.body, im.incoming, im.timestamp);
     }
   });
+
+  m_chat->setUserDataStore(&m_appSettings.userData());
 }
 
 CommunicatorClient::~CommunicatorClient() = default;
@@ -116,6 +118,7 @@ void CommunicatorClient::loadSettings()
   loadSavedAccounts();
   m_appSettings.load(m_settings);
   m_appSettings.loadUserData(m_settings);
+  m_chat->loadStoredPeerColors();
 }
 
 void CommunicatorClient::saveSettings()

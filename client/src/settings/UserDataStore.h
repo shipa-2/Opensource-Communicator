@@ -39,6 +39,10 @@ public:
     QString noteForPeer(const QString &peer) const;
     void setNoteForPeer(const QString &peer, const QString &note);
 
+    QString peerColorForPeer(const QString &peer) const;
+    void setPeerColorForPeer(const QString &peer, const QString &color);
+    QHash<QString, QString> peerColors() const;
+
     qint64 recentCallTime(const QString &peer) const;
     void recordRecentCall(const QString &peer);
 
@@ -52,6 +56,7 @@ private:
 
     mutable bool m_loaded = false;
     QHash<QString, QString> m_notes;
+    QHash<QString, QString> m_peerColors;
     QHash<QString, qint64> m_recentCalls;
     QList<CallHistoryEntry> m_callHistory;
 };

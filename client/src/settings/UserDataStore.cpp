@@ -8,11 +8,28 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QDateTime>
+#include <QRegularExpression>
 
 namespace {
 constexpr int kMaxHistoryEntries = 500;
 constexpr auto kLegacyNotes = "contacts/notes";
 constexpr auto kLegacyRecent = "contacts/recentCalls";
+
+QString normalizeStoredPeer(QString peer)
+{
+  peer = peer.trimmed();
+  const int at = peer.indexOf(QLatin1Char('@'));
+  if (at > 0) {
+    return peer.left(at).toLower() + peer.mid(at).toLower();
+  }
+  return peer.toLower();
+}
+
+bool isStoredPeerColor(const QString &color)
+{
+  static const QRegularExpression re(QStringLiteral("^#[0-9a-fA-F]{6}$"));
+  return re.match(color.trimmed()).hasMatch();
+}
 } // namespace
 
 namespace itl {
@@ -40,6 +57,7 @@ void UserDataStore::ensureLoaded() const
 void UserDataStore::load()
 {
   m_notes.clear();
+  m_peerColors.clear();
   m_recentCalls.clear();
   m_callHistory.clear();
 
@@ -55,6 +73,14 @@ void UserDataStore::load()
   const QJsonObject notes = root.value(QStringLiteral("notes")).toObject();
   for (auto it = notes.begin(); it != notes.end(); ++it) {
     m_notes.insert(it.key(), it.value().toString());
+  }
+
+  const QJsonObject peerColors = root.value(QStringLiteral("peerColors")).toObject();
+  for (auto it = peerColors.begin(); it != peerColors.end(); ++it) {
+    const QString color = it.value().toString();
+    if (isStoredPeerColor(color)) {
+      m_peerColors.insert(normalizeStoredPeer(it.key()), color);
+    }
   }
 
   const QJsonObject recent = root.value(QStringLiteral("recentCalls")).toObject();
@@ -93,6 +119,11 @@ void UserDataStore::save() const
     notes.insert(it.key(), it.value());
   }
 
+  QJsonObject peerColors;
+  for (auto it = m_peerColors.cbegin(); it != m_peerColors.cend(); ++it) {
+    peerColors.insert(it.key(), it.value());
+  }
+
   QJsonObject recent;
   for (auto it = m_recentCalls.cbegin(); it != m_recentCalls.cend(); ++it) {
     recent.insert(it.key(), it.value());
@@ -117,6 +148,7 @@ void UserDataStore::save() const
   const QJsonObject root{
       {QStringLiteral("version"), 1},
       {QStringLiteral("notes"), notes},
+      {QStringLiteral("peerColors"), peerColors},
       {QStringLiteral("recentCalls"), recent},
       {QStringLiteral("callHistory"), history},
   };
@@ -166,6 +198,44 @@ void UserDataStore::setNoteForPeer(const QString &peer, const QString &note)
     m_notes.insert(peer, trimmed);
   }
   save();
+}
+
+QString UserDataStore::peerColorForPeer(const QString &peer) const
+{
+  ensureLoaded();
+  const QString key = normalizeStoredPeer(peer);
+  if (m_peerColors.contains(key)) {
+    return m_peerColors.value(key);
+  }
+
+  const QString login = key.section(QLatin1Char('@'), 0, 0);
+  for (auto it = m_peerColors.cbegin(); it != m_peerColors.cend(); ++it) {
+    if (it.key().section(QLatin1Char('@'), 0, 0).compare(login, Qt::CaseInsensitive) == 0) {
+      return it.value();
+    }
+  }
+  return {};
+}
+
+void UserDataStore::setPeerColorForPeer(const QString &peer, const QString &color)
+{
+  ensureLoaded();
+  const QString key = normalizeStoredPeer(peer);
+  const QString trimmed = color.trimmed();
+  if (key.isEmpty() || !isStoredPeerColor(trimmed)) {
+    return;
+  }
+  if (m_peerColors.value(key) == trimmed) {
+    return;
+  }
+  m_peerColors.insert(key, trimmed);
+  save();
+}
+
+QHash<QString, QString> UserDataStore::peerColors() const
+{
+  ensureLoaded();
+  return m_peerColors;
 }
 
 qint64 UserDataStore::recentCallTime(const QString &peer) const
