@@ -19,7 +19,10 @@ namespace {
 QString presenceColor(const QString &presence)
 {
   const QString p = presence.toLower();
-  if (p == QStringLiteral("online") || p == QStringLiteral("in-call")) {
+  if (p == QStringLiteral("in-call")) {
+    return QStringLiteral("#2880d4");
+  }
+  if (p == QStringLiteral("online")) {
     return QStringLiteral("#5a9e2f");
   }
   if (p == QStringLiteral("away")) {

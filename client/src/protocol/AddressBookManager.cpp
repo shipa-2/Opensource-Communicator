@@ -89,6 +89,21 @@ QString AddressBookManager::normalizePhone(QString phone)
   return stripped;
 }
 
+QString AddressBookManager::formatCallAddress(QString peer)
+{
+  peer = peer.trimmed();
+  if (peer.isEmpty() || peer.contains(QLatin1Char('@'))) {
+    return peer;
+  }
+
+  const QString normalized = normalizePhone(peer);
+  // Megafon/ITooLabs StartCall expects national RU format 8XXXXXXXXXX, not E.164 +7...
+  if (normalized.startsWith(QStringLiteral("+7")) && normalized.size() == 12) {
+    return QLatin1Char('8') + normalized.mid(2);
+  }
+  return normalized;
+}
+
 QString AddressBookManager::peerFromAbObject(const QJsonObject &obj, const QString &domain)
 {
   QString phone;

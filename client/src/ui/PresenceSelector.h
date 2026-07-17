@@ -15,6 +15,7 @@ public:
     int currentIndex() const;
     QString currentStatus() const;
     void setCurrentStatus(const QString &status);
+    void setInCall(bool inCall);
     void refreshAppearance();
 
 signals:
@@ -27,4 +28,6 @@ private:
 
     QLabel *m_dot = nullptr;
     QComboBox *m_combo = nullptr;
+    bool m_inCall = false;
+    int m_savedIndex = -1;
 };

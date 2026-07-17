@@ -42,7 +42,7 @@ public:
     void updateCall(const QString &leg, const QString &localSdp);
     void blindTransfer(const QString &leg, const QString &peer);
 
-    void setOwnPresence(const QString &status);
+    void setOwnPresence(const QString &status, bool manual = true);
     void sendSms(const QString &from, const QString &to, const QString &text);
 
     void getDomainContacts();

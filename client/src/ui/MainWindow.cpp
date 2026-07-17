@@ -513,6 +513,9 @@ void MainWindow::setOnlineUi(bool online)
     m_presenceSelector->setCurrentStatus(QStringLiteral("online"));
     refreshServerHistory();
   } else {
+    m_callPresenceActive = false;
+    m_presenceBeforeCall.clear();
+    m_presenceSelector->setInCall(false);
     m_presenceSelector->setCurrentStatus(QStringLiteral("offline"));
     m_serverHistory.clear();
     m_companyHistory.clear();
@@ -755,6 +758,59 @@ void MainWindow::updateSelfHeader()
     m_headerAvatar->setLetter(login.left(1).toUpper());
   }
   m_headerAvatar->refreshFromSettings();
+}
+
+void MainWindow::enterCallPresence()
+{
+  if (m_callPresenceActive) {
+    return;
+  }
+
+  m_callPresenceActive = true;
+  if (m_presenceSelector && !m_demoMode) {
+    m_presenceBeforeCall = m_presenceSelector->currentStatus();
+  } else {
+    m_presenceBeforeCall = QStringLiteral("online");
+  }
+
+  if (m_presenceSelector) {
+    m_presenceSelector->setInCall(true);
+  }
+  if (!m_selfPeer.isEmpty()) {
+    m_contacts[m_selfPeer].presence = QStringLiteral("in-call");
+  }
+  if (m_online && !m_demoMode) {
+    m_client->api()->setOwnPresence(QStringLiteral("in-call"), false);
+  }
+}
+
+void MainWindow::leaveCallPresence()
+{
+  if (!m_callPresenceActive) {
+    return;
+  }
+  if (m_calls && m_calls->hasActiveCalls()) {
+    return;
+  }
+  if (m_demoMode && !m_demoCallLeg.isEmpty()) {
+    return;
+  }
+
+  m_callPresenceActive = false;
+  const QString restore =
+      m_presenceBeforeCall.isEmpty() ? QStringLiteral("online") : m_presenceBeforeCall;
+  m_presenceBeforeCall.clear();
+
+  if (m_presenceSelector) {
+    m_presenceSelector->setInCall(false);
+    m_presenceSelector->setCurrentStatus(restore);
+  }
+  if (!m_selfPeer.isEmpty()) {
+    m_contacts[m_selfPeer].presence = restore;
+  }
+  if (m_online && !m_demoMode) {
+    m_client->api()->setOwnPresence(restore, true);
+  }
 }
 
 void MainWindow::onFilterChanged(int id)
@@ -1825,6 +1881,7 @@ void MainWindow::stopDemoCallSimulation()
     m_callWindow->setRemoteSpeakingIndicator(false);
   }
   m_demoCallLeg.clear();
+  leaveCallPresence();
 }
 
 void MainWindow::startDemoVoiceSimulation()
@@ -1856,6 +1913,7 @@ void MainWindow::startDemoCallSimulation(const QString &peer, const QString &dis
   m_callWindow->setAvatarColor(m_client->chat()->peerColor(peer));
   m_calls->pauseExternalMedia();
   beginCallTracking(m_demoCallLeg, peer, displayName, false);
+  enterCallPresence();
 
   QTimer::singleShot(1200, this, [this, displayName]() {
     if (!m_demoMode || m_activeLeg != m_demoCallLeg) {
@@ -2583,7 +2641,7 @@ void MainWindow::onTransfer()
 
 void MainWindow::onPresenceChanged(int index)
 {
-  if (!m_online || index < 0 || m_demoMode) {
+  if (!m_online || index < 0 || m_demoMode || m_callPresenceActive) {
     return;
   }
   m_client->api()->setOwnPresence(m_presenceSelector->currentStatus());
@@ -2734,6 +2792,7 @@ void MainWindow::onCallEvent(const QString &leg, const QString &what, const QJso
 void MainWindow::onCallStateChanged(const QString &leg, const QString &state, const QString &detail)
 {
   if (state == QStringLiteral("incoming")) {
+    enterCallPresence();
     m_activeIncomingLeg = leg;
     QString incomingPeer;
     if (itl::CallSession *session = m_calls->call(leg)) {
@@ -2747,6 +2806,7 @@ void MainWindow::onCallStateChanged(const QString &leg, const QString &state, co
   }
   if (state == QStringLiteral("connecting") || state == QStringLiteral("dialing")
       || state == QStringLiteral("ringing")) {
+    enterCallPresence();
     if (state != QStringLiteral("connecting") && state != QStringLiteral("dialing")) {
       m_activeLeg = leg;
     }
@@ -2783,6 +2843,7 @@ void MainWindow::onCallStateChanged(const QString &leg, const QString &state, co
       stopDemoCallSimulation();
     } else {
       resumeExternalMediaIfIdle();
+      leaveCallPresence();
     }
     m_callWindow->closeCall();
     return;
@@ -2799,6 +2860,7 @@ void MainWindow::onCallStateChanged(const QString &leg, const QString &state, co
       stopDemoCallSimulation();
     } else {
       resumeExternalMediaIfIdle();
+      leaveCallPresence();
     }
     m_callWindow->updateState(state, detail);
   }

@@ -35,7 +35,7 @@ PresenceSelector::PresenceSelector(QWidget *parent)
 void PresenceSelector::setEnabled(bool enabled)
 {
   QWidget::setEnabled(enabled);
-  m_combo->setEnabled(enabled);
+  m_combo->setEnabled(enabled && !m_inCall);
 }
 
 int PresenceSelector::currentIndex() const
@@ -50,9 +50,43 @@ QString PresenceSelector::currentStatus() const
 
 void PresenceSelector::setCurrentStatus(const QString &status)
 {
+  if (m_inCall) {
+    return;
+  }
   const int index = m_combo->findData(status.toLower());
   if (index >= 0) {
     m_combo->setCurrentIndex(index);
+  }
+  refreshDot();
+}
+
+void PresenceSelector::setInCall(bool inCall)
+{
+  if (inCall == m_inCall) {
+    return;
+  }
+
+  m_inCall = inCall;
+  if (inCall) {
+    m_savedIndex = m_combo->currentIndex();
+    if (m_combo->findData(QStringLiteral("in-call")) < 0) {
+      m_combo->insertItem(0, labelForStatus(QStringLiteral("in-call")), QStringLiteral("in-call"));
+    }
+    const int index = m_combo->findData(QStringLiteral("in-call"));
+    if (index >= 0) {
+      m_combo->setCurrentIndex(index);
+    }
+    m_combo->setEnabled(false);
+  } else {
+    const int index = m_combo->findData(QStringLiteral("in-call"));
+    if (index >= 0) {
+      m_combo->removeItem(index);
+    }
+    if (m_savedIndex >= 0 && m_savedIndex < m_combo->count()) {
+      m_combo->setCurrentIndex(m_savedIndex);
+    }
+    m_savedIndex = -1;
+    m_combo->setEnabled(QWidget::isEnabled());
   }
   refreshDot();
 }
@@ -73,7 +107,10 @@ void PresenceSelector::refreshDot()
 QString PresenceSelector::colorForStatus(const QString &status)
 {
   const QString value = status.toLower();
-  if (value == QStringLiteral("online") || value == QStringLiteral("in-call")) {
+  if (value == QStringLiteral("in-call")) {
+    return QStringLiteral("#2880d4");
+  }
+  if (value == QStringLiteral("online")) {
     return QStringLiteral("#5a9e2f");
   }
   if (value == QStringLiteral("away")) {
@@ -87,6 +124,9 @@ QString PresenceSelector::colorForStatus(const QString &status)
 
 QString PresenceSelector::labelForStatus(const QString &status)
 {
+  if (status == QStringLiteral("in-call")) {
+    return QObject::tr("Говорит по телефону");
+  }
   if (status == QStringLiteral("online")) {
     return QObject::tr("На месте");
   }

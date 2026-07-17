@@ -30,6 +30,7 @@ public:
     void clear();
 
     static QString normalizePhone(QString phone);
+    static QString formatCallAddress(QString peer);
 
 signals:
     void contactsChanged();

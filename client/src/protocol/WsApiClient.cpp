@@ -1,5 +1,7 @@
 #include "WsApiClient.h"
 
+#include "AddressBookManager.h"
+
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QLoggingCategory>
@@ -234,7 +236,9 @@ void WsApiClient::startCall(const QString &leg, const QString &peer, const QStri
     return;
   }
 
-  QJsonObject addr{{QString::fromUtf8(kEmptyKey), peer}, {QStringLiteral("wsapi"), QStringLiteral("communicator")}};
+  QJsonObject addr{
+      {QString::fromUtf8(kEmptyKey), AddressBookManager::formatCallAddress(peer)},
+      {QStringLiteral("wsapi"), QStringLiteral("communicator")}};
   if (!callerId.isEmpty()) {
     addr.insert(QStringLiteral("P-Preferred-Identity"), callerId);
   }
@@ -335,18 +339,19 @@ void WsApiClient::blindTransfer(const QString &leg, const QString &peer)
   m_connection->sendRequest(QJsonObject{
       {QString::fromUtf8(kEmptyKey), QStringLiteral("Transfer")},
       {QStringLiteral("leg"), leg},
-      {QStringLiteral("address"), peer},
+      {QStringLiteral("address"), AddressBookManager::formatCallAddress(peer)},
   });
 }
 
-void WsApiClient::setOwnPresence(const QString &status)
+void WsApiClient::setOwnPresence(const QString &status, bool manual)
 {
   if (!ensureOnline()) {
     return;
   }
   m_connection->sendRequest(QJsonObject{
       {QString::fromUtf8(kEmptyKey), QStringLiteral("SetPresence")},
-      {QStringLiteral("presence"), QJsonObject{{QStringLiteral("status"), status.toLower()}, {QStringLiteral("manual"), true}}},
+      {QStringLiteral("presence"),
+       QJsonObject{{QStringLiteral("status"), status.toLower()}, {QStringLiteral("manual"), manual}}},
   });
 }
 

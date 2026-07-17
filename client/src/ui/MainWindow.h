@@ -167,6 +167,8 @@ private:
     void markCallConnected(const QString &leg);
     void finalizeCallHistory(const QString &leg, const QString &state, const QString &transferTo = {});
     void resumeExternalMediaIfIdle();
+    void enterCallPresence();
+    void leaveCallPresence();
     static QString formatHistoryDuration(int seconds);
     static QString formatHistoryTime(qint64 ms);
     static QString formatHistoryWhen(qint64 ms);
@@ -211,6 +213,8 @@ private:
     QString m_selfName;
     QString m_activeIncomingLeg;
     QString m_activeLeg;
+    QString m_presenceBeforeCall;
+    bool m_callPresenceActive = false;
     bool m_onHold = false;
     bool m_online = false;
     bool m_demoMode = false;
