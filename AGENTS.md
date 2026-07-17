@@ -239,14 +239,16 @@ opensource-communicator/
 
 ## Цвет аватарки (color advertisement)
 
-**Протокол:** исходящее IM на `__broadcast__` с телом `**#RRGGBB**` (regex в `ChatManager::isColorAdvertisement`).
+**Протокол:** исходящее IM с телом `**#RRGGBB**` (regex в `ChatManager::isColorAdvertisement`) **каждому** контакту того же домена, что и логин (`login@domain`). Не `__broadcast__` (сервер его не знает).
 
 | Когда отправляется | Где |
 |--------------------|-----|
-| После загрузки контактов | `MainWindow::onContactsLoaded` |
+| После загрузки контактов | `MainWindow::onContactsLoaded` → `refreshColorAdvertisementPeers` → send |
 | Смена цвета в шапке | `MainWindow::onProfileAvatarChanged` |
-| После OK в настройках | `MainWindow::onSettings` |
-| Вход в дemo | `enterDemoInterface` (без сети — только log) |
+| После OK / «Рассылка цвета» в настройках | `MainWindow::onSettings` / `SettingsDialog` |
+| Вход в demo | `enterDemoInterface` (без сети — только log) |
+
+Список пиров: `MainWindow::refreshColorAdvertisementPeers` — все `m_contacts` с `@domain` логина, кроме self и телефонов. `ChatManager::setColorAdvertisementPeers` + `sendIm(peer, …, persist=false, copyToSelf=false)`.
 
 **Приём:** push/history IM → `m_peerColors[peer]` → `peerColorReceived` → `ContactRowWidget::setPeerColor`, `CallWindow::setAvatarColor`.
 
@@ -312,7 +314,7 @@ opensource-communicator/
 | Период | «Показать за:» + меню |
 | Направление | «Все», «Входящие», **«Без ответа»**, «Исходящие» |
 
-Клик по строке → `NotePopupDialog` **без** кнопки «Позвонить». Парсинг сервера: `CallHistoryParser.cpp`.
+Двойной щелчок / «Заметка» в ПКМ → `NotePopupDialog` с кнопками «Позвонить» и «Закрыть» (как у контактов). Парсинг сервера: `CallHistoryParser.cpp`.
 
 **Self-test:** `OSC_SELFTEST=1` — автologin demo + `runHistorySelfTest()` (4 mine, 4 company, 1 internal в demo).
 
