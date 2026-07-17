@@ -88,6 +88,8 @@ add_executable(opensource-communicator
     src/ui/AppInstance.h
     src/ui/ContactRowWidget.cpp
     src/ui/ContactRowWidget.h
+    src/ui/HistoryRowWidget.cpp
+    src/ui/HistoryRowWidget.h
     src/ui/CallWindow.cpp
     src/ui/CallWindow.h
     src/ui/ChatDialog.cpp

@@ -82,6 +82,7 @@ private slots:
     void onPresenceChanged(int index);
     void onSearchChanged(const QString &text);
     void onContactSelected();
+    void onHistorySelected();
     void onStatusMessage(const QString &message);
     void onContactUpdated(const QString &peer, const QString &name, const QString &presence);
     void onCallEvent(const QString &leg, const QString &what, const QJsonObject &payload);

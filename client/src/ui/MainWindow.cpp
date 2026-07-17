@@ -5,6 +5,7 @@
 #include "DialKeypadWidget.h"
 #include "TransferDialog.h"
 #include "ContactRowWidget.h"
+#include "HistoryRowWidget.h"
 #include "HelpDialog.h"
 #include "LoginDialog.h"
 #include "NotePopupDialog.h"
@@ -292,6 +293,8 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   m_historyList = new QListWidget;
   m_historyList->setObjectName(QStringLiteral("historyList"));
   m_historyList->setFrameShape(QFrame::NoFrame);
+  m_historyList->setMouseTracking(true);
+  m_historyList->viewport()->setMouseTracking(true);
   applyHistoryListPalette(m_historyList, palette());
   historyLayout->addWidget(m_historyList, 1);
 
@@ -372,7 +375,14 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   connect(m_historyScopeGroup, &QButtonGroup::idClicked, this, &MainWindow::onHistoryScopeChanged);
   connect(m_historyPeriodBtn, &QPushButton::clicked, this, &MainWindow::onHistoryPeriodClicked);
   connect(m_historySearchEdit, &QLineEdit::textChanged, this, &MainWindow::onHistorySearchChanged);
-  connect(m_historyList, &QListWidget::itemClicked, this, &MainWindow::onHistoryItemActivated);
+  connect(m_historyList, &QListWidget::itemEntered, this, [this](QListWidgetItem *item) {
+    if (item && (item->flags() & Qt::ItemIsEnabled)) {
+      m_historyList->setCurrentItem(item);
+    }
+  });
+  connect(m_historyList, &QListWidget::currentItemChanged, this, [this](QListWidgetItem *, QListWidgetItem *) {
+    onHistorySelected();
+  });
   connect(m_headerAvatar, &ProfileAvatarWidget::settingsChanged, this, &MainWindow::onProfileAvatarChanged);
 
   connect(m_callWindow, &CallWindow::hangupRequested, this, &MainWindow::onHangup);
@@ -454,6 +464,13 @@ void MainWindow::refreshTheme()
 {
   if (m_historyList) {
     applyHistoryListPalette(m_historyList, palette());
+    for (int i = 0; i < m_historyList->count(); ++i) {
+      auto *item = m_historyList->item(i);
+      if (auto *row = qobject_cast<HistoryRowWidget *>(m_historyList->itemWidget(item))) {
+        row->refreshAppearance();
+        row->setSelected(item == m_historyList->currentItem());
+      }
+    }
     m_historyList->update();
     if (QWidget *viewport = m_historyList->viewport()) {
       viewport->update();
@@ -1417,28 +1434,10 @@ void MainWindow::rebuildHistoryList()
 
     const QString name = entry.displayName.isEmpty() ? entry.peer : entry.displayName;
 
-    auto *rowWidget = new QWidget;
-    auto *rowLayout = new QHBoxLayout(rowWidget);
-    rowLayout->setContentsMargins(6, 4, 6, 4);
-    rowLayout->setSpacing(8);
-
-    auto *arrowLabel = new QLabel(arrow);
-    arrowLabel->setStyleSheet(QStringLiteral("color:%1; font-size:16px; font-weight:bold;").arg(arrowColor));
-    arrowLabel->setFixedWidth(18);
-    arrowLabel->setAlignment(Qt::AlignTop | Qt::AlignHCenter);
-    rowLayout->addWidget(arrowLabel);
-
-    auto *textCol = new QVBoxLayout;
-    textCol->setSpacing(1);
     QString firstLine = name;
     if (waitSec > 0) {
       firstLine += tr("; ждал: %1 сек.").arg(waitSec);
     }
-    auto *nameLabel = new QLabel(firstLine);
-    QFont nameFont = nameLabel->font();
-    nameFont.setBold(missed);
-    nameLabel->setFont(nameFont);
-    textCol->addWidget(nameLabel);
 
     QString secondLine;
     if (m_historyScope == HistoryScope::Company && !entry.employeeInfo.isEmpty()) {
@@ -1451,25 +1450,24 @@ void MainWindow::rebuildHistoryList()
     if (!status.isEmpty()) {
       secondLine += QStringLiteral("; ") + status;
     }
-    auto *detailLabel = new QLabel(secondLine);
-    QFont detailFont = detailLabel->font();
-    detailFont.setPixelSize(11);
-    detailLabel->setFont(detailFont);
-    QPalette detailPalette = detailLabel->palette();
-    detailPalette.setColor(QPalette::WindowText, palette().color(QPalette::Link));
-    detailLabel->setPalette(detailPalette);
-    textCol->addWidget(detailLabel);
-    rowLayout->addLayout(textCol, 1);
 
-    auto *dateLabel = new QLabel(formatHistoryWhen(entry.startedAtMs));
-    dateLabel->setAlignment(Qt::AlignTop | Qt::AlignRight);
-    QFont dateFont = dateLabel->font();
-    dateFont.setPixelSize(11);
-    dateLabel->setFont(dateFont);
-    rowLayout->addWidget(dateLabel);
+    auto *rowWidget = new HistoryRowWidget(entry.peer, name, firstLine, secondLine,
+                                           formatHistoryWhen(entry.startedAtMs), arrow, arrowColor, missed);
+    connect(rowWidget, &HistoryRowWidget::callRequested, this, &MainWindow::onCallFromRow);
+    connect(rowWidget, &HistoryRowWidget::chatRequested, this, &MainWindow::onChatFromRow);
+    connect(rowWidget, &HistoryRowWidget::notesRequested, this, [this](const QString &peer) {
+      for (int i = 0; i < m_historyList->count(); ++i) {
+        auto *listItem = m_historyList->item(i);
+        if (listItem && listItem->data(Qt::UserRole).toString() == peer) {
+          onHistoryItemActivated(listItem);
+          return;
+        }
+      }
+    });
 
     auto *item = new QListWidgetItem;
     item->setData(Qt::UserRole, entry.peer);
+    item->setData(Qt::UserRole + 1, name);
     item->setSizeHint(QSize(0, 46));
     m_historyList->addItem(item);
     m_historyList->setItemWidget(item, rowWidget);
@@ -1678,8 +1676,19 @@ void MainWindow::onHistoryItemActivated(QListWidgetItem *item)
   }
 
   NotePopupDialog dlg(peer, displayName, &m_client->appSettings(), this);
-  dlg.setShowCallAction(false);
-  dlg.exec();
+  dlg.setShowCallAction(true);
+  const bool duringCall = !m_activeLeg.isEmpty();
+  const bool activeCallPeer = duringCall && isSamePeer(peer, m_callWindow->peer());
+  dlg.setDuringCall(activeCallPeer);
+  const int result = dlg.exec();
+  if (result == NotePopupDialog::CallResult) {
+    onCallFromRow(peer);
+    return;
+  }
+  if (activeCallPeer) {
+    loadCallNotes(peer);
+    m_callWindow->setNotesVisible(true);
+  }
 }
 
 void MainWindow::onDeleteContactFromRow(const QString &peer)
@@ -2664,6 +2673,16 @@ void MainWindow::onContactSelected()
     auto *item = m_contactsList->item(i);
     if (auto *row = qobject_cast<ContactRowWidget *>(m_contactsList->itemWidget(item))) {
       row->setSelected(item == m_contactsList->currentItem());
+    }
+  }
+}
+
+void MainWindow::onHistorySelected()
+{
+  for (int i = 0; i < m_historyList->count(); ++i) {
+    auto *item = m_historyList->item(i);
+    if (auto *row = qobject_cast<HistoryRowWidget *>(m_historyList->itemWidget(item))) {
+      row->setSelected(item == m_historyList->currentItem());
     }
   }
 }
