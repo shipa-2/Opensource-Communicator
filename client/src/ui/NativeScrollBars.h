@@ -4,11 +4,13 @@
 
 class QScrollBar;
 class QWidget;
+class QAbstractScrollArea;
 class QEvent;
 
 namespace itl {
 
 void applyNativeScrollBarStyle(QScrollBar *scrollBar);
+void applyNativeScrollBars(QAbstractScrollArea *area);
 void applyNativeScrollBars(QWidget *root);
 
 class NativeScrollBarHelper : public QObject {

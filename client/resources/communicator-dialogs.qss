@@ -157,6 +157,16 @@ QDialog#callWindow {
     background: palette(window);
 }
 
+QDialog#chatDialog {
+    background: palette(window);
+}
+
+QDialog#chatDialog QFrame#chatViewFrame {
+    background: palette(base);
+    border: 1px solid palette(mid);
+    border-radius: 4px;
+}
+
 QWidget#callToolbar {
     background: palette(alternateBase);
     border-top: 1px solid palette(mid);

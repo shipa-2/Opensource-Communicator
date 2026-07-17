@@ -3,8 +3,10 @@
 #include <QDateTime>
 #include <QDialog>
 
+class QFrame;
 class QLineEdit;
 class QPlainTextEdit;
+class QShowEvent;
 
 namespace itl {
 class CommunicatorClient;
@@ -22,6 +24,9 @@ public:
 
     void refreshAppearance();
 
+protected:
+    void showEvent(QShowEvent *event) override;
+
 private slots:
     void onSend();
     void onChatMessage(const QString &peer, const QString &text, bool incoming, const QDateTime &timestamp);
@@ -31,6 +36,7 @@ private:
     void reloadMessages();
     void appendMessage(const itl::InstantMessage &im);
     void appendMessage(const QString &text, bool incoming, const QDateTime &timestamp);
+    void refreshViewChrome();
     static QString shortDisplayName(const QString &fullName, const QString &fallback);
     static QString formatTimestamp(const QDateTime &timestamp);
 
@@ -39,6 +45,7 @@ private:
     QString m_peerDisplayName;
     QString m_selfDisplayName;
 
+    QFrame *m_viewFrame = nullptr;
     QPlainTextEdit *m_view = nullptr;
     QLineEdit *m_input = nullptr;
 };

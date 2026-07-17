@@ -100,6 +100,18 @@ QString ChatManager::messageBody(const QJsonObject &msg)
   return bodyValue.toString();
 }
 
+bool ChatManager::isEphemeralColorAdvertisement(const QJsonObject &msg, const QString &body)
+{
+  if (!isColorAdvertisement(body)) {
+    return false;
+  }
+
+  // Color broadcasts use persist=false and arrive without a normal chat message id.
+  // A persisted chat line like "**#123456**" must stay plain text, not override avatar color.
+  const QString id = msg.value(QStringLiteral("id")).toString().trimmed();
+  return id.isEmpty() || id == QStringLiteral("0");
+}
+
 void ChatManager::storePeerColor(const QString &peer, const QString &color)
 {
   if (peer.isEmpty() || color.isEmpty()) {
@@ -304,7 +316,7 @@ void ChatManager::handlePayload(const QJsonObject &payload)
     }
 
     const QString body = messageBody(raw);
-    if (!body.isEmpty() && isColorAdvertisement(body)) {
+    if (!body.isEmpty() && isEphemeralColorAdvertisement(raw, body)) {
       const QString sender = imColorAdPeer(payload, raw);
       if (!sender.isEmpty()) {
         storePeerColor(sender, extractColor(body));
@@ -340,15 +352,6 @@ void ChatManager::handlePayload(const QJsonObject &payload)
     QString chatPeer = normalizePeer(payload.value(QStringLiteral("chatId")).toString());
     for (const auto &value : messages) {
       const QJsonObject msgObj = value.toObject();
-      const QString body = messageBody(msgObj);
-      if (!body.isEmpty() && isColorAdvertisement(body)) {
-        const QString sender = imColorAdPeer(payload, msgObj);
-        if (!sender.isEmpty()) {
-          storePeerColor(sender, extractColor(body));
-        }
-        continue;
-      }
-
       const InstantMessage im = parseMessage(msgObj);
       if (im.body.isEmpty()) {
         continue;

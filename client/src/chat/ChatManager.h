@@ -69,6 +69,7 @@ private:
     QString canonicalPeer(QString peer) const;
     QString imColorAdPeer(const QJsonObject &payload, const QJsonObject &msg) const;
     static QString messageBody(const QJsonObject &msg);
+    static bool isEphemeralColorAdvertisement(const QJsonObject &msg, const QString &body);
     void storePeerColor(const QString &peer, const QString &color);
     bool storeMessage(const InstantMessage &im, bool replaceOptimisticOutgoing);
     static bool looksLikePhone(QString value);

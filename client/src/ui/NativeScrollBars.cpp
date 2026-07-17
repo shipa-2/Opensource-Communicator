@@ -6,7 +6,6 @@
 #include <QEvent>
 #include <QPointer>
 #include <QScrollBar>
-#include <QShowEvent>
 #include <QTimer>
 #include <QWidget>
 
@@ -20,8 +19,18 @@ void applyNativeScrollBarStyle(QScrollBar *scrollBar)
 
   scrollBar->setAttribute(Qt::WA_StyleSheetTarget, false);
   scrollBar->setStyleSheet({});
+  // Follow the current application style (Breeze under KDE); do not pin a pointer.
   scrollBar->setStyle(nullptr);
   scrollBar->update();
+}
+
+void applyNativeScrollBars(QAbstractScrollArea *area)
+{
+  if (!area) {
+    return;
+  }
+  applyNativeScrollBarStyle(area->verticalScrollBar());
+  applyNativeScrollBarStyle(area->horizontalScrollBar());
 }
 
 void applyNativeScrollBars(QWidget *root)

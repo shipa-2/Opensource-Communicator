@@ -89,6 +89,9 @@ void refreshDialogStyle(QWidget *widget)
 
   polish(widget);
   for (QPlainTextEdit *edit : widget->findChildren<QPlainTextEdit *>()) {
+    if (!edit->testAttribute(Qt::WA_StyleSheetTarget)) {
+      continue;
+    }
     polish(edit);
     if (QWidget *viewport = edit->viewport()) {
       polish(viewport);

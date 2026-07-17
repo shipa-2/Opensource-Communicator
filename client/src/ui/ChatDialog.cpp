@@ -2,28 +2,67 @@
 
 #include "chat/ChatManager.h"
 #include "protocol/CommunicatorClient.h"
+#include "ui/NativeScrollBars.h"
 #include "ui/StyleHelper.h"
 
+#include <QApplication>
 #include <QDate>
+#include <QFrame>
 #include <QLocale>
 #include <QHBoxLayout>
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScrollBar>
+#include <QShowEvent>
 #include <QVBoxLayout>
+
+namespace {
+
+QString chatInputStyleSheet()
+{
+  return QStringLiteral(
+      "QLineEdit {"
+      "  color: palette(text);"
+      "  background: palette(base);"
+      "  border: 1px solid palette(mid);"
+      "  border-radius: 4px;"
+      "  padding: 4px 8px;"
+      "  selection-color: palette(highlightedText);"
+      "  selection-background-color: palette(highlight);"
+      "}"
+      "QLineEdit:focus {"
+      "  border: 2px solid palette(highlight);"
+      "  padding: 3px 7px;"
+      "}");
+}
+
+} // namespace
 
 ChatDialog::ChatDialog(itl::CommunicatorClient *client, QWidget *parent)
     : QDialog(parent)
     , m_client(client)
 {
   setWindowTitle(tr("Сообщение"));
+  setObjectName(QStringLiteral("chatDialog"));
   resize(420, 360);
 
   auto *root = new QVBoxLayout(this);
+  m_viewFrame = new QFrame;
+  m_viewFrame->setObjectName(QStringLiteral("chatViewFrame"));
+  m_viewFrame->setFrameShape(QFrame::StyledPanel);
+  m_viewFrame->setFrameShadow(QFrame::Sunken);
+  m_viewFrame->setAttribute(Qt::WA_StyleSheetTarget, false);
+  auto *viewLayout = new QVBoxLayout(m_viewFrame);
+  viewLayout->setContentsMargins(4, 4, 4, 4);
+
   m_view = new QPlainTextEdit;
+  m_view->setObjectName(QStringLiteral("chatMessageView"));
   m_view->setReadOnly(true);
-  root->addWidget(m_view, 1);
+  m_view->setFrameShape(QFrame::NoFrame);
+  m_view->setAttribute(Qt::WA_StyleSheetTarget, false);
+  viewLayout->addWidget(m_view);
+  root->addWidget(m_viewFrame, 1);
 
   auto *row = new QHBoxLayout;
   m_input = new QLineEdit;
@@ -38,12 +77,54 @@ ChatDialog::ChatDialog(itl::CommunicatorClient *client, QWidget *parent)
   connect(m_client, &itl::CommunicatorClient::chatMessage, this, &ChatDialog::onChatMessage);
   connect(m_client->chat(), &itl::ChatManager::historyLoaded, this, &ChatDialog::onHistoryLoaded);
 
-  itl::applyDialogStyle(this);
+  refreshAppearance();
+}
+
+void ChatDialog::showEvent(QShowEvent *event)
+{
+  QDialog::showEvent(event);
+  refreshAppearance();
+}
+
+void ChatDialog::refreshViewChrome()
+{
+  if (!m_view) {
+    return;
+  }
+
+  m_view->setAttribute(Qt::WA_StyleSheetTarget, false);
+  m_view->setStyleSheet({});
+  m_view->setPalette(QApplication::palette(m_view));
+  if (QWidget *viewport = m_view->viewport()) {
+    viewport->setAttribute(Qt::WA_StyleSheetTarget, false);
+    viewport->setStyleSheet({});
+    viewport->setAutoFillBackground(true);
+    viewport->setPalette(QApplication::palette(viewport));
+    viewport->update();
+  }
+  m_view->update();
 }
 
 void ChatDialog::refreshAppearance()
 {
-  itl::refreshDialogStyle(this);
+  setAutoFillBackground(true);
+  setPalette(QApplication::palette(this));
+
+  if (m_viewFrame) {
+    m_viewFrame->setAttribute(Qt::WA_StyleSheetTarget, false);
+    m_viewFrame->setStyleSheet({});
+    m_viewFrame->setPalette(QApplication::palette(m_viewFrame));
+    m_viewFrame->update();
+  }
+
+  refreshViewChrome();
+
+  if (m_input) {
+    m_input->setStyleSheet(chatInputStyleSheet());
+  }
+
+  itl::applyNativeButtons(this);
+  itl::applyNativeScrollBars(m_view);
 }
 
 void ChatDialog::openForPeer(const QString &peer, const QString &peerDisplayName, const QString &selfDisplayName)
@@ -61,6 +142,7 @@ void ChatDialog::openForPeer(const QString &peer, const QString &peerDisplayName
   activateWindow();
   m_input->setFocus();
   m_client->chat()->markPeerRead(peer);
+  refreshAppearance();
 }
 
 bool ChatDialog::isOpenForPeer(const QString &peer) const
