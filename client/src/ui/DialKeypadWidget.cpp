@@ -11,10 +11,10 @@
 
 namespace {
 
-constexpr int kBackspaceHoldClearMs = 1000;
-constexpr int kBackspaceHoldAccentMs = 500;
-constexpr int kBackspaceHoldProgressMs = kBackspaceHoldClearMs - kBackspaceHoldAccentMs;
-constexpr int kBackspaceHoldProgressTickMs = 16;
+constexpr int kHoldActionMs = 1000;
+constexpr int kHoldAccentMs = 250;
+constexpr int kHoldProgressMs = kHoldActionMs - kHoldAccentMs;
+constexpr int kHoldProgressTickMs = 16;
 
 QColor blendColors(const QColor &from, const QColor &to, qreal amount)
 {
@@ -30,6 +30,7 @@ struct DialKeyDef {
     int row;
     int col;
     bool backspace = false;
+    bool zero = false;
 };
 
 const DialKeyDef kDialKeys[] = {
@@ -43,7 +44,7 @@ const DialKeyDef kDialKeys[] = {
     {"8", 2, 1},
     {"9", 2, 2},
     {nullptr, 3, 0, true},
-    {"0", 3, 1},
+    {"0", 3, 1, false, true},
     {"#", 3, 2},
 };
 
@@ -71,6 +72,13 @@ DialKeypadWidget::DialKeypadWidget(QWidget *parent)
       connect(button, &QPushButton::released, this, &DialKeypadWidget::onBackspaceReleased);
       connect(button, &QPushButton::clicked, this, &DialKeypadWidget::onBackspaceClicked);
       applyButtonStyle(button, true);
+    } else if (key.zero) {
+      button->setText(QStringLiteral("0"));
+      m_zeroBtn = button;
+      connect(button, &QPushButton::pressed, this, &DialKeypadWidget::onZeroPressed);
+      connect(button, &QPushButton::released, this, &DialKeypadWidget::onZeroReleased);
+      connect(button, &QPushButton::clicked, this, &DialKeypadWidget::onZeroClicked);
+      applyButtonStyle(button, false);
     } else {
       button->setText(QString::fromUtf8(key.label));
       const QString digit = QString::fromUtf8(key.label);
@@ -82,19 +90,19 @@ DialKeypadWidget::DialKeypadWidget(QWidget *parent)
     m_keys.append(button);
   }
 
-  m_backspaceHoldTimer = new QTimer(this);
-  m_backspaceHoldTimer->setSingleShot(true);
-  m_backspaceHoldTimer->setInterval(kBackspaceHoldClearMs);
-  connect(m_backspaceHoldTimer, &QTimer::timeout, this, &DialKeypadWidget::onBackspaceHoldTimeout);
+  m_holdTimer = new QTimer(this);
+  m_holdTimer->setSingleShot(true);
+  m_holdTimer->setInterval(kHoldActionMs);
+  connect(m_holdTimer, &QTimer::timeout, this, &DialKeypadWidget::onHoldTimeout);
 
-  m_backspaceHoldPhaseTimer = new QTimer(this);
-  m_backspaceHoldPhaseTimer->setSingleShot(true);
-  m_backspaceHoldPhaseTimer->setInterval(kBackspaceHoldAccentMs);
-  connect(m_backspaceHoldPhaseTimer, &QTimer::timeout, this, &DialKeypadWidget::onBackspaceHoldPhaseTimeout);
+  m_holdPhaseTimer = new QTimer(this);
+  m_holdPhaseTimer->setSingleShot(true);
+  m_holdPhaseTimer->setInterval(kHoldAccentMs);
+  connect(m_holdPhaseTimer, &QTimer::timeout, this, &DialKeypadWidget::onHoldPhaseTimeout);
 
-  m_backspaceHoldProgressTimer = new QTimer(this);
-  m_backspaceHoldProgressTimer->setInterval(kBackspaceHoldProgressTickMs);
-  connect(m_backspaceHoldProgressTimer, &QTimer::timeout, this, &DialKeypadWidget::onBackspaceHoldProgressTick);
+  m_holdProgressTimer = new QTimer(this);
+  m_holdProgressTimer->setInterval(kHoldProgressTickMs);
+  connect(m_holdProgressTimer, &QTimer::timeout, this, &DialKeypadWidget::onHoldProgressTick);
 }
 
 void DialKeypadWidget::setLineEdit(QLineEdit *edit)
@@ -134,8 +142,8 @@ void DialKeypadWidget::setCompact(bool compact)
 void DialKeypadWidget::refreshAppearance()
 {
   for (QPushButton *button : m_keys) {
-    if (button == m_backspaceBtn && m_backspaceHoldVisual != BackspaceHoldVisual::None) {
-      updateBackspaceHoldVisual();
+    if (button == m_holdBtn && m_holdVisual != HoldVisual::None) {
+      updateHoldVisual();
       continue;
     }
     const bool backspace = button == m_backspaceBtn;
@@ -193,21 +201,21 @@ void DialKeypadWidget::applyButtonStyle(QPushButton *button, bool backspace) con
                                  pal.color(QPalette::Disabled, QPalette::Button).name()));
 }
 
-void DialKeypadWidget::updateBackspaceHoldVisual()
+void DialKeypadWidget::updateHoldVisual()
 {
-  if (!m_backspaceBtn) {
+  if (!m_holdBtn) {
     return;
   }
 
-  if (m_backspaceHoldVisual == BackspaceHoldVisual::None) {
-    applyButtonStyle(m_backspaceBtn, true);
+  if (m_holdVisual == HoldVisual::None) {
+    applyButtonStyle(m_holdBtn, m_holdSecondaryStyle);
     return;
   }
 
   const QPalette pal = QApplication::palette(this);
   const QColor accent = pal.color(QPalette::Highlight);
   const QColor accentText = pal.color(QPalette::HighlightedText);
-  const QColor base = pal.color(QPalette::Midlight);
+  const QColor base = m_holdSecondaryStyle ? pal.color(QPalette::Midlight) : pal.color(QPalette::Button);
   const QColor border = pal.color(QPalette::Mid);
   const QColor text = pal.color(QPalette::ButtonText);
 
@@ -215,23 +223,24 @@ void DialKeypadWidget::updateBackspaceHoldVisual()
   QColor foreground = text;
   QColor borderColor = border;
 
-  if (m_backspaceHoldVisual == BackspaceHoldVisual::SolidAccent) {
+  if (m_holdVisual == HoldVisual::SolidAccent) {
     background = accent;
     foreground = accentText;
     borderColor = accent;
   } else {
-    background = blendColors(base, accent, m_backspaceFillProgress);
-    foreground = blendColors(text, accentText, m_backspaceFillProgress);
-    borderColor = blendColors(border, accent, m_backspaceFillProgress);
+    background = blendColors(base, accent, m_holdFillProgress);
+    foreground = blendColors(text, accentText, m_holdFillProgress);
+    borderColor = blendColors(border, accent, m_holdFillProgress);
   }
 
+  const int fontSize = m_holdSecondaryStyle ? 18 : 24;
   const QString style = QStringLiteral(
                             "QPushButton#dialKeyBtn {"
                             "  background-color: %1;"
                             "  color: %2;"
                             "  border: 2px solid %3;"
                             "  border-radius: 26px;"
-                            "  font-size: 18px;"
+                            "  font-size: %4px;"
                             "  font-weight: bold;"
                             "  padding: 0;"
                             "}"
@@ -245,8 +254,35 @@ void DialKeypadWidget::updateBackspaceHoldVisual()
                             "  color: %2;"
                             "  border: 2px solid %3;"
                             "}")
-                            .arg(background.name(), foreground.name(), borderColor.name());
-  m_backspaceBtn->setStyleSheet(style);
+                            .arg(background.name(), foreground.name(), borderColor.name())
+                            .arg(fontSize);
+  m_holdBtn->setStyleSheet(style);
+}
+
+void DialKeypadWidget::startHold(QPushButton *button, bool secondaryStyle, bool clearOnHold)
+{
+  m_holdBtn = button;
+  m_holdSecondaryStyle = secondaryStyle;
+  m_holdClearOnHold = clearOnHold;
+  m_holdActionDone = false;
+  m_holdVisual = HoldVisual::SolidAccent;
+  m_holdFillProgress = 0.0;
+  updateHoldVisual();
+  m_holdTimer->start();
+  m_holdPhaseTimer->start();
+}
+
+void DialKeypadWidget::endHold()
+{
+  m_holdTimer->stop();
+  m_holdPhaseTimer->stop();
+  m_holdProgressTimer->stop();
+  m_holdVisual = HoldVisual::None;
+  m_holdFillProgress = 0.0;
+  if (m_holdBtn) {
+    applyButtonStyle(m_holdBtn, m_holdSecondaryStyle);
+  }
+  m_holdBtn = nullptr;
 }
 
 void DialKeypadWidget::appendChar(const QString &character)
@@ -268,15 +304,10 @@ void DialKeypadWidget::appendChar(const QString &character)
 
 void DialKeypadWidget::onBackspacePressed()
 {
-  if (m_dtmfMode) {
+  if (m_dtmfMode || !m_backspaceBtn) {
     return;
   }
-  m_backspaceHoldClearDone = false;
-  m_backspaceHoldVisual = BackspaceHoldVisual::SolidAccent;
-  m_backspaceFillProgress = 0.0;
-  updateBackspaceHoldVisual();
-  m_backspaceHoldTimer->start();
-  m_backspaceHoldPhaseTimer->start();
+  startHold(m_backspaceBtn, true, true);
 }
 
 void DialKeypadWidget::onBackspaceReleased()
@@ -284,14 +315,7 @@ void DialKeypadWidget::onBackspaceReleased()
   if (m_dtmfMode) {
     return;
   }
-  m_backspaceHoldTimer->stop();
-  m_backspaceHoldPhaseTimer->stop();
-  m_backspaceHoldProgressTimer->stop();
-  m_backspaceHoldVisual = BackspaceHoldVisual::None;
-  m_backspaceFillProgress = 0.0;
-  if (m_backspaceBtn) {
-    applyButtonStyle(m_backspaceBtn, true);
-  }
+  endHold();
 }
 
 void DialKeypadWidget::onBackspaceClicked()
@@ -300,46 +324,81 @@ void DialKeypadWidget::onBackspaceClicked()
     emit digitPressed(QStringLiteral("*"));
     return;
   }
-  if (m_backspaceHoldClearDone) {
-    m_backspaceHoldClearDone = false;
+  if (m_holdActionDone) {
+    m_holdActionDone = false;
     return;
   }
   onBackspace();
 }
 
-void DialKeypadWidget::onBackspaceHoldPhaseTimeout()
+void DialKeypadWidget::onZeroPressed()
 {
-  m_backspaceHoldVisual = BackspaceHoldVisual::Filling;
-  m_backspaceFillProgress = 0.0;
-  updateBackspaceHoldVisual();
-  m_backspaceHoldProgressTimer->start();
-}
-
-void DialKeypadWidget::onBackspaceHoldProgressTick()
-{
-  m_backspaceFillProgress += static_cast<qreal>(kBackspaceHoldProgressTickMs)
-                             / static_cast<qreal>(kBackspaceHoldProgressMs);
-  if (m_backspaceFillProgress >= 1.0) {
-    m_backspaceFillProgress = 1.0;
-    m_backspaceHoldProgressTimer->stop();
+  if (m_dtmfMode || !m_zeroBtn) {
+    return;
   }
-  updateBackspaceHoldVisual();
+  startHold(m_zeroBtn, false, false);
 }
 
-void DialKeypadWidget::onBackspaceHoldTimeout()
+void DialKeypadWidget::onZeroReleased()
 {
-  m_backspaceHoldProgressTimer->stop();
-  m_backspaceHoldVisual = BackspaceHoldVisual::SolidAccent;
-  m_backspaceFillProgress = 1.0;
-  updateBackspaceHoldVisual();
+  if (m_dtmfMode) {
+    return;
+  }
+  endHold();
+}
 
-  if (!m_edit) {
+void DialKeypadWidget::onZeroClicked()
+{
+  if (m_dtmfMode) {
+    emit digitPressed(QStringLiteral("0"));
+    return;
+  }
+  if (m_holdActionDone) {
+    m_holdActionDone = false;
+    return;
+  }
+  appendChar(QStringLiteral("0"));
+}
+
+void DialKeypadWidget::onHoldPhaseTimeout()
+{
+  m_holdVisual = HoldVisual::Filling;
+  m_holdFillProgress = 0.0;
+  updateHoldVisual();
+  m_holdProgressTimer->start();
+}
+
+void DialKeypadWidget::onHoldProgressTick()
+{
+  m_holdFillProgress += static_cast<qreal>(kHoldProgressTickMs) / static_cast<qreal>(kHoldProgressMs);
+  if (m_holdFillProgress >= 1.0) {
+    m_holdFillProgress = 1.0;
+    m_holdProgressTimer->stop();
+  }
+  updateHoldVisual();
+}
+
+void DialKeypadWidget::onHoldTimeout()
+{
+  m_holdProgressTimer->stop();
+  m_holdVisual = HoldVisual::SolidAccent;
+  m_holdFillProgress = 1.0;
+  updateHoldVisual();
+
+  if (m_dtmfMode) {
     return;
   }
 
-  m_edit->clear();
-  m_edit->setFocus();
-  m_backspaceHoldClearDone = true;
+  if (m_holdClearOnHold) {
+    if (!m_edit) {
+      return;
+    }
+    m_edit->clear();
+    m_edit->setFocus();
+  } else {
+    appendChar(QStringLiteral("+"));
+  }
+  m_holdActionDone = true;
 }
 
 void DialKeypadWidget::onBackspace()

@@ -30,13 +30,18 @@ private:
     void onBackspacePressed();
     void onBackspaceReleased();
     void onBackspaceClicked();
-    void onBackspaceHoldTimeout();
-    void onBackspaceHoldPhaseTimeout();
-    void onBackspaceHoldProgressTick();
+    void onZeroPressed();
+    void onZeroReleased();
+    void onZeroClicked();
+    void onHoldTimeout();
+    void onHoldPhaseTimeout();
+    void onHoldProgressTick();
+    void startHold(QPushButton *button, bool secondaryStyle, bool clearOnHold);
+    void endHold();
     void applyButtonStyle(QPushButton *button, bool backspace = false) const;
-    void updateBackspaceHoldVisual();
+    void updateHoldVisual();
 
-    enum class BackspaceHoldVisual {
+    enum class HoldVisual {
         None,
         SolidAccent,
         Filling,
@@ -44,12 +49,16 @@ private:
 
     QLineEdit *m_edit = nullptr;
     QPushButton *m_backspaceBtn = nullptr;
-    QTimer *m_backspaceHoldTimer = nullptr;
-    QTimer *m_backspaceHoldPhaseTimer = nullptr;
-    QTimer *m_backspaceHoldProgressTimer = nullptr;
-    BackspaceHoldVisual m_backspaceHoldVisual = BackspaceHoldVisual::None;
-    qreal m_backspaceFillProgress = 0.0;
-    bool m_backspaceHoldClearDone = false;
+    QPushButton *m_zeroBtn = nullptr;
+    QPushButton *m_holdBtn = nullptr;
+    QTimer *m_holdTimer = nullptr;
+    QTimer *m_holdPhaseTimer = nullptr;
+    QTimer *m_holdProgressTimer = nullptr;
+    HoldVisual m_holdVisual = HoldVisual::None;
+    qreal m_holdFillProgress = 0.0;
+    bool m_holdSecondaryStyle = false;
+    bool m_holdClearOnHold = false;
+    bool m_holdActionDone = false;
     QGridLayout *m_grid = nullptr;
     QList<QPushButton *> m_keys;
     bool m_dtmfMode = false;

@@ -303,7 +303,7 @@ opensource-communicator/
 | Placeholder | «702, ivan или +7...» |
 | Кнопка | «Позвонить» |
 
-**⌫ удержание:** 0–0.5 с акцент → 0.5–1 с fill → 1 с `clear()`. Константы в `DialKeypadWidget.cpp`.
+**⌫ / 0 удержание:** 0–0.25 с акцент → 0.25–1 с fill → 1 с действие (`clear()` / `+`). Константы в `DialKeypadWidget.cpp`.
 
 ---
 
