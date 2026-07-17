@@ -65,6 +65,7 @@ public:
     void setRecordingName(const QString &leg, const QString &name);
     void pauseExternalMedia();
     void resumeExternalMedia();
+    void sendDtmf(const QString &leg, QChar digit);
 
     CallSession *call(const QString &leg);
     QString activeLeg() const { return m_activeLeg; }

@@ -14,7 +14,12 @@ public:
     explicit DialKeypadWidget(QWidget *parent = nullptr);
 
     void setLineEdit(QLineEdit *edit);
+    void setDtmfMode(bool enabled);
+    void setCompact(bool compact);
     void refreshAppearance();
+
+signals:
+    void digitPressed(const QString &digit);
 
 protected:
     void changeEvent(QEvent *event) override;
@@ -47,4 +52,6 @@ private:
     bool m_backspaceHoldClearDone = false;
     QGridLayout *m_grid = nullptr;
     QList<QPushButton *> m_keys;
+    bool m_dtmfMode = false;
+    bool m_compact = false;
 };

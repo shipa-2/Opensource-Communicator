@@ -76,6 +76,7 @@ private slots:
     void onExportContactFromRow(const QString &peer);
     void onHangup();
     void onHold();
+    void onCallDtmf(const QString &digit);
     void onTransfer();
     void onAnswer();
     void onPresenceChanged(int index);

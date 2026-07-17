@@ -378,6 +378,7 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   connect(m_callWindow, &CallWindow::hangupRequested, this, &MainWindow::onHangup);
   connect(m_callWindow, &CallWindow::answerRequested, this, &MainWindow::onAnswer);
   connect(m_callWindow, &CallWindow::holdRequested, this, &MainWindow::onHold);
+  connect(m_callWindow, &CallWindow::dtmfRequested, this, &MainWindow::onCallDtmf);
   connect(m_callWindow, &CallWindow::transferRequested, this, &MainWindow::onTransfer);
   connect(m_callWindow, &CallWindow::notesChanged, this, &MainWindow::onCallNotesChanged);
 
@@ -2577,6 +2578,14 @@ void MainWindow::onAnswer()
     m_calls->acceptIncomingCall(m_activeIncomingLeg);
     m_activeLeg = m_activeIncomingLeg;
   }
+}
+
+void MainWindow::onCallDtmf(const QString &digit)
+{
+  if (digit.isEmpty() || m_activeLeg.isEmpty() || m_demoMode) {
+    return;
+  }
+  m_calls->sendDtmf(m_activeLeg, digit.at(0));
 }
 
 void MainWindow::onHold()

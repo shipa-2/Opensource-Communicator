@@ -944,6 +944,18 @@ void CallManager::setHold(const QString &leg, bool hold)
   emit callStateChanged(leg, hold ? QStringLiteral("hold") : QStringLiteral("resumed"), session.peer);
 }
 
+void CallManager::sendDtmf(const QString &leg, QChar digit)
+{
+  if (leg.isEmpty() || !m_calls.contains(leg) || !m_calls[leg].connected) {
+    return;
+  }
+  if (!QStringLiteral("0123456789*#").contains(digit)) {
+    return;
+  }
+  qCInfo(lcCall) << "Sending DTMF" << digit << "on" << leg;
+  m_audio.playDtmf(digit);
+}
+
 void CallManager::blindTransfer(const QString &leg, const QString &targetPeer)
 {
   if (!m_calls.contains(leg)) {

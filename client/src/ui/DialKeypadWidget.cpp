@@ -102,6 +102,35 @@ void DialKeypadWidget::setLineEdit(QLineEdit *edit)
   m_edit = edit;
 }
 
+void DialKeypadWidget::setDtmfMode(bool enabled)
+{
+  if (m_dtmfMode == enabled) {
+    return;
+  }
+  m_dtmfMode = enabled;
+  if (m_backspaceBtn) {
+    if (enabled) {
+      m_backspaceBtn->setText(QStringLiteral("*"));
+      m_backspaceBtn->setAccessibleName(tr("Звёздочка"));
+    } else {
+      m_backspaceBtn->setText(tr("⌫"));
+      m_backspaceBtn->setAccessibleName(tr("Стереть"));
+    }
+  }
+}
+
+void DialKeypadWidget::setCompact(bool compact)
+{
+  if (m_compact == compact) {
+    return;
+  }
+  m_compact = compact;
+  const int height = compact ? 40 : 52;
+  for (QPushButton *button : m_keys) {
+    button->setMinimumHeight(height);
+  }
+}
+
 void DialKeypadWidget::refreshAppearance()
 {
   for (QPushButton *button : m_keys) {
@@ -222,7 +251,14 @@ void DialKeypadWidget::updateBackspaceHoldVisual()
 
 void DialKeypadWidget::appendChar(const QString &character)
 {
-  if (!m_edit || character.isEmpty()) {
+  if (character.isEmpty()) {
+    return;
+  }
+  if (m_dtmfMode) {
+    emit digitPressed(character);
+    return;
+  }
+  if (!m_edit) {
     return;
   }
 
@@ -232,6 +268,9 @@ void DialKeypadWidget::appendChar(const QString &character)
 
 void DialKeypadWidget::onBackspacePressed()
 {
+  if (m_dtmfMode) {
+    return;
+  }
   m_backspaceHoldClearDone = false;
   m_backspaceHoldVisual = BackspaceHoldVisual::SolidAccent;
   m_backspaceFillProgress = 0.0;
@@ -242,6 +281,9 @@ void DialKeypadWidget::onBackspacePressed()
 
 void DialKeypadWidget::onBackspaceReleased()
 {
+  if (m_dtmfMode) {
+    return;
+  }
   m_backspaceHoldTimer->stop();
   m_backspaceHoldPhaseTimer->stop();
   m_backspaceHoldProgressTimer->stop();
@@ -254,6 +296,10 @@ void DialKeypadWidget::onBackspaceReleased()
 
 void DialKeypadWidget::onBackspaceClicked()
 {
+  if (m_dtmfMode) {
+    emit digitPressed(QStringLiteral("*"));
+    return;
+  }
   if (m_backspaceHoldClearDone) {
     m_backspaceHoldClearDone = false;
     return;

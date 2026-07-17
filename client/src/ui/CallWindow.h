@@ -4,10 +4,13 @@
 
 class QLabel;
 class QKeyEvent;
+class QLineEdit;
 class QPushButton;
 class QTextEdit;
 class QTimer;
 class QWidget;
+
+class DialKeypadWidget;
 
 class CallWindow : public QDialog {
     Q_OBJECT
@@ -33,12 +36,14 @@ public:
     void updateRemoteAudioLevel(float level);
     void resetAudioLevel();
     void refreshAppearance();
+    void appendDtmfDigit(const QString &digit);
 
 signals:
     void answerRequested();
     void hangupRequested();
     void holdRequested();
     void transferRequested();
+    void dtmfRequested(const QString &digit);
     void notesChanged(const QString &peer, const QString &text);
 
 protected:
@@ -52,7 +57,16 @@ private:
     void startTimer();
     void stopTimer();
     void onTimerTick();
+    void setDtmfPanelVisible(bool visible);
+    void sendDtmfDigit(const QString &digit);
+    void updateWindowHeightForDtmf(bool expanded);
+    void resetCallWindowLayout();
+    void applyFixedCallWidth();
+    void updateCollapsedMinimumHeight();
     static QString formatDuration(int seconds);
+
+    static constexpr int kNormalWidth = 320;
+    static constexpr int kNormalHeight = 480;
 
     Mode m_mode = Mode::Hidden;
     QString m_peer;
@@ -67,6 +81,10 @@ private:
     QPushButton *m_hangupBtn = nullptr;
     QPushButton *m_holdBtn = nullptr;
     QPushButton *m_transferBtn = nullptr;
+    QPushButton *m_dtmfToggleBtn = nullptr;
+    QWidget *m_dtmfPanel = nullptr;
+    QLineEdit *m_dtmfEdit = nullptr;
+    DialKeypadWidget *m_dtmfKeypad = nullptr;
     QTextEdit *m_notesEdit = nullptr;
     QTimer *m_durationTimer = nullptr;
     int m_elapsedSeconds = 0;
@@ -77,4 +95,9 @@ private:
     float m_calibrationSum = 0;
     bool m_calibrated = false;
     bool m_speaking = false;
+    bool m_dtmfEnabled = false;
+    bool m_dtmfExpanded = false;
+    int m_minCollapsedHeight = kNormalHeight;
+    int m_collapsedHeight = kNormalHeight;
+    QString m_dtmfSent;
 };
