@@ -41,6 +41,7 @@
 | **Вход** | «Запомнить меня», список сохранённых аккаунтов, автологин при старте; **demo не сохраняется** |
 | **Чат** | История снизу вверх, метки времени, короткое `RealName`; dedup исходящих; непрочитанные с миганием 💬 |
 | **Цвет аватарки (advertise)** | Broadcast `**#RRGGBB**` через IM; цвета контактов в `ContactRowWidget` и `CallWindow` |
+| **OSC IM (Openping / avatar / theme)** | `Openping!`, `**fnm=avatar.png;…**`, `**fnm=theme.jpg;ui;list;…**`, `Themeapplied!` — см. `PROTOCOL.md` |
 | **Окно звонка** | Буква имени в круге, цвет peer, подсветка border при речи (VAD), заметки всегда видны |
 | **MPRIS-пауза медиа** | `ExternalMediaPauser` — пауза музыки/видео в браузере и плеерах на Linux при звонке |
 | **Демо-режим** | Чат (1 непрочитанное от «Администратор»), симуляция голоса, MPRIS-пауза, цвет admin |
@@ -140,7 +141,7 @@ opensource-communicator/
 | Звонки, SDP, WebRTC | `CallManager.cpp`, `AudioBridge.cpp` |
 | **Пауза музыки при звонке** | `ExternalMediaPauser.cpp`, `CallManager::pause/resumeExternalMedia`, demo в `MainWindow` |
 | **Таймер / запись по реальному аудио** | `CallManager::noteRemoteOpusFrame`, `remoteAudioStarted`, `CallRecorder` |
-| Чат, SMS, цвета аватарок | `ChatManager.cpp`, `ChatDialog.cpp` |
+| Чат, SMS, цвета аватарок | `ChatManager.cpp`, `ChatDialog.cpp`, `ThemePreviewDialog.cpp` |
 | Главный UI | `MainWindow.cpp` |
 | Окно звонка | `CallWindow.cpp`, `MainWindow::onCallStateChanged` |
 | **`tel:` / DnD** | `AppInstance.cpp`, `main.cpp`, `MainWindow::handleIncomingTelUri` |
@@ -258,6 +259,28 @@ opensource-communicator/
 
 ---
 
+## OSC-only расширения IM (`ChatManager`)
+
+Полное описание форматов: **`PROTOCOL.md`** (раздел «Расширения OpenSource Communicator»).
+
+| Сообщение | persist | UI |
+|-----------|---------|-----|
+| `Openping!` | false | Список OSC-пиров; ответ + `sendSelfPresenceTo` |
+| `**#RRGGBB**` | false | Цвет контакта (не в чате) |
+| `**fnm=avatar.png;enc=b64;cnt=…**` | false | Фото аватарки 140×140 (не в чате) |
+| `**fnm=theme.jpg;enc=b64;ui=N;list=N;cnt=…**` | true | Чат: «*Имя* поделился с вами темой» → предпросмотр |
+| `Themeapplied!` | true | Чат у отправителя: «*Имя* применил вашу тему» |
+
+**Openping!:** `setOpenpingCandidates` / `sendOpenpingBroadcast` при загрузке контактов (`MainWindow::onContactsLoaded`). Пиры в `UserDataStore::oscPeers`.
+
+**Аватарка / цвет вручную:** «Настройки → Аккаунт» — «Поделиться аватаркой» / «Поделиться цветом» (`TransferDialog`, только OSC).
+
+**Тема:** «Поделиться темой» под «Убрать обои»; JPEG 390×620 + `ui` / `list`. Приём: `ChatDialog` + `ThemePreviewDialog`; после «Применить» → `sendThemeApplied(peer)`.
+
+**Файлы:** `ChatManager.cpp`, `SettingsDialog.cpp`, `ChatDialog.cpp`, `ThemePreviewDialog.cpp`, `UserDataStore` (`oscPeers`).
+
+---
+
 ## Запись разговоров и таймер
 
 1. SIP `connected` — UI «Разговор», но таймер **не** стартует.
@@ -328,6 +351,7 @@ opensource-communicator/
 | Формат строки | `ЧЧ:ММ Имя: текст` или `29 янв. ЧЧ:ММ …` |
 | Имя | Короткое RealName (первое слово), см. `ChatDialog::shortDisplayName` |
 | Dedup | Исходящие echo от сервера не дублируют optimistic insert |
+| Тема OSC | Уведомление «поделился темой» (ссылка) → `ThemePreviewDialog`; ack `Themeapplied!` |
 | Непрочитанные | `ContactRowWidget::setUnreadBlink` — мигание 💬 каждые 500 ms |
 | Уведомление | `MessageNotifyPlayer` если чат не открыт для peer |
 
@@ -382,7 +406,7 @@ opensource-communicator/
 
 ### Реализовано (рабочий паритет)
 
-Авторизация, сессия, телефония, Opus/WebRTC, hold, слепой перевод, конференция (старт), контакты домена + **личные на сервере**, IM/SMS, presence, серверная/локальная история, запись MP3, дemo, **`tel:`/DnD**, color advertise, VAD в звонке, **MPRIS-пауза (Linux)**, saved accounts, контекстное меню контактов.
+Авторизация, сессия, телефония, Opus/WebRTC, hold, слепой перевод, конференция (старт), контакты домена + **личные на сервере**, IM/SMS, presence, серверная/локальная история, запись MP3, дemo, **`tel:`/DnD**, color advertise, **OSC Openping / avatar / theme share**, VAD в звонке, **MPRIS-пауза (Linux)**, saved accounts, контекстное меню контактов.
 
 ### Частично
 
