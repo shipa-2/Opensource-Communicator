@@ -84,6 +84,9 @@ public:
     /// UI panel opacity over wallpaper, 0…100 (100 = fully opaque). Default 85.
     int appWallpaperOpacity() const { return m_appWallpaperOpacity; }
     void setAppWallpaperOpacity(int percent);
+    /// Contacts/history list opacity over wallpaper, 0…100 (100 = fully opaque). Default 85.
+    int appWallpaperListOpacity() const { return m_appWallpaperListOpacity; }
+    void setAppWallpaperListOpacity(int percent);
     static QSize appWallpaperTargetSize();
     static QString appWallpaperStoragePath();
     static QString saveAppWallpaperImage(const QPixmap &pixmap);
@@ -137,6 +140,7 @@ private:
     QString m_networkInterfaceName;
     QString m_appWallpaperPath;
     int m_appWallpaperOpacity = 85;
+    int m_appWallpaperListOpacity = 85;
     bool m_recordingDualTrack = false;
     bool m_recordingCombinedTrack = false;
     bool m_recordingEnabled = true;

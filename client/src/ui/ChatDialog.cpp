@@ -2,8 +2,10 @@
 
 #include "chat/ChatManager.h"
 #include "protocol/CommunicatorClient.h"
+#include "settings/AppSettings.h"
 #include "ui/NativeScrollBars.h"
 #include "ui/StyleHelper.h"
+#include "ui/ThemePreviewDialog.h"
 
 #include <QApplication>
 #include <QDate>
@@ -11,10 +13,12 @@
 #include <QLocale>
 #include <QHBoxLayout>
 #include <QLineEdit>
-#include <QPlainTextEdit>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QScrollBar>
 #include <QShowEvent>
+#include <QTextBrowser>
+#include <QUrl>
 #include <QVBoxLayout>
 
 namespace {
@@ -56,11 +60,12 @@ ChatDialog::ChatDialog(itl::CommunicatorClient *client, QWidget *parent)
   auto *viewLayout = new QVBoxLayout(m_viewFrame);
   viewLayout->setContentsMargins(4, 4, 4, 4);
 
-  m_view = new QPlainTextEdit;
+  m_view = new QTextBrowser;
   m_view->setObjectName(QStringLiteral("chatMessageView"));
   m_view->setReadOnly(true);
   m_view->setFrameShape(QFrame::NoFrame);
   m_view->setAttribute(Qt::WA_StyleSheetTarget, false);
+  m_view->setOpenExternalLinks(false);
   viewLayout->addWidget(m_view);
   root->addWidget(m_viewFrame, 1);
 
@@ -76,6 +81,7 @@ ChatDialog::ChatDialog(itl::CommunicatorClient *client, QWidget *parent)
   connect(m_input, &QLineEdit::returnPressed, this, &ChatDialog::onSend);
   connect(m_client, &itl::CommunicatorClient::chatMessage, this, &ChatDialog::onChatMessage);
   connect(m_client->chat(), &itl::ChatManager::historyLoaded, this, &ChatDialog::onHistoryLoaded);
+  connect(m_view, &QTextBrowser::anchorClicked, this, &ChatDialog::onThemeLinkActivated);
 
   refreshAppearance();
 }
@@ -145,6 +151,17 @@ void ChatDialog::openForPeer(const QString &peer, const QString &peerDisplayName
   refreshAppearance();
 }
 
+void ChatDialog::updatePeerDisplayName(const QString &peerDisplayName)
+{
+  if (m_peer.isEmpty()) {
+    return;
+  }
+  m_peerDisplayName = shortDisplayName(peerDisplayName, m_peer.section(QLatin1Char('@'), 0, 0));
+  const bool smsPeer = m_client && m_client->chat()->isSmsPeer(m_peer);
+  setWindowTitle(smsPeer ? tr("SMS — %1").arg(peerDisplayName) : tr("Чат — %1").arg(peerDisplayName));
+  reloadMessages();
+}
+
 bool ChatDialog::isOpenForPeer(const QString &peer) const
 {
   if (!isVisible() || peer.isEmpty() || !m_client) {
@@ -162,7 +179,6 @@ QString ChatDialog::shortDisplayName(const QString &fullName, const QString &fal
   if (name.isEmpty()) {
     return {};
   }
-  // "Денис Калинин" → "Денис"
   const int space = name.indexOf(QLatin1Char(' '));
   if (space > 0) {
     return name.left(space);
@@ -183,9 +199,17 @@ QString ChatDialog::formatTimestamp(const QDateTime &timestamp)
   }
 
   const QLocale locale(QLocale::Russian);
-  // "янв." / "февр." — abbreviated month with trailing period, as in "29 янв."
   const QString dayMonth = locale.toString(local.date(), QStringLiteral("d MMM"));
   return dayMonth + QLatin1Char(' ') + time;
+}
+
+QString ChatDialog::htmlEscape(const QString &text)
+{
+  QString escaped = text;
+  escaped.replace(QLatin1Char('&'), QStringLiteral("&amp;"));
+  escaped.replace(QLatin1Char('<'), QStringLiteral("&lt;"));
+  escaped.replace(QLatin1Char('>'), QStringLiteral("&gt;"));
+  return escaped;
 }
 
 void ChatDialog::reloadMessages()
@@ -208,6 +232,14 @@ void ChatDialog::onHistoryLoaded(const QString &peer)
 
 void ChatDialog::appendMessage(const itl::InstantMessage &im)
 {
+  if (itl::ChatManager::isThemeShareNotice(im.body)) {
+    appendThemeShareNotice(im.body, im.incoming, im.timestamp);
+    return;
+  }
+  if (itl::ChatManager::isThemeAppliedNotice(im.body)) {
+    appendThemeAppliedNotice(im.incoming, im.timestamp);
+    return;
+  }
   appendMessage(im.body, im.incoming, im.timestamp);
 }
 
@@ -215,13 +247,91 @@ void ChatDialog::appendMessage(const QString &text, bool incoming, const QDateTi
 {
   const QString name = incoming ? m_peerDisplayName : m_selfDisplayName;
   const QString stamp = formatTimestamp(timestamp);
-  if (stamp.isEmpty()) {
-    m_view->appendPlainText(QStringLiteral("%1: %2").arg(name, text));
-  } else {
-    m_view->appendPlainText(QStringLiteral("%1 %2: %3").arg(stamp, name, text));
-  }
+  const QString line = stamp.isEmpty()
+      ? QStringLiteral("%1: %2").arg(htmlEscape(name), htmlEscape(text))
+      : QStringLiteral("%1 %2: %3").arg(htmlEscape(stamp), htmlEscape(name), htmlEscape(text));
+  m_view->append(line);
   QScrollBar *bar = m_view->verticalScrollBar();
   bar->setValue(bar->maximum());
+}
+
+void ChatDialog::appendThemeShareNotice(const QString &noticeBody, bool incoming,
+                                        const QDateTime &timestamp)
+{
+  const QString name = incoming ? m_peerDisplayName : m_selfDisplayName;
+  const QString stamp = formatTimestamp(timestamp);
+  const QString key = itl::ChatManager::themeShareNoticeKey(noticeBody);
+  const QString text =
+      incoming ? tr("%1 поделился с вами темой").arg(name) : tr("Вы поделились темой");
+  QString line;
+  if (incoming && !key.isEmpty()) {
+    const QString encodedKey = QString::fromLatin1(QUrl::toPercentEncoding(key));
+    const QString link = QStringLiteral("<a href=\"osc-theme:%1\">%2</a>")
+                             .arg(encodedKey, htmlEscape(text));
+    line = stamp.isEmpty() ? link : QStringLiteral("%1 %2").arg(htmlEscape(stamp), link);
+  } else {
+    line = stamp.isEmpty() ? htmlEscape(text)
+                           : QStringLiteral("%1 %2").arg(htmlEscape(stamp), htmlEscape(text));
+  }
+  m_view->append(line);
+  QScrollBar *bar = m_view->verticalScrollBar();
+  bar->setValue(bar->maximum());
+}
+
+void ChatDialog::appendThemeAppliedNotice(bool incoming, const QDateTime &timestamp)
+{
+  if (!incoming) {
+    return;
+  }
+  const QString text = tr("%1 применил вашу тему").arg(m_peerDisplayName);
+  const QString stamp = formatTimestamp(timestamp);
+  const QString line = stamp.isEmpty() ? htmlEscape(text)
+                                       : QStringLiteral("%1 %2").arg(htmlEscape(stamp), htmlEscape(text));
+  m_view->append(line);
+  QScrollBar *bar = m_view->verticalScrollBar();
+  bar->setValue(bar->maximum());
+}
+
+void ChatDialog::onThemeLinkActivated(const QUrl &url)
+{
+  if (url.scheme() != QStringLiteral("osc-theme")) {
+    return;
+  }
+  QString encoded = url.toString(QUrl::FullyEncoded);
+  const int colon = encoded.indexOf(QLatin1Char(':'));
+  if (colon >= 0) {
+    encoded = encoded.mid(colon + 1);
+  }
+  openThemePreview(QUrl::fromPercentEncoding(encoded.toUtf8()));
+}
+
+void ChatDialog::openThemePreview(const QString &key)
+{
+  if (!m_client || key.isEmpty()) {
+    return;
+  }
+  const itl::ThemeSharePayload payload = m_client->chat()->themeShareOffer(key);
+  if (payload.wallpaper.isNull()) {
+    QMessageBox::information(this, tr("Тема"), tr("Предложение темы больше недоступно."));
+    return;
+  }
+
+  ThemePreviewDialog preview(payload.wallpaper, payload.uiOpacity, payload.listOpacity, this);
+  if (preview.exec() != QDialog::Accepted) {
+    return;
+  }
+
+  itl::AppSettings &settings = m_client->appSettings();
+  const QString path = itl::AppSettings::saveAppWallpaperImage(payload.wallpaper);
+  if (path.isEmpty()) {
+    QMessageBox::warning(this, tr("Тема"), tr("Не удалось сохранить обои."));
+    return;
+  }
+  settings.setAppWallpaperPath(path);
+  settings.setAppWallpaperOpacity(payload.uiOpacity);
+  settings.setAppWallpaperListOpacity(payload.listOpacity);
+  m_client->saveSettings();
+  m_client->chat()->sendThemeApplied(m_peer);
 }
 
 void ChatDialog::onSend()
@@ -239,7 +349,13 @@ void ChatDialog::onChatMessage(const QString &peer, const QString &text, bool in
   if (!isVisible() || m_client->chat()->normalizedPeer(peer) != m_client->chat()->normalizedPeer(m_peer)) {
     return;
   }
-  appendMessage(text, incoming, timestamp);
+  if (itl::ChatManager::isThemeShareNotice(text)) {
+    appendThemeShareNotice(text, incoming, timestamp);
+  } else if (itl::ChatManager::isThemeAppliedNotice(text)) {
+    appendThemeAppliedNotice(incoming, timestamp);
+  } else {
+    appendMessage(text, incoming, timestamp);
+  }
   if (incoming) {
     m_client->chat()->markPeerRead(peer);
   }

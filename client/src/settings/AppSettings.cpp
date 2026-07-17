@@ -29,8 +29,10 @@ constexpr auto kRecordingDirectory = "recording/directory";
 constexpr auto kNetworkInterface = "network/bindInterface";
 constexpr auto kAppWallpaperPath = "ui/appWallpaperPath";
 constexpr auto kAppWallpaperOpacity = "ui/appWallpaperOpacity";
+constexpr auto kAppWallpaperListOpacity = "ui/appWallpaperListOpacity";
 constexpr int kMainWindowWidth = 390;
-constexpr int kMainWindowHeight = 620;
+// Fits header + tabs + filters + search + exactly 6 contact rows (56px) + footer.
+constexpr int kMainWindowHeight = 646;
 } // namespace
 
 namespace itl {
@@ -63,6 +65,11 @@ void AppSettings::load(QSettings &settings)
   m_appWallpaperPath = settings.value(QString::fromUtf8(kAppWallpaperPath)).toString();
   m_appWallpaperOpacity =
       qBound(0, settings.value(QString::fromUtf8(kAppWallpaperOpacity), 85).toInt(), 100);
+  // Missing key → keep parity with the old single-slider behaviour.
+  m_appWallpaperListOpacity = qBound(
+      0,
+      settings.value(QString::fromUtf8(kAppWallpaperListOpacity), m_appWallpaperOpacity).toInt(),
+      100);
 }
 
 void AppSettings::save(QSettings &settings) const
@@ -86,6 +93,7 @@ void AppSettings::save(QSettings &settings) const
   settings.setValue(QString::fromUtf8(kNetworkInterface), m_networkInterfaceName);
   settings.setValue(QString::fromUtf8(kAppWallpaperPath), m_appWallpaperPath);
   settings.setValue(QString::fromUtf8(kAppWallpaperOpacity), m_appWallpaperOpacity);
+  settings.setValue(QString::fromUtf8(kAppWallpaperListOpacity), m_appWallpaperListOpacity);
 }
 
 void AppSettings::loadUserData(QSettings &settings)
@@ -473,6 +481,16 @@ void AppSettings::setAppWallpaperOpacity(int percent)
     return;
   }
   m_appWallpaperOpacity = clamped;
+  emit settingsChanged();
+}
+
+void AppSettings::setAppWallpaperListOpacity(int percent)
+{
+  const int clamped = qBound(0, percent, 100);
+  if (m_appWallpaperListOpacity == clamped) {
+    return;
+  }
+  m_appWallpaperListOpacity = clamped;
   emit settingsChanged();
 }
 

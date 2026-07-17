@@ -13,13 +13,15 @@
 #include <algorithm>
 
 TransferDialog::TransferDialog(const QHash<QString, QString> &peerNames, const QString &selfPeer,
-                               const QString &excludePeer, QWidget *parent)
+                               const QString &excludePeer, QWidget *parent, const QString &title,
+                               const QString &prompt, const QString &acceptLabel)
     : QDialog(parent)
     , m_selfPeer(selfPeer)
     , m_excludePeer(excludePeer)
+    , m_acceptWarningTitle(title.isEmpty() ? tr("Перевод") : title)
     , m_peerNames(peerNames)
 {
-  setWindowTitle(tr("Перевод звонка"));
+  setWindowTitle(title.isEmpty() ? tr("Перевод звонка") : title);
   setObjectName(QStringLiteral("transferDialog"));
   resize(380, 460);
 
@@ -27,7 +29,7 @@ TransferDialog::TransferDialog(const QHash<QString, QString> &peerNames, const Q
   layout->setContentsMargins(16, 16, 16, 16);
   layout->setSpacing(10);
 
-  layout->addWidget(new QLabel(tr("Выберите контакт для перевода:")));
+  layout->addWidget(new QLabel(prompt.isEmpty() ? tr("Выберите контакт для перевода:") : prompt));
 
   m_searchEdit = new QLineEdit;
   m_searchEdit->setPlaceholderText(tr("Поиск..."));
@@ -40,13 +42,14 @@ TransferDialog::TransferDialog(const QHash<QString, QString> &peerNames, const Q
   layout->addWidget(m_contactsList, 1);
 
   QPushButton *cancelBtn = nullptr;
-  layout->addLayout(itl::createDialogButtonRow(&cancelBtn, &m_transferBtn, tr("Перевести")));
-  m_transferBtn->setEnabled(false);
+  layout->addLayout(itl::createDialogButtonRow(
+      &cancelBtn, &m_acceptBtn, acceptLabel.isEmpty() ? tr("Перевести") : acceptLabel));
+  m_acceptBtn->setEnabled(false);
 
   connect(cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
-  connect(m_transferBtn, &QPushButton::clicked, this, &TransferDialog::onAccepted);
+  connect(m_acceptBtn, &QPushButton::clicked, this, &TransferDialog::onAccepted);
   connect(m_searchEdit, &QLineEdit::textChanged, this, [this](const QString &) { rebuildList(); });
-  connect(m_contactsList, &QListWidget::itemSelectionChanged, this, &TransferDialog::updateTransferEnabled);
+  connect(m_contactsList, &QListWidget::itemSelectionChanged, this, &TransferDialog::updateAcceptEnabled);
   connect(m_contactsList, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *) { onAccepted(); });
 
   rebuildList();
@@ -83,7 +86,7 @@ void TransferDialog::rebuildList()
     }
   }
 
-  updateTransferEnabled();
+  updateAcceptEnabled();
 }
 
 QString TransferDialog::selectedPeer() const
@@ -98,15 +101,15 @@ QString TransferDialog::selectedDisplayName() const
   return item ? item->text() : QString();
 }
 
-void TransferDialog::updateTransferEnabled()
+void TransferDialog::updateAcceptEnabled()
 {
-  m_transferBtn->setEnabled(!selectedPeer().isEmpty());
+  m_acceptBtn->setEnabled(!selectedPeer().isEmpty());
 }
 
 void TransferDialog::onAccepted()
 {
   if (selectedPeer().isEmpty()) {
-    QMessageBox::warning(this, tr("Перевод"), tr("Выберите контакт."));
+    QMessageBox::warning(this, m_acceptWarningTitle, tr("Выберите контакт."));
     return;
   }
   accept();

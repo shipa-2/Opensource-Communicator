@@ -5,7 +5,7 @@
 
 class QFrame;
 class QLineEdit;
-class QPlainTextEdit;
+class QTextBrowser;
 class QShowEvent;
 
 namespace itl {
@@ -21,6 +21,7 @@ public:
 
     void openForPeer(const QString &peer, const QString &peerDisplayName, const QString &selfDisplayName);
     bool isOpenForPeer(const QString &peer) const;
+    void updatePeerDisplayName(const QString &peerDisplayName);
 
     void refreshAppearance();
 
@@ -31,12 +32,17 @@ private slots:
     void onSend();
     void onChatMessage(const QString &peer, const QString &text, bool incoming, const QDateTime &timestamp);
     void onHistoryLoaded(const QString &peer);
+    void onThemeLinkActivated(const QUrl &url);
 
 private:
     void reloadMessages();
     void appendMessage(const itl::InstantMessage &im);
     void appendMessage(const QString &text, bool incoming, const QDateTime &timestamp);
+    void appendThemeShareNotice(const QString &noticeBody, bool incoming, const QDateTime &timestamp);
+    void appendThemeAppliedNotice(bool incoming, const QDateTime &timestamp);
+    void openThemePreview(const QString &key);
     void refreshViewChrome();
+    static QString htmlEscape(const QString &text);
     static QString shortDisplayName(const QString &fullName, const QString &fallback);
     static QString formatTimestamp(const QDateTime &timestamp);
 
@@ -46,6 +52,6 @@ private:
     QString m_selfDisplayName;
 
     QFrame *m_viewFrame = nullptr;
-    QPlainTextEdit *m_view = nullptr;
+    QTextBrowser *m_view = nullptr;
     QLineEdit *m_input = nullptr;
 };

@@ -58,6 +58,8 @@ void UserDataStore::load()
 {
   m_notes.clear();
   m_peerColors.clear();
+  m_peerAvatars.clear();
+  m_oscPeers.clear();
   m_recentCalls.clear();
   m_callHistory.clear();
 
@@ -80,6 +82,22 @@ void UserDataStore::load()
     const QString color = it.value().toString();
     if (isStoredPeerColor(color)) {
       m_peerColors.insert(normalizeStoredPeer(it.key()), color);
+    }
+  }
+
+  const QJsonObject peerAvatars = root.value(QStringLiteral("peerAvatars")).toObject();
+  for (auto it = peerAvatars.begin(); it != peerAvatars.end(); ++it) {
+    const QString b64 = it.value().toString().trimmed();
+    if (!b64.isEmpty() && b64.size() <= 200000) {
+      m_peerAvatars.insert(normalizeStoredPeer(it.key()), b64);
+    }
+  }
+
+  const QJsonArray oscPeers = root.value(QStringLiteral("oscPeers")).toArray();
+  for (const QJsonValue &value : oscPeers) {
+    const QString peer = normalizeStoredPeer(value.toString());
+    if (!peer.isEmpty() && !m_oscPeers.contains(peer)) {
+      m_oscPeers.append(peer);
     }
   }
 
@@ -124,6 +142,16 @@ void UserDataStore::save() const
     peerColors.insert(it.key(), it.value());
   }
 
+  QJsonObject peerAvatars;
+  for (auto it = m_peerAvatars.cbegin(); it != m_peerAvatars.cend(); ++it) {
+    peerAvatars.insert(it.key(), it.value());
+  }
+
+  QJsonArray oscPeers;
+  for (const QString &peer : m_oscPeers) {
+    oscPeers.append(peer);
+  }
+
   QJsonObject recent;
   for (auto it = m_recentCalls.cbegin(); it != m_recentCalls.cend(); ++it) {
     recent.insert(it.key(), it.value());
@@ -149,6 +177,8 @@ void UserDataStore::save() const
       {QStringLiteral("version"), 1},
       {QStringLiteral("notes"), notes},
       {QStringLiteral("peerColors"), peerColors},
+      {QStringLiteral("peerAvatars"), peerAvatars},
+      {QStringLiteral("oscPeers"), oscPeers},
       {QStringLiteral("recentCalls"), recent},
       {QStringLiteral("callHistory"), history},
   };
@@ -236,6 +266,78 @@ QHash<QString, QString> UserDataStore::peerColors() const
 {
   ensureLoaded();
   return m_peerColors;
+}
+
+QString UserDataStore::peerAvatarForPeer(const QString &peer) const
+{
+  ensureLoaded();
+  const QString key = normalizeStoredPeer(peer);
+  if (m_peerAvatars.contains(key)) {
+    return m_peerAvatars.value(key);
+  }
+
+  const QString login = key.section(QLatin1Char('@'), 0, 0);
+  for (auto it = m_peerAvatars.cbegin(); it != m_peerAvatars.cend(); ++it) {
+    if (it.key().section(QLatin1Char('@'), 0, 0).compare(login, Qt::CaseInsensitive) == 0) {
+      return it.value();
+    }
+  }
+  return {};
+}
+
+void UserDataStore::setPeerAvatarForPeer(const QString &peer, const QString &base64Png)
+{
+  ensureLoaded();
+  const QString key = normalizeStoredPeer(peer);
+  const QString trimmed = base64Png.trimmed();
+  if (key.isEmpty() || trimmed.isEmpty() || trimmed.size() > 200000) {
+    return;
+  }
+  if (m_peerAvatars.value(key) == trimmed) {
+    return;
+  }
+  m_peerAvatars.insert(key, trimmed);
+  save();
+}
+
+QHash<QString, QString> UserDataStore::peerAvatars() const
+{
+  ensureLoaded();
+  return m_peerAvatars;
+}
+
+QStringList UserDataStore::oscPeers() const
+{
+  ensureLoaded();
+  return m_oscPeers;
+}
+
+void UserDataStore::setOscPeers(const QStringList &peers)
+{
+  ensureLoaded();
+  QStringList normalized;
+  for (const QString &peer : peers) {
+    const QString key = normalizeStoredPeer(peer);
+    if (!key.isEmpty() && !normalized.contains(key)) {
+      normalized.append(key);
+    }
+  }
+  if (normalized == m_oscPeers) {
+    return;
+  }
+  m_oscPeers = normalized;
+  save();
+}
+
+void UserDataStore::addOscPeer(const QString &peer)
+{
+  ensureLoaded();
+  const QString key = normalizeStoredPeer(peer);
+  if (key.isEmpty() || m_oscPeers.contains(key)) {
+    return;
+  }
+  m_oscPeers.append(key);
+  save();
 }
 
 qint64 UserDataStore::recentCallTime(const QString &peer) const

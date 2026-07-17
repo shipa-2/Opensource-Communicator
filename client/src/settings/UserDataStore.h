@@ -43,6 +43,15 @@ public:
     void setPeerColorForPeer(const QString &peer, const QString &color);
     QHash<QString, QString> peerColors() const;
 
+    /// Base64 PNG (typically 140×140) for peer avatars received via IM.
+    QString peerAvatarForPeer(const QString &peer) const;
+    void setPeerAvatarForPeer(const QString &peer, const QString &base64Png);
+    QHash<QString, QString> peerAvatars() const;
+
+    QStringList oscPeers() const;
+    void setOscPeers(const QStringList &peers);
+    void addOscPeer(const QString &peer);
+
     qint64 recentCallTime(const QString &peer) const;
     void recordRecentCall(const QString &peer);
 
@@ -57,6 +66,8 @@ private:
     mutable bool m_loaded = false;
     QHash<QString, QString> m_notes;
     QHash<QString, QString> m_peerColors;
+    QHash<QString, QString> m_peerAvatars;
+    QStringList m_oscPeers;
     QHash<QString, qint64> m_recentCalls;
     QList<CallHistoryEntry> m_callHistory;
 };

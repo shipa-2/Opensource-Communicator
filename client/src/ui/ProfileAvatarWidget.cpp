@@ -1,6 +1,7 @@
 #include "ProfileAvatarWidget.h"
 
 #include "settings/AppSettings.h"
+#include "ui/StyleHelper.h"
 
 #include <QColorDialog>
 #include <QFileDialog>
@@ -179,6 +180,7 @@ void ProfileAvatarWidget::showAvatarMenu()
   connect(photoBtn, &QPushButton::clicked, this, &ProfileAvatarWidget::pickPhoto);
   connect(colorBtn, &QPushButton::clicked, this, &ProfileAvatarWidget::pickColor);
 
+  itl::applyPopupMenuStyle(&menu);
   menu.exec(mapToGlobal(rect().bottomLeft()));
 }
 

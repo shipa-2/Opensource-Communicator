@@ -3,14 +3,18 @@
 #include "NativeScrollBars.h"
 
 #include <QApplication>
+#include <QColor>
 #include <QFile>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLineEdit>
+#include <QMenu>
 #include <QObject>
+#include <QPalette>
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QPushButton>
+#include <QStyle>
 #include <QWidget>
 
 namespace itl {
@@ -137,6 +141,69 @@ QHBoxLayout *createDialogButtonRow(QPushButton **cancelBtn, QPushButton **accept
   buttons->addWidget(*cancelBtn);
   buttons->addWidget(*acceptBtn);
   return buttons;
+}
+
+QString colorToRgba(const QColor &color, int alpha)
+{
+  return QStringLiteral("rgba(%1, %2, %3, %4)")
+      .arg(color.red())
+      .arg(color.green())
+      .arg(color.blue())
+      .arg(alpha);
+}
+
+namespace {
+
+} // namespace
+
+void setPopupChromeUiOpacity(int uiOpacityPercent)
+{
+  Q_UNUSED(uiOpacityPercent);
+  applyApplicationTooltipStyle();
+}
+
+int popupChromeOpacityPercent()
+{
+  return 100;
+}
+
+int popupChromeAlpha()
+{
+  return 255;
+}
+
+void applyApplicationTooltipStyle()
+{
+  QApplication *app = qApp;
+  if (!app) {
+    return;
+  }
+
+  // Native system tooltips: no app-wide QToolTip QSS (that overrides Breeze/Fusion
+  // and previously fought with wallpaper translucency).
+  if (!app->styleSheet().isEmpty()) {
+    app->setStyleSheet({});
+  }
+}
+
+void applyPopupMenuStyle(QMenu *menu)
+{
+  if (!menu) {
+    return;
+  }
+
+  // Opt out of ancestor QSS. Dim-lists used to set unscoped "background: transparent"
+  // on the viewport, which cascaded into child QMenus and made them fully see-through.
+  menu->setAttribute(Qt::WA_StyleSheetTarget, false);
+  menu->setStyleSheet({});
+  menu->setAttribute(Qt::WA_TranslucentBackground, false);
+  menu->setAutoFillBackground(true);
+  menu->setPalette(QApplication::palette(menu));
+  if (QStyle *appStyle = QApplication::style()) {
+    menu->setStyle(appStyle);
+  }
+  menu->style()->unpolish(menu);
+  menu->style()->polish(menu);
 }
 
 } // namespace itl

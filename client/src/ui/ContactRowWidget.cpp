@@ -1,5 +1,7 @@
 #include "ContactRowWidget.h"
 
+#include "ui/StyleHelper.h"
+
 #include <QApplication>
 #include <QContextMenuEvent>
 #include <QCursor>
@@ -13,7 +15,9 @@
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPaintEvent>
+#include <QPixmap>
 #include <QPushButton>
 #include <QStyle>
 #include <QTimer>
@@ -46,6 +50,12 @@ public:
     update();
   }
 
+  void setPhoto(const QPixmap &photo)
+  {
+    m_photo = photo;
+    update();
+  }
+
 protected:
   void paintEvent(QPaintEvent *) override
   {
@@ -56,10 +66,27 @@ protected:
         m_background.isValid() ? m_background : palette().color(QPalette::Midlight);
     const QColor text = palette().color(QPalette::ButtonText);
     const QColor border = palette().color(QPalette::WindowText);
+    const QRectF circle = QRectF(rect()).adjusted(1.0, 1.0, -1.0, -1.0);
 
     painter.setPen(QPen(border, 2));
     painter.setBrush(background);
-    painter.drawEllipse(rect().adjusted(1, 1, -1, -1));
+    painter.drawEllipse(circle);
+
+    if (!m_photo.isNull()) {
+      QPainterPath clip;
+      clip.addEllipse(circle.adjusted(1.0, 1.0, -1.0, -1.0));
+      painter.setClipPath(clip);
+      const QPixmap scaled =
+          m_photo.scaled(circle.size().toSize(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+      const QPointF topLeft(circle.center().x() - scaled.width() / 2.0,
+                            circle.center().y() - scaled.height() / 2.0);
+      painter.drawPixmap(topLeft, scaled);
+      painter.setClipping(false);
+      painter.setPen(QPen(border, 2));
+      painter.setBrush(Qt::NoBrush);
+      painter.drawEllipse(circle);
+      return;
+    }
 
     painter.setPen(text);
     QFont font = painter.font();
@@ -72,6 +99,7 @@ protected:
 private:
   QString m_letter = QStringLiteral("?");
   QColor m_background;
+  QPixmap m_photo;
 };
 
 QString presenceColor(const QString &presence)
@@ -103,10 +131,11 @@ void configureEmojiButton(QPushButton *button)
   if (!button) {
     return;
   }
-  const QSize naturalSize = button->sizeHint();
   const QFontMetrics metrics(button->font());
-  const int width = metrics.horizontalAdvance(button->text()) + 14;
-  button->setFixedSize(width, naturalSize.height());
+  const int side = qMax(metrics.height() + 8,
+                        qMax(metrics.horizontalAdvance(QStringLiteral("📞")) + 14,
+                             metrics.horizontalAdvance(QStringLiteral("💬")) + 14));
+  button->setFixedSize(side, side);
   button->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
   button->setFlat(true);
   button->setAttribute(Qt::WA_Hover, true);
@@ -183,7 +212,7 @@ ContactRowWidget::ContactRowWidget(const QString &peer, const QString &name, con
   textCol->addWidget(m_nameLabel);
 
   const QString numberText = !ext.isEmpty() ? ext : phone;
-  if (!numberText.isEmpty() && !isSelf) {
+  if (!numberText.isEmpty()) {
     m_numberLabel = new QLabel(numberText);
     m_numberLabel->setObjectName(QStringLiteral("contactNumber"));
     QFont numberFont = m_numberLabel->font();
@@ -234,6 +263,12 @@ void ContactRowWidget::setCallButtonVisible(bool visible)
 void ContactRowWidget::setPeerColor(const QString &color)
 {
   m_peerColor = color;
+  refreshAvatarStyle();
+}
+
+void ContactRowWidget::setPeerAvatar(const QPixmap &avatar)
+{
+  m_peerAvatar = avatar;
   refreshAvatarStyle();
 }
 
@@ -316,6 +351,7 @@ void ContactRowWidget::showCallMenu(const QPoint &globalPos)
   }
 
   QMenu menu(this);
+  itl::applyPopupMenuStyle(&menu);
   auto *header = new QLabel(tr("Позвонить по:"), &menu);
   header->setObjectName(QStringLiteral("callMenuHeader"));
   header->setContentsMargins(12, 6, 12, 4);
@@ -357,6 +393,7 @@ void ContactRowWidget::contextMenuEvent(QContextMenuEvent *event)
 {
   if (m_isSelf) {
     QMenu menu(this);
+    itl::applyPopupMenuStyle(&menu);
     bool hasAny = false;
     if (!m_personalPhone.isEmpty()) {
       QAction *action = menu.addAction(tr("Скопировать личный номер"));
@@ -381,6 +418,7 @@ void ContactRowWidget::contextMenuEvent(QContextMenuEvent *event)
   }
 
   QMenu menu(this);
+  itl::applyPopupMenuStyle(&menu);
 
   if (m_numbers.size() > 1) {
     auto *callMenu = menu.addMenu(tr("Позвонить"));
@@ -453,22 +491,24 @@ void ContactRowWidget::enterEvent(QEnterEvent *event)
 void ContactRowWidget::enterEvent(QEvent *event)
 #endif
 {
-  if (!m_isSelf) {
-    m_hovered = true;
-    update();
-  }
+  m_hovered = true;
+  update();
   QWidget::enterEvent(event);
 }
 
 void ContactRowWidget::leaveEvent(QEvent *event)
 {
   QWidget::leaveEvent(event);
-  if (m_isSelf) {
-    return;
+
+  // Clear immediately so fast cursor movement does not leave a trail of highlighted rows.
+  if (m_hovered) {
+    m_hovered = false;
+    update();
   }
-  // Moving onto 💬/📞 children fires leave on the row — keep hover if cursor is still inside.
+
+  // Moving onto 💬/📞 children also fires leave on the row — restore hover if still inside.
   QTimer::singleShot(0, this, [this]() {
-    const bool inside = rect().contains(mapFromGlobal(QCursor::pos()));
+    const bool inside = underMouse();
     if (m_hovered != inside) {
       m_hovered = inside;
       update();
@@ -479,18 +519,35 @@ void ContactRowWidget::leaveEvent(QEvent *event)
 void ContactRowWidget::paintEvent(QPaintEvent *event)
 {
   QWidget::paintEvent(event);
-  if (m_isSelf || (!m_hovered && !m_selected)) {
+  if (!m_hovered && !m_selected) {
     return;
   }
 
   QPainter painter(this);
   painter.setRenderHint(QPainter::Antialiasing, true);
+  // Keep the whole chrome inside the row — AA stroke is centered on the path.
+  painter.setClipRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5));
+
   const QColor accent = QApplication::palette().color(QPalette::Highlight);
   QColor fill = accent;
   fill.setAlpha(m_selected ? 55 : 35);
-  painter.setPen(QPen(accent, m_selected ? 1.5 : 1.0));
+  const qreal margin = 2.0;
+  const qreal radius = 6.0;
+  const QRectF frame = QRectF(rect()).adjusted(margin, margin, -margin, -margin);
+
+  painter.setPen(Qt::NoPen);
   painter.setBrush(fill);
-  painter.drawRoundedRect(QRectF(rect()).adjusted(1.5, 1.5, -1.5, -1.5), 6.0, 6.0);
+  painter.drawRoundedRect(frame, radius, radius);
+
+  // Selection is fill-only; hover keeps a light accent rim.
+  if (m_hovered && !m_selected) {
+    QPen pen(accent, 1.0);
+    pen.setJoinStyle(Qt::RoundJoin);
+    pen.setCapStyle(Qt::RoundCap);
+    painter.setBrush(Qt::NoBrush);
+    painter.setPen(pen);
+    painter.drawRoundedRect(frame, radius, radius);
+  }
 }
 
 void ContactRowWidget::refreshAppearance()
@@ -542,6 +599,7 @@ void ContactRowWidget::refreshAvatarStyle()
   } else {
     avatar->setBackgroundColor(QColor(m_peerColor));
   }
+  avatar->setPhoto(m_peerAvatar);
   avatar->update();
 }
 
@@ -565,9 +623,6 @@ void ContactRowWidget::updateName(const QString &name)
 
 void ContactRowWidget::setSelected(bool selected)
 {
-  if (m_isSelf) {
-    return;
-  }
   if (m_selected == selected) {
     return;
   }

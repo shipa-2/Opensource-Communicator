@@ -4,6 +4,7 @@
 
 #include <QHash>
 #include <QMainWindow>
+#include <QPixmap>
 #include <QString>
 #include <QVector>
 
@@ -127,9 +128,12 @@ private:
     void updateSelfHeader();
     void mergeCustomContacts();
     void refreshColorAdvertisementPeers();
+    void syncSelfOscShareProfile();
     bool contactMatchesSender(const QString &contactPeer, const ContactEntry &entry, const QString &sender) const;
     void applyPeerColorForPeer(const QString &peer, const QString &color);
+    void applyPeerAvatarForPeer(const QString &peer, const QPixmap &avatar);
     void refreshAllContactPeerColors();
+    void refreshAllContactPeerAvatars();
     bool useServerContacts() const;
     void setupDragDrop();
     void registerDropTarget(QWidget *widget);
@@ -209,6 +213,7 @@ private:
     QTabBar *m_tabBar = nullptr;
     QStackedWidget *m_tabStack = nullptr;
     QWidget *m_tabStrip = nullptr;
+    QWidget *m_tabBaseLine = nullptr;
     QWidget *m_mainHeader = nullptr;
     QWidget *m_mainFooter = nullptr;
     QWidget *m_contactsPage = nullptr;

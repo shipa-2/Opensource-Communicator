@@ -86,7 +86,7 @@ int main(int argc, char *argv[])
   window.show();
   QTimer::singleShot(0, &window, [&window]() {
     window.setWindowState(Qt::WindowNoState);
-    window.resize(390, 620);
+    window.resize(390, 646);
   });
 
   const QStringList startupTelUrls = itl::AppInstance::extractTelUrls(startupArgs);

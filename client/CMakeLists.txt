@@ -104,6 +104,8 @@ add_executable(opensource-communicator
     src/ui/SettingsDialog.h
     src/ui/WallpaperCropDialog.cpp
     src/ui/WallpaperCropDialog.h
+    src/ui/ThemePreviewDialog.cpp
+    src/ui/ThemePreviewDialog.h
     src/ui/RecordingSettingsDialog.cpp
     src/ui/RecordingSettingsDialog.h
     src/ui/AddContactDialog.cpp

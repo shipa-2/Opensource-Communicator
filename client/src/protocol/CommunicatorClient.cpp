@@ -119,6 +119,8 @@ void CommunicatorClient::loadSettings()
   m_appSettings.load(m_settings);
   m_appSettings.loadUserData(m_settings);
   m_chat->loadStoredPeerColors();
+  m_chat->loadStoredPeerAvatars();
+  m_chat->loadStoredOscPeers();
 }
 
 void CommunicatorClient::saveSettings()

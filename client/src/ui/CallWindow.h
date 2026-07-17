@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QDialog>
+#include <QPixmap>
 
 class QLabel;
 class QKeyEvent;
@@ -32,6 +33,7 @@ public:
     void setNotesVisible(bool visible);
     void setAvatarColor(const QString &color);
     void setAvatarLetter(const QString &displayName);
+    void setAvatarPixmap(const QPixmap &pixmap);
     void setRemoteSpeakingIndicator(bool speaking);
     void updateRemoteAudioLevel(float level);
     void resetAudioLevel();
@@ -54,6 +56,7 @@ private:
     void buildUi();
     void setMode(Mode mode);
     void refreshAvatarBorder();
+    void refreshAvatarContent();
     void startTimer();
     void stopTimer();
     void onTimerTick();
@@ -89,6 +92,8 @@ private:
     QTimer *m_durationTimer = nullptr;
     int m_elapsedSeconds = 0;
     QString m_avatarBaseColor;
+    QString m_avatarLetter = QStringLiteral("?");
+    QPixmap m_avatarPhoto;
     float m_noiseFloor = 0.005f;
     float m_speechThreshold = 0.02f;
     int m_calibrationSamples = 0;

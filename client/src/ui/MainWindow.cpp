@@ -26,6 +26,7 @@
 #include "settings/AppSettings.h"
 #include "settings/UserDataStore.h"
 #include "ui/NativeScrollBars.h"
+#include "ui/StyleHelper.h"
 #include "ui/ThemeHelper.h"
 #include <QJsonArray>
 #include <QJsonObject>
@@ -37,6 +38,10 @@
 #include <QMenuBar>
 #include <QPointer>
 #include <QPushButton>
+#include <QPainter>
+#include <QPainterPath>
+#include <QRegion>
+#include <QStyleOptionButton>
 #include <QRegularExpression>
 #include <QSignalBlocker>
 #include <QButtonGroup>
@@ -74,6 +79,9 @@
 #include <QTabBar>
 #include <QUrl>
 #include <QEvent>
+#include <QVariantAnimation>
+#include <QEasingCurve>
+#include <QAbstractAnimation>
 
 #include <algorithm>
 
@@ -105,18 +113,9 @@ bool isDialableNumber(const QString &value)
   return true;
 }
 
-QColor textOnAccentBackground(const QColor &background)
-{
-  return background.lightness() > 140 ? QColor(0x20, 0x20, 0x20) : QColor(Qt::white);
-}
-
 QString colorToRgba(const QColor &color, int alpha)
 {
-  return QStringLiteral("rgba(%1, %2, %3, %4)")
-      .arg(color.red())
-      .arg(color.green())
-      .arg(color.blue())
-      .arg(alpha);
+  return itl::colorToRgba(color, alpha);
 }
 
 int wallpaperAlphaFromOpacity(int opacityPercent)
@@ -160,7 +159,7 @@ void clearPanelStyle(QWidget *widget)
   widget->update();
 }
 
-void applyDimPanel(QWidget *widget, bool enabled, int alpha)
+void applyDimPanel(QWidget *widget, bool enabled, int alpha, const QColor &fillColor = QColor())
 {
   if (!widget) {
     return;
@@ -189,7 +188,8 @@ void applyDimPanel(QWidget *widget, bool enabled, int alpha)
     overlay->setAttribute(Qt::WA_StyledBackground, true);
     overlay->setAttribute(Qt::WA_OpaquePaintEvent, false);
   }
-  const QColor bg = QApplication::palette().color(QPalette::Window);
+  const QColor bg =
+      fillColor.isValid() ? fillColor : QApplication::palette().color(QPalette::Window);
   overlay->setStyleSheet(
       QStringLiteral("#itlDimOverlay { background-color: %1; }").arg(colorToRgba(bg, alpha)));
   QRect geo = widget->rect();
@@ -215,51 +215,205 @@ void applyDimPanel(QWidget *widget, bool enabled, int alpha)
   widget->update();
 }
 
+constexpr const char *kListHoverRimName = "itlListHoverRim";
+constexpr qreal kListCornerRadius = 4.0;
+
+/** Soft Highlight rim around contact/history lists — fades like Breeze button hover (~150ms). */
+class ListHoverChromeController final : public QObject {
+public:
+  explicit ListHoverChromeController(QListWidget *list)
+      : QObject(list)
+      , m_list(list)
+  {
+    m_rim = new QWidget(list);
+    m_rim->setObjectName(QString::fromUtf8(kListHoverRimName));
+    m_rim->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_rim->setAttribute(Qt::WA_NoSystemBackground);
+    m_rim->setAutoFillBackground(false);
+    m_rim->hide();
+
+    m_anim.setDuration(150);
+    m_anim.setEasingCurve(QEasingCurve::InOutQuad);
+    QObject::connect(&m_anim, &QVariantAnimation::valueChanged, this, [this](const QVariant &value) {
+      m_strength = value.toReal();
+      if (m_strength <= 0.001) {
+        m_rim->hide();
+      } else {
+        syncRimGeometry();
+        m_rim->show();
+        m_rim->raise();
+        m_rim->update();
+      }
+    });
+
+    m_list->setAttribute(Qt::WA_Hover, true);
+    m_list->setMouseTracking(true);
+    m_list->installEventFilter(this);
+    if (QWidget *viewport = m_list->viewport()) {
+      viewport->setMouseTracking(true);
+      viewport->installEventFilter(this);
+    }
+    m_rim->installEventFilter(this);
+    syncRimGeometry();
+  }
+
+protected:
+  bool eventFilter(QObject *watched, QEvent *event) override
+  {
+    if (watched == m_rim && event->type() == QEvent::Paint) {
+      paintRim();
+      return true;
+    }
+
+    switch (event->type()) {
+    case QEvent::Enter:
+    case QEvent::Leave:
+    case QEvent::HoverEnter:
+    case QEvent::HoverLeave:
+    case QEvent::FocusIn:
+    case QEvent::FocusOut:
+      QTimer::singleShot(0, this, [this]() { refreshTarget(); });
+      break;
+    case QEvent::Resize:
+    case QEvent::Show:
+      syncRimGeometry();
+      break;
+    default:
+      break;
+    }
+    return QObject::eventFilter(watched, event);
+  }
+
+private:
+  void syncRimGeometry()
+  {
+    if (!m_list || !m_rim) {
+      return;
+    }
+    m_rim->setGeometry(m_list->rect());
+    // Clip the list panel to the same corners as the hover rim (QSS radius alone
+    // does not clip the viewport / item widgets).
+    const QRect r = m_list->rect();
+    if (r.isEmpty()) {
+      m_list->clearMask();
+      return;
+    }
+    QPainterPath path;
+    path.addRoundedRect(QRectF(r), kListCornerRadius, kListCornerRadius);
+    m_list->setMask(QRegion(path.toFillPolygon().toPolygon()));
+  }
+
+  void refreshTarget()
+  {
+    if (!m_list) {
+      return;
+    }
+    const qreal target = (m_list->underMouse() || m_list->hasFocus()) ? 1.0 : 0.0;
+    if (qFuzzyCompare(m_anim.endValue().toReal(), target) && m_anim.state() == QAbstractAnimation::Running) {
+      return;
+    }
+    m_anim.stop();
+    m_anim.setStartValue(m_strength);
+    m_anim.setEndValue(target);
+    m_anim.start();
+  }
+
+  void paintRim()
+  {
+    if (!m_rim || m_strength <= 0.0) {
+      return;
+    }
+    QPainter painter(m_rim);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    QColor accent = QApplication::palette().color(QPalette::Highlight);
+    accent.setAlpha(qBound(0, qRound(255.0 * m_strength), 255));
+    QPen pen(accent, 1.0);
+    pen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+    painter.drawRoundedRect(QRectF(m_rim->rect()).adjusted(0.5, 0.5, -0.5, -0.5), kListCornerRadius,
+                            kListCornerRadius);
+  }
+
+  QPointer<QListWidget> m_list;
+  QWidget *m_rim = nullptr;
+  QVariantAnimation m_anim;
+  qreal m_strength = 0.0;
+};
+
+void ensureListHoverChrome(QListWidget *list)
+{
+  if (!list || list->property("itlListHoverChrome").toBool()) {
+    return;
+  }
+  list->setProperty("itlListHoverChrome", true);
+  new ListHoverChromeController(list);
+}
+
 void applyNativeListChrome(QListWidget *list, bool fillBackground)
 {
   if (!list) {
     return;
   }
 
-  // Fully leave any prior transparent stylesheet mode — leftover QSS causes ghosting at 100%.
-  list->setStyleSheet(QString());
-  QWidget *viewport = list->viewport();
-  if (viewport) {
-    viewport->setStyleSheet(QString());
+  if (list->objectName().isEmpty()) {
+    list->setObjectName(QStringLiteral("dimList_%1").arg(reinterpret_cast<quintptr>(list), 0, 16));
   }
+  const QString name = list->objectName();
+  const QString viewportName = name + QStringLiteral("Viewport");
+
   if (QStyle *appStyle = QApplication::style()) {
     list->setStyle(appStyle);
-    if (viewport) {
-      viewport->setStyle(appStyle);
-    }
   }
 
+  // Use the real system palette: Base is usually darker than Window (recessed panel).
   QPalette listPalette = QApplication::palette();
-  const QColor window = listPalette.color(QPalette::Window);
-  listPalette.setColor(QPalette::Base, window);
-  listPalette.setColor(QPalette::Window, window);
   listPalette.setColor(QPalette::Text, listPalette.color(QPalette::WindowText));
+  const QColor base = listPalette.color(QPalette::Base);
 
-  list->setAttribute(Qt::WA_StyledBackground, false);
+  // Base fill with the same corner radius as the hover rim.
+  list->setStyleSheet(QStringLiteral("#%1 {"
+                                     "  background-color: %2;"
+                                     "  border: none;"
+                                     "  border-radius: %3px;"
+                                     "  outline: 0;"
+                                     "}"
+                                     "#%1::item {"
+                                     "  background-color: transparent;"
+                                     "  border: none;"
+                                     "}")
+                          .arg(name, base.name(QColor::HexRgb),
+                               QString::number(int(kListCornerRadius))));
+
+  // Do NOT set WA_OpaquePaintEvent — transparent rows would ghost previous stack pages.
+  list->setAttribute(Qt::WA_StyledBackground, true);
   list->setAttribute(Qt::WA_TranslucentBackground, false);
   list->setAttribute(Qt::WA_NoSystemBackground, false);
-  list->setAttribute(Qt::WA_OpaquePaintEvent, fillBackground);
-  list->setAutoFillBackground(fillBackground);
+  list->setAttribute(Qt::WA_OpaquePaintEvent, false);
+  list->setAutoFillBackground(false);
   list->setPalette(listPalette);
+  list->setFrameShape(QFrame::NoFrame);
+  list->setMouseTracking(true);
   list->style()->unpolish(list);
   list->style()->polish(list);
 
-  if (viewport) {
-    viewport->setAttribute(Qt::WA_StyledBackground, false);
+  if (QWidget *viewport = list->viewport()) {
+    viewport->setObjectName(viewportName);
+    viewport->setStyleSheet(
+        QStringLiteral("#%1 { background-color: transparent; border: none; }").arg(viewportName));
+    viewport->setAttribute(Qt::WA_StyledBackground, true);
     viewport->setAttribute(Qt::WA_TranslucentBackground, false);
     viewport->setAttribute(Qt::WA_NoSystemBackground, false);
-    viewport->setAttribute(Qt::WA_OpaquePaintEvent, fillBackground);
-    viewport->setAutoFillBackground(fillBackground);
+    viewport->setAttribute(Qt::WA_OpaquePaintEvent, false);
+    viewport->setAutoFillBackground(false);
     viewport->setPalette(listPalette);
+    viewport->setMouseTracking(true);
     viewport->style()->unpolish(viewport);
     viewport->style()->polish(viewport);
     viewport->update();
   }
+  Q_UNUSED(fillBackground);
+  ensureListHoverChrome(list);
   itl::applyNativeScrollBarStyle(list->verticalScrollBar());
   itl::applyNativeScrollBarStyle(list->horizontalScrollBar());
   list->update();
@@ -267,7 +421,6 @@ void applyNativeListChrome(QListWidget *list, bool fillBackground)
 
 void applyDimList(QListWidget *list, bool enabled, int alpha)
 {
-  Q_UNUSED(alpha);
   if (!list) {
     return;
   }
@@ -283,31 +436,51 @@ void applyDimList(QListWidget *list, bool enabled, int alpha)
     return;
   }
 
-  // Breeze paints opaque Base on the viewport even with autoFillBackground=false.
-  // Transparent QSS on the list itself (not on parents) lets the page dim-overlay show through.
+  // Own Window fill at list opacity — same tint as page dim panels (not Base = black pit).
+  // Viewport rules must be #id-scoped so child QMenus stay opaque.
   if (list->objectName().isEmpty()) {
     list->setObjectName(QStringLiteral("dimList_%1").arg(reinterpret_cast<quintptr>(list), 0, 16));
   }
   const QString name = list->objectName();
+  const QString viewportName = name + QStringLiteral("Viewport");
+  QPalette listPalette = QApplication::palette();
+  listPalette.setColor(QPalette::Text, listPalette.color(QPalette::WindowText));
+  const QColor fillColor = listPalette.color(QPalette::Window);
+  const int clampedAlpha = qBound(40, alpha, 255);
+  const QString fill = colorToRgba(fillColor, clampedAlpha);
+
   list->setStyleSheet(QStringLiteral("#%1 {"
-                                     "  background-color: transparent;"
+                                     "  background-color: %2;"
                                      "  border: none;"
+                                     "  border-radius: %3px;"
                                      "  outline: 0;"
                                      "}"
                                      "#%1::item {"
                                      "  background-color: transparent;"
                                      "  border: none;"
                                      "}")
-                          .arg(name));
+                          .arg(name, fill, QString::number(int(kListCornerRadius))));
   list->setAutoFillBackground(false);
   list->setAttribute(Qt::WA_OpaquePaintEvent, false);
   list->setAttribute(Qt::WA_StyledBackground, true);
+  list->setAttribute(Qt::WA_TranslucentBackground, false);
+  list->setAttribute(Qt::WA_NoSystemBackground, false);
+  list->setPalette(listPalette);
+  list->setFrameShape(QFrame::NoFrame);
+  list->setMouseTracking(true);
   if (QWidget *viewport = list->viewport()) {
+    viewport->setObjectName(viewportName);
     viewport->setAutoFillBackground(false);
     viewport->setAttribute(Qt::WA_OpaquePaintEvent, false);
     viewport->setAttribute(Qt::WA_StyledBackground, true);
-    viewport->setStyleSheet(QStringLiteral("background-color: transparent; border: none;"));
+    viewport->setAttribute(Qt::WA_TranslucentBackground, false);
+    viewport->setAttribute(Qt::WA_NoSystemBackground, false);
+    viewport->setMouseTracking(true);
+    viewport->setPalette(listPalette);
+    viewport->setStyleSheet(
+        QStringLiteral("#%1 { background-color: transparent; border: none; }").arg(viewportName));
   }
+  ensureListHoverChrome(list);
   itl::applyNativeScrollBarStyle(list->verticalScrollBar());
   itl::applyNativeScrollBarStyle(list->horizontalScrollBar());
   QTimer::singleShot(0, list, [list]() {
@@ -335,6 +508,108 @@ void applySearchEditTransparency(QLineEdit *edit, bool enabled, int alpha)
   edit->update();
 }
 
+void applyNativePushButton(QPushButton *button)
+{
+  if (!button) {
+    return;
+  }
+  // Same chrome as footer «Конференция»: system Breeze/Fusion, no QSS shaping.
+  button->setStyleSheet({});
+  button->setAttribute(Qt::WA_StyledBackground, false);
+  button->setAttribute(Qt::WA_Hover, true);
+  button->setAutoFillBackground(false);
+  button->setFlat(false);
+  button->setPalette(QApplication::palette());
+  if (QStyle *appStyle = QApplication::style()) {
+    button->setStyle(appStyle);
+  }
+  button->style()->unpolish(button);
+  button->style()->polish(button);
+  button->update();
+}
+
+/** Paints checked filter buttons with Highlight fill via the system style (no QSS). */
+class CheckedAccentButtonFilter final : public QObject {
+public:
+  using QObject::QObject;
+
+protected:
+  bool eventFilter(QObject *watched, QEvent *event) override
+  {
+    if (event->type() != QEvent::Paint) {
+      return QObject::eventFilter(watched, event);
+    }
+    auto *button = qobject_cast<QPushButton *>(watched);
+    if (!button || !button->isChecked()) {
+      return false;
+    }
+
+    QStyleOptionButton option;
+    option.initFrom(button);
+    option.rect = button->rect();
+    option.text = button->text();
+    option.icon = button->icon();
+    option.iconSize = button->iconSize();
+    option.features = QStyleOptionButton::None;
+    if (button->isFlat()) {
+      option.features |= QStyleOptionButton::Flat;
+    }
+    option.state = QStyle::State_None;
+    if (button->isEnabled()) {
+      option.state |= QStyle::State_Enabled;
+    }
+    if (button->hasFocus()) {
+      option.state |= QStyle::State_HasFocus;
+    }
+    if (button->underMouse()) {
+      option.state |= QStyle::State_MouseOver;
+    }
+    // Raised+On with Button=Highlight → solid accent chrome, system corner radius.
+    option.state |= QStyle::State_Raised | QStyle::State_On;
+    if (button->isDown()) {
+      option.state |= QStyle::State_Sunken;
+    }
+
+    const QPalette appPal = QApplication::palette(button);
+    const QColor accent = appPal.color(QPalette::Highlight);
+    const QColor accentText = appPal.color(QPalette::HighlightedText);
+    option.palette = appPal;
+    for (const QPalette::ColorGroup group : {QPalette::Active, QPalette::Inactive}) {
+      option.palette.setColor(group, QPalette::Button, accent);
+      option.palette.setColor(group, QPalette::Light, accent.lighter(112));
+      option.palette.setColor(group, QPalette::Midlight, accent);
+      option.palette.setColor(group, QPalette::Dark, accent.darker(118));
+      option.palette.setColor(group, QPalette::Mid, accent.darker(110));
+      option.palette.setColor(group, QPalette::ButtonText, accentText);
+      option.palette.setColor(group, QPalette::WindowText, accentText);
+      option.palette.setColor(group, QPalette::Text, accentText);
+    }
+
+    QPainter painter(button);
+    button->style()->drawControl(QStyle::CE_PushButton, &option, &painter, button);
+    return true;
+  }
+};
+
+CheckedAccentButtonFilter *checkedAccentButtonFilter()
+{
+  static CheckedAccentButtonFilter filter;
+  return &filter;
+}
+
+void applyCheckableFilterButtonStyle(QPushButton *button, bool /*checked*/)
+{
+  if (!button) {
+    return;
+  }
+  applyNativePushButton(button);
+  if (!button->property("itlAccentCheckedFilter").toBool()) {
+    button->setProperty("itlAccentCheckedFilter", true);
+    button->installEventFilter(checkedAccentButtonFilter());
+  }
+  button->update();
+}
+
 void applyFooterButtonTransparency(QWidget *footer, bool enabled, int alpha)
 {
   Q_UNUSED(enabled);
@@ -342,79 +617,21 @@ void applyFooterButtonTransparency(QWidget *footer, bool enabled, int alpha)
   if (!footer) {
     return;
   }
-  // Keep system Breeze buttons — no wallpaper QSS / autofill (autofill paints a square past rounded corners).
-  const QPalette app = QApplication::palette();
   for (QPushButton *btn : footer->findChildren<QPushButton *>(QString(), Qt::FindDirectChildrenOnly)) {
     if (!btn || btn->objectName() != QLatin1String("footerBtn")) {
       continue;
     }
-    btn->setStyleSheet({});
-    btn->setAttribute(Qt::WA_StyledBackground, false);
-    btn->setAttribute(Qt::WA_Hover, true);
-    btn->setAutoFillBackground(false);
-    btn->setPalette(app);
-    if (QStyle *appStyle = QApplication::style()) {
-      btn->setStyle(appStyle);
-    }
-    btn->style()->unpolish(btn);
-    btn->style()->polish(btn);
-    btn->update();
+    applyNativePushButton(btn);
   }
 }
 
-QColor dimmedPopupBackground()
+void applyDimmedMenu(QMenu *menu, bool /*enabled*/)
 {
-  const QColor window = QApplication::palette().color(QPalette::Window);
-  // Slight darkening for popup lists — dim, not black.
-  return QColor(qRound(window.red() * 0.88), qRound(window.green() * 0.88), qRound(window.blue() * 0.88));
+  itl::applyPopupMenuStyle(menu);
 }
 
-void applyDimmedMenu(QMenu *menu, bool enabled, int alpha = 230)
-{
-  if (!menu) {
-    return;
-  }
-  if (!enabled) {
-    menu->setStyleSheet({});
-    menu->setPalette(QApplication::palette(menu));
-    return;
-  }
-
-  const QPalette pal = QApplication::palette();
-  const QColor bg = dimmedPopupBackground();
-  const QColor text = pal.color(QPalette::WindowText);
-  const QColor mid = pal.color(QPalette::Mid);
-  const QColor highlight = pal.color(QPalette::Highlight);
-  const QColor highlightText = pal.color(QPalette::HighlightedText);
-  const QColor disabled = pal.color(QPalette::Disabled, QPalette::Text);
-  menu->setStyleSheet(QStringLiteral("QMenu {"
-                                     "  background-color: %1;"
-                                     "  color: %2;"
-                                     "  border: 1px solid %3;"
-                                     "  padding: 4px;"
-                                     "}"
-                                     "QMenu::item {"
-                                     "  padding: 6px 28px 6px 24px;"
-                                     "  background: transparent;"
-                                     "  border-radius: 4px;"
-                                     "}"
-                                     "QMenu::item:selected {"
-                                     "  background-color: %4;"
-                                     "  color: %5;"
-                                     "}"
-                                     "QMenu::item:disabled {"
-                                     "  color: %6;"
-                                     "}"
-                                     "QMenu::separator {"
-                                     "  height: 1px;"
-                                     "  background: %3;"
-                                     "  margin: 4px 8px;"
-                                     "}")
-                          .arg(colorToRgba(bg, alpha), text.name(), mid.name(), highlight.name(),
-                               highlightText.name(), disabled.name()));
-}
-
-void applyDimTabs(QWidget *tabStrip, QTabBar *tabBar, QStackedWidget *stack, bool enabled, int alpha)
+void applyDimTabs(QWidget *tabStrip, QTabBar *tabBar, QStackedWidget *stack, QWidget *tabBaseLine,
+                  bool enabled, int alpha)
 {
   // Separate QTabBar + QStackedWidget — no QTabWidget pane (that pane was opaque and left a gap).
   if (stack) {
@@ -428,24 +645,63 @@ void applyDimTabs(QWidget *tabStrip, QTabBar *tabBar, QStackedWidget *stack, boo
       stack->setPalette(QApplication::palette());
     } else {
       clearPanelStyle(stack);
+      // Opaque mode: stack must erase before the current page paints, or tab switches
+      // leave dial/history pixels under transparent contact rows.
+      stack->setAutoFillBackground(true);
+      stack->setPalette(QApplication::palette());
     }
   }
-  if (tabBar) {
-    if (enabled) {
-      tabBar->setStyleSheet({});
-      tabBar->setAttribute(Qt::WA_StyledBackground, false);
-      tabBar->setAttribute(Qt::WA_TranslucentBackground, false);
-      tabBar->setAttribute(Qt::WA_NoSystemBackground, false);
-      tabBar->setAutoFillBackground(false);
-      tabBar->setAttribute(Qt::WA_OpaquePaintEvent, false);
-      tabBar->setPalette(QApplication::palette());
-    } else {
-      clearPanelStyle(tabBar);
-    }
-    tabBar->setDrawBase(!enabled);
-    tabBar->setExpanding(false);
-  }
+
+  // Strip chrome matches header/footer (Window). Only the tab buttons use denser Base.
   applyDimPanel(tabStrip, enabled, alpha);
+
+  if (tabBaseLine) {
+    tabBaseLine->hide();
+  }
+
+  const QPalette appPal = QApplication::palette();
+  if (tabBar) {
+    const QColor base = appPal.color(QPalette::Base);
+    const QColor accent = appPal.color(QPalette::Highlight);
+    const QColor text = appPal.color(QPalette::WindowText);
+    const QString tabFill =
+        enabled ? colorToRgba(base, qBound(40, alpha + 24, 255)) : base.name(QColor::HexRgb);
+
+    // Tab chips with accent top "cap" only — no horizontal rule under the row.
+    tabBar->setStyleSheet(QStringLiteral("QTabBar#mainTabBar {"
+                                         "  background: transparent;"
+                                         "  border: none;"
+                                         "}"
+                                         "QTabBar#mainTabBar::tab {"
+                                         "  background-color: %1;"
+                                         "  color: %2;"
+                                         "  padding: 6px 12px;"
+                                         "  margin-right: 1px;"
+                                         "  border: none;"
+                                         "  border-top: 2px solid transparent;"
+                                         "  border-top-left-radius: 4px;"
+                                         "  border-top-right-radius: 4px;"
+                                         "}"
+                                         "QTabBar#mainTabBar::tab:selected {"
+                                         "  background-color: %1;"
+                                         "  border-top: 2px solid %3;"
+                                         "}"
+                                         "QTabBar#mainTabBar::tab:hover:!selected {"
+                                         "  border-top: 2px solid %3;"
+                                         "}")
+                              .arg(tabFill, text.name(QColor::HexRgb), accent.name(QColor::HexRgb)));
+    tabBar->setAttribute(Qt::WA_StyledBackground, true);
+    tabBar->setAttribute(Qt::WA_TranslucentBackground, false);
+    tabBar->setAttribute(Qt::WA_NoSystemBackground, false);
+    tabBar->setAutoFillBackground(false);
+    tabBar->setAttribute(Qt::WA_OpaquePaintEvent, false);
+    tabBar->setPalette(appPal);
+    tabBar->setDrawBase(false);
+    tabBar->setExpanding(false);
+    tabBar->style()->unpolish(tabBar);
+    tabBar->style()->polish(tabBar);
+    tabBar->update();
+  }
 }
 
 void applyHistoryListPalette(QListWidget *historyList, const QPalette &sourcePalette)
@@ -466,7 +722,7 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   setWindowTitle(tr("OpenSource Communicator"));
   setProperty("itlNoMaximize", true);
   setWindowFlags(windowFlags() & ~Qt::WindowMaximizeButtonHint);
-  setFixedSize(390, 620);
+  setFixedSize(390, 646);
   itl::preventFullscreen(this);
 
   auto *menuBar = new QMenuBar(this);
@@ -547,8 +803,13 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   m_tabBar = new QTabBar(m_tabStrip);
   m_tabBar->setObjectName(QStringLiteral("mainTabBar"));
   m_tabBar->setExpanding(false);
-  m_tabBar->setDrawBase(true);
+  m_tabBar->setDrawBase(false);
   tabStripLayout->addWidget(m_tabBar);
+  // Optional leftover; accent rule + notch are drawn inside QTabBar QSS.
+  m_tabBaseLine = new QWidget(m_tabStrip);
+  m_tabBaseLine->setObjectName(QStringLiteral("mainTabBaseLine"));
+  m_tabBaseLine->setFixedHeight(2);
+  m_tabBaseLine->hide();
   root->addWidget(m_tabStrip);
 
   m_tabStack = new QStackedWidget;
@@ -579,6 +840,7 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
 
   auto *filterRow = new QHBoxLayout;
   m_filterGroup = new QButtonGroup(this);
+  m_filterGroup->setExclusive(true);
   auto *allBtn = new QPushButton(tr("Все"));
   allBtn->setObjectName(QStringLiteral("filterBtn"));
   allBtn->setCheckable(true);
@@ -607,6 +869,7 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   m_contactsList = new QListWidget;
   m_contactsList->setObjectName(QStringLiteral("contactList"));
   m_contactsList->setFrameShape(QFrame::NoFrame);
+  m_contactsList->setSpacing(0);
   applyDimList(m_contactsList, false, 255);
   contactsLayout->addWidget(m_contactsList, 1);
   m_tabBar->addTab(tr("Контакты"));
@@ -690,6 +953,7 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   m_historyList = new QListWidget;
   m_historyList->setObjectName(QStringLiteral("historyList"));
   m_historyList->setFrameShape(QFrame::NoFrame);
+  m_historyList->setSpacing(0);
   m_historyList->setMouseTracking(true);
   m_historyList->viewport()->setMouseTracking(true);
   applyHistoryListPalette(m_historyList, palette());
@@ -748,11 +1012,10 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   m_viewCallAction = m_viewMenu->addAction(tr("Кнопка позвонить"));
   m_viewCallAction->setCheckable(true);
   connect(m_addMenu, &QMenu::aboutToShow, this, [this]() {
-    // Native opaque system menu — do not apply wallpaper transparency.
-    applyDimmedMenu(m_addMenu, false);
+    applyDimmedMenu(m_addMenu, true);
   });
   connect(m_viewMenu, &QMenu::aboutToShow, this, [this]() {
-    applyDimmedMenu(m_viewMenu, false);
+    applyDimmedMenu(m_viewMenu, true);
     if (m_viewChatAction) {
       m_viewChatAction->setChecked(m_client->appSettings().showChatButtons());
     }
@@ -789,11 +1052,8 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   connect(m_historyScopeGroup, &QButtonGroup::idClicked, this, &MainWindow::onHistoryScopeChanged);
   connect(m_historyPeriodBtn, &QPushButton::clicked, this, &MainWindow::onHistoryPeriodClicked);
   connect(m_historySearchEdit, &QLineEdit::textChanged, this, &MainWindow::onHistorySearchChanged);
-  connect(m_historyList, &QListWidget::itemEntered, this, [this](QListWidgetItem *item) {
-    if (item && (item->flags() & Qt::ItemIsEnabled)) {
-      m_historyList->setCurrentItem(item);
-    }
-  });
+  // Do not setCurrentItem on itemEntered — QListWidget scrolls to the current row and
+  // "rips" the list to the bottom while the cursor moves down. Hover chrome is in HistoryRowWidget.
   connect(m_historyList, &QListWidget::currentItemChanged, this, [this](QListWidgetItem *, QListWidgetItem *) {
     onHistorySelected();
   });
@@ -824,8 +1084,41 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   connect(m_client->chat(), &itl::ChatManager::peerColorReceived, this, [this](const QString &peer, const QString &color) {
     applyPeerColorForPeer(peer, color);
   });
+  connect(m_client->chat(), &itl::ChatManager::peerAvatarReceived, this,
+          [this](const QString &peer, const QPixmap &avatar) {
+            applyPeerAvatarForPeer(peer, avatar);
+          });
+  connect(m_client->chat(), &itl::ChatManager::demoPeerRenameRequested, this,
+          [this](const QString &peer, const QString &newName) {
+            if (!m_demoMode || newName.trimmed().isEmpty()) {
+              return;
+            }
+            QString key = peer;
+            if (!m_contacts.contains(key)) {
+              for (auto it = m_contacts.cbegin(); it != m_contacts.cend(); ++it) {
+                if (isSamePeer(it.key(), peer)) {
+                  key = it.key();
+                  break;
+                }
+              }
+            }
+            if (!m_contacts.contains(key) || m_contacts.value(key).isSelf) {
+              return;
+            }
+            m_contacts[key].name = newName.trimmed();
+            rebuildContactList();
+            rebuildHistoryList();
+            if (m_chatDialog && m_chatDialog->isOpenForPeer(key)) {
+              m_chatDialog->updatePeerDisplayName(m_contacts[key].name);
+            }
+            if (m_callWindow && m_activeLeg == m_demoCallLeg && m_callTracking.contains(m_demoCallLeg)
+                && isSamePeer(m_callTracking.value(m_demoCallLeg).peer, key)) {
+              m_callWindow->setAvatarLetter(m_contacts[key].name);
+            }
+          });
   connect(m_client->chat(), &itl::ChatManager::historyLoaded, this, [this](const QString &) {
     refreshAllContactPeerColors();
+    refreshAllContactPeerAvatars();
   });
   connect(m_client, &itl::CommunicatorClient::callEvent, this, &MainWindow::onCallEvent);
   connect(m_client->api(), &itl::WsApiClient::domainContactsLoaded, this, &MainWindow::onContactsLoaded);
@@ -852,6 +1145,7 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   rebuildHistoryList();
   setOnlineUi(false);
   setupDragDrop();
+  itl::setPopupChromeUiOpacity(100);
   refreshWallpaper();
   QTimer::singleShot(0, this, &MainWindow::startSession);
 }
@@ -862,7 +1156,7 @@ void MainWindow::showEvent(QShowEvent *event)
   if (windowState() & (Qt::WindowFullScreen | Qt::WindowMaximized)) {
     setWindowState(Qt::WindowNoState);
   }
-  resize(390, 620);
+  resize(390, 646);
   // First layout pass: overlays are 0×0 in the constructor. Re-apply without changing the
   // 100% opaque / ≤99% translucent rule (see refreshWallpaper).
   QTimer::singleShot(0, this, [this]() { refreshWallpaper(); });
@@ -943,6 +1237,8 @@ void MainWindow::refreshWallpaper()
       central->setPalette(QApplication::palette());
     } else {
       clearPanelStyle(central);
+      central->setAutoFillBackground(true);
+      central->setPalette(QApplication::palette());
     }
   }
 
@@ -957,6 +1253,8 @@ void MainWindow::refreshWallpaper()
   }
 
   m_wallpaperActive = translucentUi;
+  // Popups stay a bit more opaque than the main UI panels.
+  itl::setPopupChromeUiOpacity(translucentUi ? opacity : 100);
   applyWallpaperOverlay(translucentUi);
   if (!translucentUi) {
     refreshTheme();
@@ -966,7 +1264,9 @@ void MainWindow::refreshWallpaper()
 void MainWindow::applyWallpaperOverlay(bool enabled)
 {
   const int alpha = wallpaperAlphaFromOpacity(m_client->appSettings().appWallpaperOpacity());
+  const int listAlpha = wallpaperAlphaFromOpacity(m_client->appSettings().appWallpaperListOpacity());
   const int chromeAlpha = enabled ? alpha : 255;
+  const int listChromeAlpha = enabled ? listAlpha : 255;
 
   applyDimPanel(m_menuBar, enabled, alpha);
   if (m_menuBar) {
@@ -984,16 +1284,20 @@ void MainWindow::applyWallpaperOverlay(bool enabled)
   applyDimPanel(m_mainHeader, enabled, alpha);
   applyDimPanel(m_mainFooter, enabled, alpha);
   applyFooterButtonTransparency(m_mainFooter, enabled, alpha);
-  applyDimTabs(m_tabStrip, m_tabBar, m_tabStack, enabled, alpha);
+  applyDimTabs(m_tabStrip, m_tabBar, m_tabStack, m_tabBaseLine, enabled, alpha);
+  // Page dim stays tied to interface opacity (toolbars/labels sit on it).
+  // Lists paint their own Window fill with list opacity on top of that.
   applyDimPanel(m_contactsPage, enabled, alpha);
   applyDimPanel(m_historyPage, enabled, alpha);
   applyDimPanel(m_dialPage, enabled, alpha);
   if (!enabled) {
-    // Simple page widgets: solid Window fill (no WA_OpaquePaintEvent — that flag ghosts complex chrome).
+    // Solid Window fill on pages. Never WA_OpaquePaintEvent — rows are transparent chrome
+    // and that flag skips erase → dial/history ghost under contacts at 100% opacity.
     for (QWidget *page : {m_contactsPage, m_historyPage, m_dialPage}) {
       if (!page) {
         continue;
       }
+      page->setAttribute(Qt::WA_OpaquePaintEvent, false);
       page->setAutoFillBackground(true);
       page->setPalette(QApplication::palette());
     }
@@ -1039,12 +1343,12 @@ void MainWindow::applyWallpaperOverlay(bool enabled)
     m_presenceSelector->setOpaquePopup(false);
   }
 
-  // Add/View menus stay fully opaque system menus.
-  applyDimmedMenu(m_addMenu, false);
-  applyDimmedMenu(m_viewMenu, false);
+  // Footer menus stay opaque (native chrome).
+  applyDimmedMenu(m_addMenu, true);
+  applyDimmedMenu(m_viewMenu, true);
 
-  applyDimList(m_contactsList, enabled, alpha);
-  applyDimList(m_historyList, enabled, alpha);
+  applyDimList(m_contactsList, enabled, listAlpha);
+  applyDimList(m_historyList, enabled, listAlpha);
 
   for (QWidget *page : {m_dialPage, m_historyPage, m_contactsPage}) {
     if (!page) {
@@ -1102,7 +1406,7 @@ void MainWindow::applyWallpaperOverlay(bool enabled)
     for (int i = 0; i < m_historyList->count(); ++i) {
       if (auto *row = qobject_cast<HistoryRowWidget *>(m_historyList->itemWidget(m_historyList->item(i)))) {
         row->setPalette(QApplication::palette());
-        row->setChromeAlpha(chromeAlpha);
+        row->setChromeAlpha(listChromeAlpha);
         row->refreshAppearance();
       }
     }
@@ -1133,6 +1437,7 @@ void MainWindow::applyWallpaperOverlay(bool enabled)
 
 void MainWindow::refreshTheme()
 {
+  itl::setPopupChromeUiOpacity(m_wallpaperActive ? m_client->appSettings().appWallpaperOpacity() : 100);
   if (m_historyList) {
     if (!m_wallpaperActive) {
       applyHistoryListPalette(m_historyList, palette());
@@ -1153,6 +1458,12 @@ void MainWindow::refreshTheme()
   if (m_contactsList && !m_wallpaperActive) {
     applyDimList(m_contactsList, false, 255);
     if (QWidget *viewport = m_contactsList->viewport()) {
+      viewport->update();
+    }
+  }
+  if (m_historyList && !m_wallpaperActive) {
+    applyDimList(m_historyList, false, 255);
+    if (QWidget *viewport = m_historyList->viewport()) {
       viewport->update();
     }
   }
@@ -1407,7 +1718,7 @@ void MainWindow::rebuildContactList()
   if (m_contactsList) {
     if (m_wallpaperActive) {
       applyDimList(m_contactsList, true,
-                   wallpaperAlphaFromOpacity(m_client->appSettings().appWallpaperOpacity()));
+                   wallpaperAlphaFromOpacity(m_client->appSettings().appWallpaperListOpacity()));
     } else {
       applyDimList(m_contactsList, false, 255);
     }
@@ -1432,9 +1743,17 @@ void MainWindow::addOrUpdateContactRow(const QString &peer)
   if (!peerColor.isEmpty()) {
     row->setPeerColor(peerColor);
   }
+  const QPixmap peerAvatar = m_client->chat()->peerAvatar(peer);
+  if (!peerAvatar.isNull()) {
+    row->setPeerAvatar(peerAvatar);
+  }
   auto *item = new QListWidgetItem;
   item->setData(Qt::UserRole, peer);
-  item->setSizeHint(QSize(0, entry.ext.isEmpty() && entry.phone.isEmpty() ? 48 : 56));
+  // Fixed slot height matching the row widget — prevents empty gap under the last
+  // contact without collapsing item heights (which broke scrolling).
+  const int rowHeight = (entry.ext.isEmpty() && entry.phone.isEmpty()) ? 48 : 56;
+  row->setFixedHeight(rowHeight);
+  item->setSizeHint(QSize(0, rowHeight));
   m_contactsList->addItem(item);
   m_contactsList->setItemWidget(item, row);
   m_contactItems.insert(peer, item);
@@ -1551,22 +1870,7 @@ void MainWindow::onFilterChanged(int id)
 
 void MainWindow::updateDialCallButtonStyle()
 {
-  if (!m_dialCallBtn) {
-    return;
-  }
-
-  // Native Breeze — no autofill (square fill sticks out past rounded corners).
-  m_dialCallBtn->setStyleSheet({});
-  m_dialCallBtn->setAttribute(Qt::WA_StyledBackground, false);
-  m_dialCallBtn->setAttribute(Qt::WA_Hover, true);
-  m_dialCallBtn->setAutoFillBackground(false);
-  m_dialCallBtn->setPalette(QApplication::palette(m_dialCallBtn));
-  if (QStyle *appStyle = QApplication::style()) {
-    m_dialCallBtn->setStyle(appStyle);
-  }
-  m_dialCallBtn->style()->unpolish(m_dialCallBtn);
-  m_dialCallBtn->style()->polish(m_dialCallBtn);
-  m_dialCallBtn->update();
+  applyNativePushButton(m_dialCallBtn);
 }
 
 void MainWindow::updateFilterButtonStyles()
@@ -1575,42 +1879,18 @@ void MainWindow::updateFilterButtonStyles()
     return;
   }
 
-  const QPalette appPalette = QApplication::palette();
-  const QColor accent = appPalette.color(QPalette::Highlight);
-  const QColor accentText = textOnAccentBackground(accent);
-
   for (QAbstractButton *button : m_filterGroup->buttons()) {
     auto *filterBtn = qobject_cast<QPushButton *>(button);
     if (!filterBtn) {
       continue;
     }
-
-    // Native Breeze only. Do not setAutoFillBackground — that paints a hard rectangle
-    // behind the styled (rounded) button and looks broken when checked.
-    filterBtn->setStyleSheet({});
-    filterBtn->setAttribute(Qt::WA_StyledBackground, false);
-    filterBtn->setAttribute(Qt::WA_Hover, true);
-    filterBtn->setAutoFillBackground(false);
-    if (filterBtn->isChecked()) {
-      QPalette pal = appPalette;
-      pal.setColor(QPalette::Button, accent);
-      pal.setColor(QPalette::ButtonText, accentText);
-      pal.setColor(QPalette::Light, accent.lighter(115));
-      pal.setColor(QPalette::Midlight, accent.lighter(105));
-      pal.setColor(QPalette::Mid, accent.darker(105));
-      pal.setColor(QPalette::Dark, accent.darker(125));
-      pal.setColor(QPalette::Shadow, accent.darker(140));
-      filterBtn->setPalette(pal);
-    } else {
-      filterBtn->setPalette(appPalette);
+    // Drive by current mode — more reliable than isChecked() after theme/wallpaper restyles.
+    const bool checked = m_filterGroup->id(filterBtn) == static_cast<int>(m_sortMode);
+    if (filterBtn->isChecked() != checked) {
+      QSignalBlocker blocker(m_filterGroup);
+      filterBtn->setChecked(checked);
     }
-
-    if (QStyle *appStyle = QApplication::style()) {
-      filterBtn->setStyle(appStyle);
-    }
-    filterBtn->style()->unpolish(filterBtn);
-    filterBtn->style()->polish(filterBtn);
-    filterBtn->update();
+    applyCheckableFilterButtonStyle(filterBtn, checked);
   }
 }
 
@@ -1618,6 +1898,7 @@ void MainWindow::onProfileAvatarChanged()
 {
   m_client->saveSettings();
   m_headerAvatar->refreshFromSettings();
+  syncSelfOscShareProfile();
   if (m_online) {
     refreshColorAdvertisementPeers();
     m_client->chat()->sendColorAdvertisement(m_client->appSettings().profileAvatarColor());
@@ -1716,6 +1997,7 @@ void MainWindow::applyLinkButtonStyle(QPushButton *button) const
 void MainWindow::onHistoryPeriodClicked()
 {
   QMenu menu(this);
+  itl::applyPopupMenuStyle(&menu);
   const struct {
     const char *label;
     HistoryPeriod period;
@@ -2125,27 +2407,27 @@ void MainWindow::rebuildHistoryList()
 
     const QString name = entry.displayName.isEmpty() ? entry.peer : entry.displayName;
 
-    QString firstLine = name;
-    if (waitSec > 0) {
-      firstLine += tr("; ждал: %1 сек.").arg(waitSec);
-    }
+    // Layout like contacts: title on top, number/details below in Link color.
+    const QString firstLine = name;
 
-    QString secondLine;
-    if (m_historyScope == HistoryScope::Company && !entry.employeeInfo.isEmpty()) {
-      secondLine = entry.employeeInfo;
-    } else if (m_historyScope == HistoryScope::Internal) {
-      secondLine = entry.peer;
-    } else {
-      secondLine = entry.peer;
+    QStringList detailParts;
+    if (!entry.displayName.isEmpty() && entry.displayName != entry.peer && !entry.peer.isEmpty()) {
+      detailParts.append(entry.peer);
+    } else if (m_historyScope == HistoryScope::Company && !entry.employeeInfo.isEmpty()) {
+      detailParts.append(entry.employeeInfo);
+    }
+    if (waitSec > 0) {
+      detailParts.append(tr("ждал: %1 сек.").arg(waitSec));
     }
     if (!status.isEmpty()) {
-      secondLine += QStringLiteral("; ") + status;
+      detailParts.append(status);
     }
+    const QString secondLine = detailParts.join(QStringLiteral("; "));
 
     auto *rowWidget = new HistoryRowWidget(entry.peer, name, firstLine, secondLine,
                                            formatHistoryWhen(entry.startedAtMs), arrow, arrowColor, missed);
     rowWidget->setChromeAlpha(m_wallpaperActive
-                                  ? wallpaperAlphaFromOpacity(m_client->appSettings().appWallpaperOpacity())
+                                  ? wallpaperAlphaFromOpacity(m_client->appSettings().appWallpaperListOpacity())
                                   : 255);
     connect(rowWidget, &HistoryRowWidget::callRequested, this, &MainWindow::onCallFromRow);
     connect(rowWidget, &HistoryRowWidget::chatRequested, this, &MainWindow::onChatFromRow);
@@ -2162,7 +2444,9 @@ void MainWindow::rebuildHistoryList()
     auto *item = new QListWidgetItem;
     item->setData(Qt::UserRole, entry.peer);
     item->setData(Qt::UserRole + 1, name);
-    item->setSizeHint(QSize(0, 46));
+    const int rowHeight = secondLine.isEmpty() ? 48 : 56;
+    rowWidget->setFixedHeight(rowHeight);
+    item->setSizeHint(QSize(0, rowHeight));
     m_historyList->addItem(item);
     m_historyList->setItemWidget(item, rowWidget);
   }
@@ -2175,7 +2459,7 @@ void MainWindow::rebuildHistoryList()
     m_historyList->addItem(placeholder);
   }
   if (m_historyList) {
-    const int alpha = wallpaperAlphaFromOpacity(m_client->appSettings().appWallpaperOpacity());
+    const int alpha = wallpaperAlphaFromOpacity(m_client->appSettings().appWallpaperListOpacity());
     if (m_wallpaperActive) {
       applyDimList(m_historyList, true, alpha);
       syncDimOverlayGeometry(m_historyPage);
@@ -2233,43 +2517,18 @@ void MainWindow::runHistorySelfTest()
 
 void MainWindow::updateHistoryButtonStyles()
 {
-  const QPalette appPalette = QApplication::palette();
-  const QColor accent = appPalette.color(QPalette::Highlight);
-  const QColor accentText = textOnAccentBackground(accent);
-
   for (QButtonGroup *group : {m_historyDirGroup, m_historyScopeGroup}) {
     if (!group) {
       continue;
     }
+    const int checkedId = group->checkedId();
     for (QAbstractButton *button : group->buttons()) {
       auto *btn = qobject_cast<QPushButton *>(button);
       if (!btn) {
         continue;
       }
-      // Native Breeze — no autofill square behind rounded buttons.
-      btn->setStyleSheet({});
-      btn->setAttribute(Qt::WA_StyledBackground, false);
-      btn->setAttribute(Qt::WA_Hover, true);
-      btn->setAutoFillBackground(false);
-      if (btn->isChecked()) {
-        QPalette pal = appPalette;
-        pal.setColor(QPalette::Button, accent);
-        pal.setColor(QPalette::ButtonText, accentText);
-        pal.setColor(QPalette::Light, accent.lighter(115));
-        pal.setColor(QPalette::Midlight, accent.lighter(105));
-        pal.setColor(QPalette::Mid, accent.darker(105));
-        pal.setColor(QPalette::Dark, accent.darker(125));
-        pal.setColor(QPalette::Shadow, accent.darker(140));
-        btn->setPalette(pal);
-      } else {
-        btn->setPalette(appPalette);
-      }
-      if (QStyle *appStyle = QApplication::style()) {
-        btn->setStyle(appStyle);
-      }
-      btn->style()->unpolish(btn);
-      btn->style()->polish(btn);
-      btn->update();
+      const bool checked = group->id(btn) == checkedId;
+      applyCheckableFilterButtonStyle(btn, checked);
     }
   }
 }
@@ -2578,10 +2837,18 @@ void MainWindow::enterDemoInterface()
   }
 
   itl::DemoData::seedChatMessages(m_client->chat());
+  QStringList demoOsc;
+  for (auto it = m_contacts.cbegin(); it != m_contacts.cend(); ++it) {
+    if (!it.value().isSelf) {
+      demoOsc.append(it.key());
+    }
+  }
+  m_client->chat()->seedDemoOscPeers(demoOsc);
   refreshColorAdvertisementPeers();
   m_client->chat()->sendColorAdvertisement(m_client->appSettings().profileAvatarColor());
   updateSelfHeader();
   rebuildContactList();
+  refreshAllContactPeerAvatars();
   rebuildHistoryList();
   updateUnreadIndicators();
   setOnlineUi(true);
@@ -2647,6 +2914,7 @@ void MainWindow::startDemoCallSimulation(const QString &peer, const QString &dis
   loadCallNotes(peer);
   m_callWindow->showOutgoing(peer, displayName, detail);
   m_callWindow->setAvatarColor(m_client->chat()->peerColor(peer));
+  m_callWindow->setAvatarPixmap(m_client->chat()->peerAvatar(peer));
   m_calls->pauseExternalMedia();
   beginCallTracking(m_demoCallLeg, peer, displayName, false);
   enterCallPresence();
@@ -2681,7 +2949,19 @@ void MainWindow::onLogout()
 
 void MainWindow::onSettings()
 {
-  SettingsDialog dlg(m_client, m_calls, m_selfName, this);
+  QHash<QString, QString> sharePeers;
+  for (auto it = m_contacts.cbegin(); it != m_contacts.cend(); ++it) {
+    if (it.value().isSelf) {
+      continue;
+    }
+    if (!m_demoMode && !m_client->chat()->isOscPeer(it.key())) {
+      continue;
+    }
+    const QString name = it.value().name.isEmpty() ? displayNameForPeer(it.key()) : it.value().name;
+    sharePeers.insert(it.key(), name);
+  }
+
+  SettingsDialog dlg(m_client, m_calls, m_selfName, sharePeers, m_selfPeer, this);
   const int result = dlg.exec();
   m_messageNotify->applySettings(&m_client->appSettings());
   if (result == QDialog::Accepted) {
@@ -2693,6 +2973,7 @@ void MainWindow::onSettings()
     }
     m_headerAvatar->refreshFromSettings();
     if (m_online) {
+      syncSelfOscShareProfile();
       refreshColorAdvertisementPeers();
       m_client->chat()->sendColorAdvertisement(m_client->appSettings().profileAvatarColor());
     }
@@ -3283,6 +3564,7 @@ void MainWindow::onCallFromRow(const QString &peer)
   loadCallNotes(peer);
   m_callWindow->showOutgoing(peer, displayNameForPeer(peer), detailForPeer(peer));
   m_callWindow->setAvatarColor(m_client->chat()->peerColor(peer));
+  m_callWindow->setAvatarPixmap(m_client->chat()->peerAvatar(peer));
 }
 
 void MainWindow::onChatFromRow(const QString &peer)
@@ -3512,6 +3794,7 @@ void MainWindow::onContactsLoaded(const QJsonObject &contacts)
   mergeCustomContacts();
   rebuildContactList();
   refreshAllContactPeerColors();
+  refreshAllContactPeerAvatars();
   refreshServerHistory();
   prefetchCompanyHistory();
   prefetchInternalHistory();
@@ -3550,7 +3833,20 @@ void MainWindow::refreshColorAdvertisementPeers()
     }
     peers.append(peer);
   }
-  m_client->chat()->setColorAdvertisementPeers(peers);
+  syncSelfOscShareProfile();
+  m_client->chat()->setOpenpingCandidates(peers);
+  m_client->chat()->sendOpenpingBroadcast();
+}
+
+void MainWindow::syncSelfOscShareProfile()
+{
+  const QString color = m_client->appSettings().profileAvatarColor();
+  QPixmap photo;
+  const QString path = m_client->appSettings().profileAvatarPath();
+  if (!path.isEmpty()) {
+    photo.load(path);
+  }
+  m_client->chat()->setSelfShareProfile(color, photo);
 }
 
 void MainWindow::applyPeerColorForPeer(const QString &peer, const QString &color)
@@ -3579,6 +3875,32 @@ void MainWindow::applyPeerColorForPeer(const QString &peer, const QString &color
   }
 }
 
+void MainWindow::applyPeerAvatarForPeer(const QString &peer, const QPixmap &avatar)
+{
+  if (avatar.isNull()) {
+    return;
+  }
+
+  int matched = 0;
+  for (auto it = m_contacts.cbegin(); it != m_contacts.cend(); ++it) {
+    if (!contactMatchesSender(it.key(), it.value(), peer)) {
+      continue;
+    }
+    ++matched;
+    if (ContactRowWidget *row = rowWidgetForPeer(it.key())) {
+      row->setPeerAvatar(avatar);
+    }
+  }
+
+  if (matched == 0) {
+    qCWarning(lcHistory) << "Avatar share stored for" << peer << "but no contact matched";
+  }
+
+  if (m_callWindow && !m_callWindow->peer().isEmpty() && isSamePeer(m_callWindow->peer(), peer)) {
+    m_callWindow->setAvatarPixmap(avatar);
+  }
+}
+
 bool MainWindow::contactMatchesSender(const QString &contactPeer, const ContactEntry &entry,
                                       const QString &sender) const
 {
@@ -3602,6 +3924,16 @@ void MainWindow::refreshAllContactPeerColors()
     const QString color = m_client->chat()->peerColor(it.key());
     if (!color.isEmpty()) {
       applyPeerColorForPeer(it.key(), color);
+    }
+  }
+}
+
+void MainWindow::refreshAllContactPeerAvatars()
+{
+  for (auto it = m_contacts.cbegin(); it != m_contacts.cend(); ++it) {
+    const QPixmap avatar = m_client->chat()->peerAvatar(it.key());
+    if (!avatar.isNull()) {
+      applyPeerAvatarForPeer(it.key(), avatar);
     }
   }
 }
@@ -3655,6 +3987,7 @@ void MainWindow::onCallStateChanged(const QString &leg, const QString &state, co
     beginCallTracking(leg, incomingPeer, detail, true);
     m_callWindow->showIncoming(incomingPeer, detail, {});
     m_callWindow->setAvatarColor(m_client->chat()->peerColor(incomingPeer));
+    m_callWindow->setAvatarPixmap(m_client->chat()->peerAvatar(incomingPeer));
     return;
   }
   if (state == QStringLiteral("connecting") || state == QStringLiteral("dialing")

@@ -19,11 +19,11 @@
 #include <QFileDialog>
 #include <QFrame>
 #include <QFormLayout>
-#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QPixmap>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QSizePolicy>
@@ -33,9 +33,13 @@
 #include <QVBoxLayout>
 
 #include "chat/ChatManager.h"
+#include "ui/TransferDialog.h"
+
+#include <QPixmap>
 
 SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager *calls,
-                               const QString &displayName, QWidget *parent)
+                               const QString &displayName, const QHash<QString, QString> &sharePeers,
+                               const QString &selfPeer, QWidget *parent)
     : QDialog(parent)
     , m_client(client)
     , m_calls(calls)
@@ -43,12 +47,14 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
     , m_ringbackPreview(new itl::RingbackPlayer(this))
     , m_incomingPreview(new itl::IncomingRingPlayer(this))
     , m_previewTimer(new QTimer(this))
+    , m_sharePeers(sharePeers)
+    , m_selfPeer(selfPeer)
 {
   setWindowTitle(tr("Настройки"));
   setObjectName(QStringLiteral("settingsDialog"));
   setSizeGripEnabled(false);
   // Fixed size so live wallpaper opacity updates (parent MainWindow restyle) cannot grow the dialog.
-  setFixedSize(460, 560);
+  setFixedSize(460, 680);
   m_selfName = displayName;
 
   auto *mainLayout = new QVBoxLayout(this);
@@ -59,9 +65,10 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
   auto *soundTab = new QWidget;
   auto *soundLayout = new QVBoxLayout(soundTab);
   soundLayout->setContentsMargins(8, 8, 8, 8);
+  soundLayout->setSpacing(8);
 
-  auto *audioGroup = new QGroupBox(tr("Звук"));
-  auto *form = new QFormLayout(audioGroup);
+  auto *form = new QFormLayout;
+  form->setSpacing(8);
 
   m_inputDevice = new QComboBox;
   m_outputDevice = new QComboBox;
@@ -86,8 +93,8 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
   m_incomingTone->addItem(itl::AppSettings::ringtoneLabel(itl::AppSettings::RingtoneKind::CustomFile),
                           static_cast<int>(itl::AppSettings::RingtoneKind::CustomFile));
 
-  form->addRow(tr("Микрофон"), m_inputDevice);
-  form->addRow(tr("Динамики"), m_outputDevice);
+  form->addRow(tr("Микрофон:"), m_inputDevice);
+  form->addRow(tr("Динамики:"), m_outputDevice);
 
   auto *ringbackToneRow = new QHBoxLayout;
   m_ringbackPreviewBtn = new QPushButton(QStringLiteral("▶"));
@@ -95,7 +102,7 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
   m_ringbackPreviewBtn->setFixedWidth(m_ringbackPreviewBtn->sizeHint().height());
   ringbackToneRow->addWidget(m_ringbackTone, 1);
   ringbackToneRow->addWidget(m_ringbackPreviewBtn);
-  form->addRow(tr("Звук дозвона ДО клиента"), ringbackToneRow);
+  form->addRow(tr("Звук дозвона ДО клиента:"), ringbackToneRow);
 
   auto *ringbackRow = new QHBoxLayout;
   m_ringbackPath = new QLineEdit;
@@ -103,7 +110,7 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
   m_ringbackBrowse = new QPushButton(tr("Обзор..."));
   ringbackRow->addWidget(m_ringbackPath, 1);
   ringbackRow->addWidget(m_ringbackBrowse);
-  form->addRow(tr("Файл гудка"), ringbackRow);
+  form->addRow(tr("Файл гудка:"), ringbackRow);
 
   auto *incomingToneRow = new QHBoxLayout;
   m_incomingPreviewBtn = new QPushButton(QStringLiteral("▶"));
@@ -111,16 +118,16 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
   m_incomingPreviewBtn->setFixedWidth(m_incomingPreviewBtn->sizeHint().height());
   incomingToneRow->addWidget(m_incomingTone, 1);
   incomingToneRow->addWidget(m_incomingPreviewBtn);
-  form->addRow(tr("Звук дозвона ОТ клиента"), incomingToneRow);
+  form->addRow(tr("Звук дозвона ОТ клиента:"), incomingToneRow);
   auto *incomingRow = new QHBoxLayout;
   m_incomingPath = new QLineEdit;
   m_incomingPath->setPlaceholderText(tr("Путь к файлу (wav, mp3, ogg)"));
   m_incomingBrowse = new QPushButton(tr("Обзор..."));
   incomingRow->addWidget(m_incomingPath, 1);
   incomingRow->addWidget(m_incomingBrowse);
-  form->addRow(tr("Файл звонка"), incomingRow);
+  form->addRow(tr("Файл звонка:"), incomingRow);
 
-  soundLayout->addWidget(audioGroup);
+  soundLayout->addLayout(form);
   soundLayout->addStretch();
   tabs->addTab(soundTab, tr("Звук"));
 
@@ -141,51 +148,46 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
   colorBtn->setObjectName(QStringLiteral("avatarMenuBtn"));
   auto *removePhotoBtn = new QPushButton(tr("Убрать фото"));
   removePhotoBtn->setObjectName(QStringLiteral("avatarMenuBtn"));
-  removePhotoBtn->setVisible(!m_settings->profileAvatarPath().isEmpty());
+  m_shareProfileBtn = new QPushButton;
+  m_shareProfileBtn->setObjectName(QStringLiteral("avatarMenuBtn"));
   avatarBtns->addWidget(photoBtn);
   avatarBtns->addWidget(colorBtn);
   avatarBtns->addWidget(removePhotoBtn);
-#ifdef OSC_DEBUG_BUILD
-  auto *broadcastColorBtn = new QPushButton(tr("Рассылка цвета"));
-  broadcastColorBtn->setObjectName(QStringLiteral("avatarMenuBtn"));
-  broadcastColorBtn->setToolTip(tr("Отправить цвет аватарки всем контактам домена"));
-  avatarBtns->addWidget(broadcastColorBtn);
-  connect(broadcastColorBtn, &QPushButton::clicked, this, [this]() {
-    const QString color = m_settings->profileAvatarColor();
-    if (color.isEmpty()) {
-      QMessageBox::information(this, tr("Рассылка цвета"), tr("Цвет аватарки не задан"));
-      return;
-    }
-    m_client->chat()->sendColorAdvertisement(color);
-    QMessageBox::information(this, tr("Рассылка цвета"),
-                             tr("Цвет %1 отправлен контактам домена").arg(color));
-  });
-#endif
+  avatarBtns->addWidget(m_shareProfileBtn);
+  const auto syncPhotoButtons = [this, colorBtn, removePhotoBtn]() {
+    const bool hasPhoto = m_settings && !m_settings->profileAvatarPath().isEmpty();
+    colorBtn->setVisible(!hasPhoto);
+    removePhotoBtn->setVisible(hasPhoto);
+    updateShareProfileButton();
+  };
+  syncPhotoButtons();
   avatarBtns->addStretch();
   avatarRow->addLayout(avatarBtns);
   accountLayout->addLayout(avatarRow);
 
-  connect(photoBtn, &QPushButton::clicked, this, [this, removePhotoBtn]() {
+  connect(photoBtn, &QPushButton::clicked, this, [this, syncPhotoButtons]() {
     const QString path = QFileDialog::getOpenFileName(this, tr("Выберите фото"), {},
                                                        tr("Изображения (*.png *.jpg *.jpeg *.bmp *.webp);;Все файлы (*)"));
     if (!path.isEmpty()) {
       m_settings->setProfileAvatarPath(path);
       m_accountAvatar->refreshFromSettings();
-      removePhotoBtn->setVisible(true);
+      syncPhotoButtons();
     }
   });
-  connect(colorBtn, &QPushButton::clicked, this, [this]() {
+  connect(colorBtn, &QPushButton::clicked, this, [this, syncPhotoButtons]() {
     const QColor color = QColorDialog::getColor(m_settings->profileAvatarColor(), this, tr("Выберите цвет фона"));
     if (color.isValid()) {
       m_settings->setProfileAvatarColor(color.name());
       m_accountAvatar->refreshFromSettings();
+      syncPhotoButtons();
     }
   });
-  connect(removePhotoBtn, &QPushButton::clicked, this, [this, removePhotoBtn]() {
+  connect(removePhotoBtn, &QPushButton::clicked, this, [this, syncPhotoButtons]() {
     m_settings->setProfileAvatarPath({});
     m_accountAvatar->refreshFromSettings();
-    removePhotoBtn->setVisible(false);
+    syncPhotoButtons();
   });
+  connect(m_shareProfileBtn, &QPushButton::clicked, this, &SettingsDialog::onShareAvatar);
 
   auto *accountForm = new QFormLayout;
   accountForm->setSpacing(8);
@@ -210,47 +212,91 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
 
   accountLayout->addLayout(accountForm);
 
-  auto *wallpaperLabel = new QLabel(tr("Фон приложения:"));
-  accountLayout->addWidget(wallpaperLabel);
+  accountLayout->addSpacing(12);
 
+  auto *wallpaperRow = new QHBoxLayout;
   m_wallpaperPreview = new QLabel;
   m_wallpaperPreview->setFixedSize(78, 124);
   m_wallpaperPreview->setAlignment(Qt::AlignCenter);
   m_wallpaperPreview->setFrameShape(QFrame::StyledPanel);
   m_wallpaperPreview->setScaledContents(true);
-  accountLayout->addWidget(m_wallpaperPreview, 0, Qt::AlignLeft);
+  wallpaperRow->addWidget(m_wallpaperPreview);
 
-  auto *wallpaperRow = new QHBoxLayout;
+  auto *wallpaperBtns = new QVBoxLayout;
+  wallpaperBtns->setSpacing(4);
   auto *wallpaperBtn = new QPushButton(tr("Выбрать обои..."));
   wallpaperBtn->setObjectName(QStringLiteral("avatarMenuBtn"));
   m_removeWallpaperBtn = new QPushButton(tr("Убрать обои"));
   m_removeWallpaperBtn->setObjectName(QStringLiteral("avatarMenuBtn"));
-  wallpaperRow->addWidget(wallpaperBtn);
-  wallpaperRow->addWidget(m_removeWallpaperBtn);
-  accountLayout->addLayout(wallpaperRow);
+  m_shareThemeBtn = new QPushButton(tr("Поделиться темой"));
+  m_shareThemeBtn->setObjectName(QStringLiteral("avatarMenuBtn"));
+  m_shareThemeBtn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+  m_shareThemeBtn->setToolTip(
+      tr("Отправить обои и параметры затемнения выбранному пользователю OpenSource Communicator"));
 
   m_wallpaperOpacityRow = new QWidget;
-  auto *opacityLayout = new QHBoxLayout(m_wallpaperOpacityRow);
+  auto *opacityLayout = new QVBoxLayout(m_wallpaperOpacityRow);
   opacityLayout->setContentsMargins(0, 0, 0, 0);
-  opacityLayout->addWidget(new QLabel(tr("Непрозрачность интерфейса:")));
+  opacityLayout->setSpacing(2);
+  opacityLayout->addWidget(new QLabel(tr("Затемнение интерфейса:")));
+  auto *opacitySliderRow = new QHBoxLayout;
+  opacitySliderRow->setContentsMargins(0, 0, 0, 0);
   m_wallpaperOpacitySlider = new QSlider(Qt::Horizontal);
   m_wallpaperOpacitySlider->setRange(20, 100);
   m_wallpaperOpacitySlider->setValue(m_settings->appWallpaperOpacity());
   m_wallpaperOpacitySlider->setToolTip(
       tr("100%% — обычный непрозрачный интерфейс. Меньше — панели становятся прозрачнее и показывают обои."));
-  opacityLayout->addWidget(m_wallpaperOpacitySlider, 1);
+  opacitySliderRow->addWidget(m_wallpaperOpacitySlider, 1);
   m_wallpaperOpacityValue = new QLabel(QStringLiteral("%1%").arg(m_wallpaperOpacitySlider->value()));
   m_wallpaperOpacityValue->setMinimumWidth(40);
   m_wallpaperOpacityValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-  opacityLayout->addWidget(m_wallpaperOpacityValue);
+  opacitySliderRow->addWidget(m_wallpaperOpacityValue);
+  opacityLayout->addLayout(opacitySliderRow);
   m_wallpaperOpacityRow->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-  accountLayout->addWidget(m_wallpaperOpacityRow);
+
+  m_wallpaperListOpacityRow = new QWidget;
+  auto *listOpacityLayout = new QVBoxLayout(m_wallpaperListOpacityRow);
+  listOpacityLayout->setContentsMargins(0, 0, 0, 0);
+  listOpacityLayout->setSpacing(2);
+  listOpacityLayout->addWidget(new QLabel(tr("Затемнение списков:")));
+  auto *listOpacitySliderRow = new QHBoxLayout;
+  listOpacitySliderRow->setContentsMargins(0, 0, 0, 0);
+  m_wallpaperListOpacitySlider = new QSlider(Qt::Horizontal);
+  m_wallpaperListOpacitySlider->setRange(20, 100);
+  m_wallpaperListOpacitySlider->setValue(m_settings->appWallpaperListOpacity());
+  m_wallpaperListOpacitySlider->setToolTip(
+      tr("Непрозрачность списков контактов и истории поверх обоев."));
+  listOpacitySliderRow->addWidget(m_wallpaperListOpacitySlider, 1);
+  m_wallpaperListOpacityValue =
+      new QLabel(QStringLiteral("%1%").arg(m_wallpaperListOpacitySlider->value()));
+  m_wallpaperListOpacityValue->setMinimumWidth(40);
+  m_wallpaperListOpacityValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+  listOpacitySliderRow->addWidget(m_wallpaperListOpacityValue);
+  listOpacityLayout->addLayout(listOpacitySliderRow);
+  m_wallpaperListOpacityRow->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+
+  wallpaperBtns->addWidget(wallpaperBtn);
+  wallpaperBtns->addWidget(m_wallpaperOpacityRow);
+  wallpaperBtns->addWidget(m_wallpaperListOpacityRow);
+  wallpaperBtns->addWidget(m_removeWallpaperBtn);
+  wallpaperRow->addLayout(wallpaperBtns, 1);
+  accountLayout->addLayout(wallpaperRow);
+
+  m_shareThemeBtn->setMinimumHeight(32);
+  accountLayout->addWidget(m_shareThemeBtn);
 
   connect(m_wallpaperOpacitySlider, &QSlider::valueChanged, this, [this](int value) {
     if (m_wallpaperOpacityValue) {
       m_wallpaperOpacityValue->setText(QStringLiteral("%1%").arg(value));
     }
     m_settings->setAppWallpaperOpacity(value);
+    m_client->saveSettings();
+  });
+  connect(m_wallpaperListOpacitySlider, &QSlider::valueChanged, this, [this](int value) {
+    if (m_wallpaperListOpacityValue) {
+      m_wallpaperListOpacityValue->setText(QStringLiteral("%1%").arg(value));
+    }
+    m_settings->setAppWallpaperListOpacity(value);
     m_client->saveSettings();
   });
 
@@ -289,6 +335,7 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
     m_client->saveSettings();
     updateWallpaperPreview();
   });
+  connect(m_shareThemeBtn, &QPushButton::clicked, this, &SettingsDialog::onShareTheme);
 
   updateWallpaperPreview();
 
@@ -561,15 +608,25 @@ void SettingsDialog::updateWallpaperPreview()
     return;
   }
 
+  const auto setOpacityRowsEnabled = [this](bool enabled) {
+    if (m_wallpaperOpacityRow) {
+      m_wallpaperOpacityRow->setEnabled(enabled);
+    }
+    if (m_wallpaperListOpacityRow) {
+      m_wallpaperListOpacityRow->setEnabled(enabled);
+    }
+    if (m_shareThemeBtn) {
+      m_shareThemeBtn->setEnabled(enabled);
+    }
+  };
+
   const QString path = m_settings->appWallpaperPath();
   const bool hasWallpaper = !path.isEmpty() && QFile::exists(path);
   if (!hasWallpaper) {
     m_wallpaperPreview->clear();
     m_wallpaperPreview->setText(tr("Нет"));
     m_removeWallpaperBtn->setEnabled(false);
-    if (m_wallpaperOpacityRow) {
-      m_wallpaperOpacityRow->setEnabled(false);
-    }
+    setOpacityRowsEnabled(false);
     return;
   }
 
@@ -578,9 +635,7 @@ void SettingsDialog::updateWallpaperPreview()
     m_wallpaperPreview->clear();
     m_wallpaperPreview->setText(tr("Нет"));
     m_removeWallpaperBtn->setEnabled(false);
-    if (m_wallpaperOpacityRow) {
-      m_wallpaperOpacityRow->setEnabled(false);
-    }
+    setOpacityRowsEnabled(false);
     return;
   }
 
@@ -588,15 +643,21 @@ void SettingsDialog::updateWallpaperPreview()
       pixmap.scaled(m_wallpaperPreview->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
   m_wallpaperPreview->setText({});
   m_removeWallpaperBtn->setEnabled(true);
-  if (m_wallpaperOpacityRow) {
-    m_wallpaperOpacityRow->setEnabled(true);
-  }
+  setOpacityRowsEnabled(true);
   if (m_wallpaperOpacitySlider) {
     const QSignalBlocker blocker(m_wallpaperOpacitySlider);
     m_wallpaperOpacitySlider->setValue(m_settings->appWallpaperOpacity());
   }
   if (m_wallpaperOpacityValue) {
     m_wallpaperOpacityValue->setText(QStringLiteral("%1%").arg(m_settings->appWallpaperOpacity()));
+  }
+  if (m_wallpaperListOpacitySlider) {
+    const QSignalBlocker blocker(m_wallpaperListOpacitySlider);
+    m_wallpaperListOpacitySlider->setValue(m_settings->appWallpaperListOpacity());
+  }
+  if (m_wallpaperListOpacityValue) {
+    m_wallpaperListOpacityValue->setText(
+        QStringLiteral("%1%").arg(m_settings->appWallpaperListOpacity()));
   }
 }
 
@@ -616,6 +677,123 @@ void SettingsDialog::onBrowseIncoming()
   if (!path.isEmpty()) {
     m_incomingPath->setText(path);
   }
+}
+
+void SettingsDialog::updateShareProfileButton()
+{
+  if (!m_shareProfileBtn || !m_settings) {
+    return;
+  }
+  const bool hasPhoto = !m_settings->profileAvatarPath().isEmpty();
+  if (hasPhoto) {
+    m_shareProfileBtn->setText(tr("Поделиться аватаркой"));
+    m_shareProfileBtn->setToolTip(
+        tr("Отправить аватарку (140×140) выбранному пользователю OpenSource Communicator"));
+  } else {
+    m_shareProfileBtn->setText(tr("Поделиться цветом"));
+    m_shareProfileBtn->setToolTip(
+        tr("Отправить цвет аватарки выбранному пользователю OpenSource Communicator"));
+  }
+}
+
+void SettingsDialog::onShareAvatar()
+{
+  if (!m_client || !m_client->chat() || !m_settings) {
+    return;
+  }
+  const bool hasPhoto = !m_settings->profileAvatarPath().isEmpty();
+  const QString title = hasPhoto ? tr("Поделиться аватаркой") : tr("Поделиться цветом");
+  if (m_sharePeers.isEmpty()) {
+    QMessageBox::information(this, title,
+                             tr("Пока нет других пользователей OpenSource Communicator.\n"
+                                "Они появятся после обмена Openping! при входе в сеть."));
+    return;
+  }
+
+  if (hasPhoto) {
+    QPixmap photo(m_settings->profileAvatarPath());
+    if (photo.isNull()) {
+      QMessageBox::warning(this, title, tr("Не удалось открыть фото аватарки."));
+      return;
+    }
+    TransferDialog dlg(m_sharePeers, m_selfPeer, {}, this, title,
+                       tr("Выберите контакт, которому отправить аватарку:"), tr("Отправить"));
+    if (dlg.exec() != QDialog::Accepted) {
+      return;
+    }
+    const QString peer = dlg.selectedPeer();
+    if (peer.isEmpty()) {
+      return;
+    }
+    if (!m_client->chat()->sendAvatarShare(peer, photo)) {
+      QMessageBox::warning(this, title, tr("Не удалось отправить аватарку."));
+      return;
+    }
+    QMessageBox::information(this, title, tr("Аватарка отправлена: %1").arg(dlg.selectedDisplayName()));
+    return;
+  }
+
+  const QString color = m_settings->profileAvatarColor();
+  if (color.isEmpty()) {
+    QMessageBox::information(this, title, tr("Цвет аватарки не задан."));
+    return;
+  }
+  m_client->chat()->setSelfShareProfile(color, {});
+  TransferDialog dlg(m_sharePeers, m_selfPeer, {}, this, title,
+                     tr("Выберите контакт, которому отправить цвет:"), tr("Отправить"));
+  if (dlg.exec() != QDialog::Accepted) {
+    return;
+  }
+  const QString peer = dlg.selectedPeer();
+  if (peer.isEmpty()) {
+    return;
+  }
+  if (!m_client->chat()->sendColorShare(peer)) {
+    QMessageBox::warning(this, title, tr("Не удалось отправить цвет."));
+    return;
+  }
+  QMessageBox::information(this, title,
+                           tr("Цвет %1 отправлен: %2").arg(color, dlg.selectedDisplayName()));
+}
+
+void SettingsDialog::onShareTheme()
+{
+  if (!m_client || !m_client->chat() || !m_settings) {
+    return;
+  }
+  const QString title = tr("Поделиться темой");
+  const QString path = m_settings->appWallpaperPath();
+  if (path.isEmpty() || !QFile::exists(path)) {
+    QMessageBox::information(this, title, tr("Сначала выберите обои."));
+    return;
+  }
+  const QPixmap wallpaper(path);
+  if (wallpaper.isNull()) {
+    QMessageBox::warning(this, title, tr("Не удалось открыть файл обоев."));
+    return;
+  }
+  if (m_sharePeers.isEmpty()) {
+    QMessageBox::information(this, title,
+                             tr("Пока нет других пользователей OpenSource Communicator.\n"
+                                "Они появятся после обмена Openping! при входе в сеть."));
+    return;
+  }
+
+  TransferDialog dlg(m_sharePeers, m_selfPeer, {}, this, title,
+                     tr("Выберите контакт, которому отправить тему:"), tr("Отправить"));
+  if (dlg.exec() != QDialog::Accepted) {
+    return;
+  }
+  const QString peer = dlg.selectedPeer();
+  if (peer.isEmpty()) {
+    return;
+  }
+  if (!m_client->chat()->sendThemeShare(peer, wallpaper, m_settings->appWallpaperOpacity(),
+                                        m_settings->appWallpaperListOpacity())) {
+    QMessageBox::warning(this, title, tr("Не удалось отправить тему."));
+    return;
+  }
+  QMessageBox::information(this, title, tr("Тема отправлена: %1").arg(dlg.selectedDisplayName()));
 }
 
 void SettingsDialog::onAccept()

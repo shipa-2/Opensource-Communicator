@@ -7,6 +7,7 @@ class QEvent;
 class QContextMenuEvent;
 class QEnterEvent;
 class QMouseEvent;
+class QPaintEvent;
 
 class HistoryRowWidget : public QWidget {
     Q_OBJECT
@@ -30,6 +31,7 @@ signals:
 protected:
     void contextMenuEvent(QContextMenuEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
+    void paintEvent(QPaintEvent *event) override;
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     void enterEvent(QEnterEvent *event) override;
 #else

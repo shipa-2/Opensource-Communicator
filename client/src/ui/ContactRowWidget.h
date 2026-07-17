@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QPair>
+#include <QPixmap>
 #include <QVector>
 #include <QWidget>
 
@@ -32,6 +33,7 @@ public:
     void setChatButtonVisible(bool visible);
     void setCallButtonVisible(bool visible);
     void setPeerColor(const QString &color);
+    void setPeerAvatar(const QPixmap &avatar);
     void setUnreadBlink(bool enabled);
     void setSelected(bool selected);
     void refreshAppearance();
@@ -72,6 +74,7 @@ private:
     QString m_phone;
     QString m_personalPhone;
     QString m_peerColor;
+    QPixmap m_peerAvatar;
     bool m_isSelf = false;
     bool m_canDelete = false;
     bool m_selected = false;

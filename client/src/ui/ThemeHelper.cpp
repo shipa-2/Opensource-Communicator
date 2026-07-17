@@ -69,6 +69,8 @@ void attachWindowStateGuard(QWidget *widget)
 
 void refreshApplicationThemeNow()
 {
+  // Keep current popup opacity; refreshTheme on MainWindow will re-sync from settings.
+  itl::applyApplicationTooltipStyle();
   for (QWidget *widget : QApplication::topLevelWidgets()) {
     if (auto *mainWindow = qobject_cast<MainWindow *>(widget)) {
       mainWindow->refreshTheme();

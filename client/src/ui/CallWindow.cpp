@@ -7,6 +7,8 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPainter>
+#include <QPainterPath>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
@@ -425,10 +427,14 @@ void CallWindow::setAvatarColor(const QString &color)
 
 void CallWindow::setAvatarLetter(const QString &displayName)
 {
-  if (!m_avatar) {
-    return;
-  }
-  m_avatar->setText(avatarLetter(displayName));
+  m_avatarLetter = avatarLetter(displayName);
+  refreshAvatarContent();
+}
+
+void CallWindow::setAvatarPixmap(const QPixmap &pixmap)
+{
+  m_avatarPhoto = pixmap;
+  refreshAvatarContent();
 }
 
 void CallWindow::setRemoteSpeakingIndicator(bool speaking)
@@ -451,14 +457,50 @@ void CallWindow::resetAudioLevel()
   m_speechThreshold = 0.02f;
 }
 
+void CallWindow::refreshAvatarContent()
+{
+  if (!m_avatar) {
+    return;
+  }
+
+  if (!m_avatarPhoto.isNull()) {
+    constexpr int side = 140;
+    QPixmap scaled =
+        m_avatarPhoto.scaled(side, side, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+    if (scaled.width() != side || scaled.height() != side) {
+      const int x = qMax(0, (scaled.width() - side) / 2);
+      const int y = qMax(0, (scaled.height() - side) / 2);
+      scaled = scaled.copy(x, y, side, side);
+    }
+    QPixmap rounded(side, side);
+    rounded.fill(Qt::transparent);
+    QPainter painter(&rounded);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    QPainterPath clip;
+    clip.addEllipse(QRectF(0, 0, side, side));
+    painter.setClipPath(clip);
+    painter.drawPixmap(0, 0, scaled);
+    painter.end();
+
+    m_avatar->setText({});
+    m_avatar->setPixmap(rounded);
+  } else {
+    m_avatar->setPixmap({});
+    m_avatar->setText(m_avatarLetter.isEmpty() ? QStringLiteral("?") : m_avatarLetter);
+  }
+  refreshAvatarBorder();
+}
+
 void CallWindow::refreshAvatarBorder()
 {
   if (!m_avatar) {
     return;
   }
   const QColor borderColor = m_speaking ? palette().color(QPalette::Highlight) : palette().color(QPalette::Mid);
-  const QString bg = m_avatarBaseColor.isEmpty() ? QStringLiteral("palette(midlight)") : m_avatarBaseColor;
-  const QString border = m_speaking ? borderColor.name() : borderColor.name();
+  const bool hasPhoto = !m_avatarPhoto.isNull();
+  const QString bg = hasPhoto
+      ? QStringLiteral("transparent")
+      : (m_avatarBaseColor.isEmpty() ? QStringLiteral("palette(midlight)") : m_avatarBaseColor);
   m_avatar->setStyleSheet(
       QStringLiteral("QLabel {"
                      "  background-color: %1;"
@@ -468,7 +510,7 @@ void CallWindow::refreshAvatarBorder()
                      "  font-size: 64px;"
                      "  font-weight: bold;"
                      "}")
-          .arg(bg, border));
+          .arg(bg, borderColor.name()));
 }
 
 void CallWindow::updateRemoteAudioLevel(float level)
@@ -616,6 +658,9 @@ void CallWindow::closeCall()
 {
   stopTimer();
   setRemoteSpeakingIndicator(false);
+  m_avatarPhoto = {};
+  m_avatarLetter = QStringLiteral("?");
+  refreshAvatarContent();
   m_dtmfSent.clear();
   hide();
   setMode(Mode::Hidden);
