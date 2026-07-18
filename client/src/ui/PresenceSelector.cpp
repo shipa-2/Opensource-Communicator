@@ -23,7 +23,7 @@ PresenceSelector::PresenceSelector(QWidget *parent)
   m_combo->addItem(labelForStatus(QStringLiteral("online")), QStringLiteral("online"));
   m_combo->addItem(labelForStatus(QStringLiteral("away")), QStringLiteral("away"));
   m_combo->addItem(labelForStatus(QStringLiteral("busy")), QStringLiteral("busy"));
-  m_combo->addItem(labelForStatus(QStringLiteral("offline")), QStringLiteral("offline"));
+  m_combo->addItem(labelForStatus(QStringLiteral("invisible")), QStringLiteral("invisible"));
 
   layout->addWidget(m_combo, 1);
 
@@ -76,7 +76,11 @@ void PresenceSelector::setCurrentStatus(const QString &status)
   if (m_inCall) {
     return;
   }
-  const int index = m_combo->findData(status.toLower());
+  QString normalized = status.toLower();
+  if (normalized == QStringLiteral("offline")) {
+    normalized = QStringLiteral("invisible");
+  }
+  const int index = m_combo->findData(normalized);
   if (index >= 0) {
     m_combo->setCurrentIndex(index);
   }

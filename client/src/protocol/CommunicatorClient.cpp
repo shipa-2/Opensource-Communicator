@@ -405,9 +405,22 @@ void CommunicatorClient::handlePresencePayload(const QJsonObject &payload)
     }
 
     const QJsonObject entry = it.value().toObject();
-    QString presence = entry.value(QStringLiteral("voice")).toString();
-    if (presence.isEmpty()) {
-      presence = entry.value(QStringLiteral("im")).toObject().value(QStringLiteral("status")).toString();
+    const QString voicePresence = entry.value(QStringLiteral("voice")).toString();
+    const QString imPresence =
+        entry.value(QStringLiteral("im")).toObject().value(QStringLiteral("status")).toString();
+
+    QString presence;
+    if (imPresence == QStringLiteral("away")
+        || imPresence == QStringLiteral("busy")
+        || imPresence == QStringLiteral("invisible")) {
+      // Manual IM presence takes precedence over the still-online voice service.
+      presence = imPresence;
+    } else if (voicePresence == QStringLiteral("in-call")) {
+      presence = voicePresence;
+    } else if (!imPresence.isEmpty()) {
+      presence = imPresence;
+    } else {
+      presence = voicePresence;
     }
 
     emit contactUpdated(peer, {}, presence);
