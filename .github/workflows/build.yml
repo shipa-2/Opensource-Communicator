@@ -218,13 +218,14 @@ jobs:
           if-no-files-found: error
 
   release:
-    # Publish Release builds to a pre-release tagged DDMMYYYY-HHMM (UTC, commit time)
-    # after every successful main / manual run.
+    # Publish Release builds after every successful main, videotest, or manual run.
+    # Experimental releases use their own tag namespace so they cannot replace main releases.
     if: >-
       always() &&
       needs.windows-portable.result == 'success' &&
       needs.linux-build.result == 'success' &&
       (github.ref == 'refs/heads/main' ||
+       github.ref == 'refs/heads/videotest' ||
        github.event_name == 'workflow_dispatch')
     needs: [windows-portable, linux-build]
     runs-on: ubuntu-24.04
@@ -241,19 +242,28 @@ jobs:
         id: meta
         run: |
           set -euo pipefail
-          # Tag / release title: DDMMYYYY-HHMM (UTC time of the commit being built).
-          TAG="$(TZ=UTC git log -1 --format=%cd --date=format:%d%m%Y-%H%M)"
+          # Release timestamp is the UTC time of the commit being built.
+          TIMESTAMP="$(TZ=UTC git log -1 --format=%cd --date=format:%d%m%Y-%H%M)"
           APP_VERSION="$(grep -m1 'project(opensource-communicator VERSION' client/CMakeLists.txt | sed -E 's/.*VERSION ([0-9.]+).*/\1/')"
-          DAY="${TAG:0:2}"
-          MONTH="${TAG:2:2}"
-          YEAR="${TAG:4:4}"
-          HOUR="${TAG:9:2}"
-          MINUTE="${TAG:11:2}"
+          DAY="${TIMESTAMP:0:2}"
+          MONTH="${TIMESTAMP:2:2}"
+          YEAR="${TIMESTAMP:4:4}"
+          HOUR="${TIMESTAMP:9:2}"
+          MINUTE="${TIMESTAMP:11:2}"
+
+          if [ "$GITHUB_REF_NAME" = "videotest" ]; then
+            TAG="videotest-${TIMESTAMP}"
+            RELEASE_NAME="Сборка ветки videotest от ${DAY}.${MONTH}.${YEAR} ${HOUR}:${MINUTE} (UTC)"
+          else
+            TAG="${TIMESTAMP}"
+            RELEASE_NAME="${TIMESTAMP}"
+          fi
+
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "name=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "name=${RELEASE_NAME}" >> "$GITHUB_OUTPUT"
 
           {
-            echo "## ${TAG}"
+            echo "## ${RELEASE_NAME}"
             echo
             echo "Сборка приложения **${APP_VERSION}** от ${DAY}.${MONTH}.${YEAR} ${HOUR}:${MINUTE} (UTC)."
             echo
