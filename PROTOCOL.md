@@ -90,6 +90,8 @@
 
 Исходящий offer содержит `m=audio` и `m=video`; answerer использует реальные `a=mid` из offer. `sanitizeLocalSdp` сохраняет video media section и пересобирает BUNDLE/LS с фактическими mid. RTP timestamp увеличивается на `90000 / 15 = 6000` на кадр.
 
+DTLS-роль не переписывается вручную: исходящий offer сохраняет `a=setup:actpass`, а ответ на offer медиашлюза — выбранный `libdatachannel` `active`/`passive`. Официальный centrex-mediagateway отвечает `setup:active`; отправка `setup:active` с обеих сторон приводит к подключённому ICE без открытых медиатреков.
+
 Наличие H.264 и `videoEnabled` не гарантирует совместимость со всеми ITooLabs/Megafon media gateway. Для диагностики сохраняйте полный offer/answer и проверяйте согласованные `rtpmap`, `fmtp`, `profile-level-id`, `packetization-mode`, SSRC и BUNDLE mid.
 
 ## Безопасность (проблемы оригинала)

@@ -333,10 +333,6 @@ QString CallManager::sanitizeLocalSdp(const QString &sdp, bool hasVideo) const
         continue;
       }
     }
-    if (line.startsWith(QStringLiteral("a=setup:actpass"))) {
-      cleanedMedia.append(QStringLiteral("a=setup:active"));
-      continue;
-    }
     cleanedMedia.append(line);
   }
   for (const QString &line : extraAttrs) {
@@ -410,13 +406,17 @@ QString CallManager::sanitizeLocalSdp(const QString &sdp, bool hasVideo) const
     if (!hasVideoMid && !videoMid.isEmpty()) {
       videoMedia.insert(1, QStringLiteral("a=mid:%1").arg(videoMid));
     }
-    // Force setup:active for video too
-    for (QString &line : videoMedia) {
-      if (line.startsWith(QStringLiteral("a=setup:actpass"))) {
-        line = QStringLiteral("a=setup:active");
+    QStringList cleanedVideoMedia;
+    for (const QString &line : videoMedia) {
+      // libdatachannel may retain the gateway's explicit remote RTCP address
+      // while producing an answer. It is not a local transport attribute.
+      if (line.startsWith(QStringLiteral("a=rtcp:"))
+          && line.contains(QStringLiteral("IN IP4"))) {
+        continue;
       }
+      cleanedVideoMedia.append(line);
     }
-    out.append(videoMedia);
+    out.append(cleanedVideoMedia);
   }
 
   while (!out.isEmpty() && out.last().isEmpty()) {
