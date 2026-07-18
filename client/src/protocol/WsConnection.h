@@ -23,7 +23,7 @@ public:
     QString sid() const { return m_sid; }
     bool isConnected() const { return m_socket && m_socket->state() == QAbstractSocket::ConnectedState; }
 
-    void connectToServer(const QUrl &url, const QString &ssoLogin = {});
+    void connectToServer(const QUrl &url, const QString &ssoLogin = {}, bool ignoreInsecureTls = false);
     void disconnectFromServer();
 
     void sendMessage(const QJsonObject &payload);
@@ -55,8 +55,17 @@ private:
     void handleHelloResponse(const QJsonObject &data);
     void handleRuntimeMessage(const QJsonObject &data);
     void resetState();
+    void openSocket(const QUrl &url);
+    void tryInsecureAlternateScheme();
+    static QUrl alternateInsecureScheme(const QUrl &url);
+    void applyInsecureTlsOptions(QWebSocket *socket, const QUrl &url);
+    void failInitialConnect(const QString &error);
 
     QWebSocket *m_socket = nullptr;
+    QUrl m_connectUrl;
+    bool m_ignoreInsecureTls = false;
+    bool m_insecureAlternateTried = false;
+    bool m_connectedOnce = false;
     QString m_sid;
     QString m_ssoLogin;
     QJsonObject m_extParams;

@@ -17,6 +17,8 @@ struct LoginCredentials {
     QString domain;
     QString authDomain;
     QString partner;
+    int serverPort = 0; // 0 = wss default (443)
+    bool ignoreInsecureTls = false; // Debug: self-signed wss or plain ws
 };
 
 } // namespace itl
@@ -58,6 +60,8 @@ public:
     void leaveDemoMode();
     bool isDemoMode() const { return m_demoMode; }
 
+    bool serverVideoEnabled() const { return m_serverVideoEnabled; }
+
     QString buildWebSocketUrl() const;
 
 signals:
@@ -67,6 +71,7 @@ signals:
     void contactUpdated(const QString &peer, const QString &name, const QString &presence);
     void addressBookChanged();
     void callEvent(const QString &leg, const QString &what, const QJsonObject &payload);
+    void serverVideoEnabledChanged(bool enabled);
 
 private slots:
     void onConnectionEstablished();
@@ -78,6 +83,7 @@ private slots:
 
 private:
     void handlePresencePayload(const QJsonObject &payload);
+    void setServerVideoEnabled(bool enabled);
     void loadSavedAccounts();
     void saveSavedAccounts();
     static QString accountKey(const LoginCredentials &credentials);
@@ -91,6 +97,7 @@ private:
     QSettings m_settings;
     bool m_demoMode = false;
     bool m_rememberMe = true;
+    bool m_serverVideoEnabled = false;
 };
 
 } // namespace itl

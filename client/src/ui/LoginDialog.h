@@ -3,6 +3,7 @@
 #include <QDialog>
 
 class QCheckBox;
+class QCheckBox;
 class QComboBox;
 class QLineEdit;
 class QPushButton;
@@ -37,8 +38,12 @@ private:
     QLineEdit *m_passwordEdit = nullptr;
     QLineEdit *m_domainEdit = nullptr;
     QLineEdit *m_authDomainEdit = nullptr;
+    QLineEdit *m_serverPortEdit = nullptr;
     QLineEdit *m_partnerEdit = nullptr;
     QCheckBox *m_rememberCheck = nullptr;
     QWidget *m_advancedPanel = nullptr;
     QPushButton *m_advancedBtn = nullptr;
+#ifdef OSC_DEBUG_BUILD
+    QCheckBox *m_ignoreInsecureTlsCheck = nullptr;
+#endif
 };

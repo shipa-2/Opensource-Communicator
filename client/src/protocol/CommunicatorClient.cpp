@@ -7,6 +7,7 @@
 #include <QJsonObject>
 #include <QLoggingCategory>
 #include <QUrl>
+#include <QUrlQuery>
 
 #include <algorithm>
 
@@ -73,6 +74,8 @@ void CommunicatorClient::loadSavedAccounts()
     account.domain = obj.value(QStringLiteral("domain")).toString();
     account.authDomain = obj.value(QStringLiteral("authDomain")).toString();
     account.partner = obj.value(QStringLiteral("partner")).toString(QStringLiteral("megafon"));
+    account.serverPort = obj.value(QStringLiteral("serverPort")).toInt(0);
+    account.ignoreInsecureTls = obj.value(QStringLiteral("ignoreInsecureTls")).toBool(false);
     if (account.login.isEmpty() || DemoData::isDemoCredentials(account.login, account.password)) {
       continue;
     }
@@ -99,6 +102,8 @@ void CommunicatorClient::saveSavedAccounts()
         {QStringLiteral("domain"), account.domain},
         {QStringLiteral("authDomain"), account.authDomain},
         {QStringLiteral("partner"), account.partner},
+        {QStringLiteral("serverPort"), account.serverPort},
+        {QStringLiteral("ignoreInsecureTls"), account.ignoreInsecureTls},
     });
   }
   m_settings.setValue(QStringLiteral("savedAccounts"), array);
@@ -112,6 +117,8 @@ void CommunicatorClient::loadSettings()
   m_credentials.domain = m_settings.value(QStringLiteral("domain")).toString();
   m_credentials.authDomain = m_settings.value(QStringLiteral("authDomain")).toString();
   m_credentials.partner = m_settings.value(QStringLiteral("partner"), QStringLiteral("megafon")).toString();
+  m_credentials.serverPort = m_settings.value(QStringLiteral("serverPort"), 0).toInt();
+  m_credentials.ignoreInsecureTls = m_settings.value(QStringLiteral("ignoreInsecureTls"), false).toBool();
   if (!m_rememberMe) {
     m_credentials.password.clear();
   }
@@ -132,12 +139,16 @@ void CommunicatorClient::saveSettings()
     m_settings.setValue(QStringLiteral("domain"), QString());
     m_settings.setValue(QStringLiteral("authDomain"), QString());
     m_settings.setValue(QStringLiteral("partner"), QStringLiteral("megafon"));
+    m_settings.setValue(QStringLiteral("serverPort"), 0);
+    m_settings.setValue(QStringLiteral("ignoreInsecureTls"), false);
   } else if (!DemoData::isDemoCredentials(m_credentials.login, m_credentials.password)) {
     m_settings.setValue(QStringLiteral("login"), m_credentials.login);
     m_settings.setValue(QStringLiteral("password"), m_credentials.password);
     m_settings.setValue(QStringLiteral("domain"), m_credentials.domain);
     m_settings.setValue(QStringLiteral("authDomain"), m_credentials.authDomain);
     m_settings.setValue(QStringLiteral("partner"), m_credentials.partner);
+    m_settings.setValue(QStringLiteral("serverPort"), m_credentials.serverPort);
+    m_settings.setValue(QStringLiteral("ignoreInsecureTls"), m_credentials.ignoreInsecureTls);
   }
   saveSavedAccounts();
   m_appSettings.save(m_settings);
@@ -192,10 +203,29 @@ QString CommunicatorClient::buildWebSocketUrl() const
   const QString domain = m_credentials.domain.isEmpty() ? m_credentials.login.section(QLatin1Char('@'), 1) : m_credentials.domain;
   const QString authDomain = m_credentials.authDomain.isEmpty() ? domain : m_credentials.authDomain;
 
-  if (!m_credentials.authDomain.isEmpty() || m_credentials.partner == QStringLiteral("megafon")) {
-    return QStringLiteral("wss://%1/ws/?_domain=%2").arg(authDomain, domain);
+#ifdef OSC_DEBUG_BUILD
+  const bool ignoreInsecureTls = m_credentials.ignoreInsecureTls;
+#else
+  const bool ignoreInsecureTls = false;
+#endif
+
+  QUrl url;
+  url.setScheme(ignoreInsecureTls ? QStringLiteral("ws") : QStringLiteral("wss"));
+  url.setHost(authDomain);
+  if (m_credentials.serverPort > 0 && m_credentials.serverPort != 443) {
+    url.setPort(m_credentials.serverPort);
   }
-  return QStringLiteral("wss://%1/ws").arg(domain);
+
+  if (!m_credentials.authDomain.isEmpty() || m_credentials.partner == QStringLiteral("megafon")) {
+    url.setPath(QStringLiteral("/ws/"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("_domain"), domain);
+    url.setQuery(query);
+  } else {
+    url.setPath(QStringLiteral("/ws"));
+  }
+
+  return url.toString(QUrl::FullyEncoded);
 }
 
 void CommunicatorClient::login()
@@ -216,7 +246,11 @@ void CommunicatorClient::login()
   emit stateChanged(AppState::Connecting);
   emit statusMessage(tr("Подключение к %1...").arg(buildWebSocketUrl()));
 
+#ifdef OSC_DEBUG_BUILD
+  m_api.initialize(QUrl(buildWebSocketUrl()), {}, m_credentials.ignoreInsecureTls);
+#else
   m_api.initialize(QUrl(buildWebSocketUrl()));
+#endif
 }
 
 void CommunicatorClient::logout()
@@ -226,6 +260,7 @@ void CommunicatorClient::logout()
     return;
   }
 
+  setServerVideoEnabled(false);
   if (m_api.appState() == AppState::Online) {
     m_api.sendBye();
   }
@@ -310,6 +345,16 @@ void CommunicatorClient::onAuthResult(bool success, const QJsonObject &payload)
   m_api.subscribeToAddressBook();
   m_api.getDomainContacts();
   m_api.setOwnPresence(QStringLiteral("online"));
+  m_api.getCommunicatorSettings();
+}
+
+void CommunicatorClient::setServerVideoEnabled(bool enabled)
+{
+  if (m_serverVideoEnabled == enabled) {
+    return;
+  }
+  m_serverVideoEnabled = enabled;
+  emit serverVideoEnabledChanged(enabled);
 }
 
 void CommunicatorClient::onServerPayload(const QJsonObject &payload)
@@ -371,12 +416,21 @@ void CommunicatorClient::handlePresencePayload(const QJsonObject &payload)
 
 void CommunicatorClient::onApiResponse(int requestId, const QJsonObject &response)
 {
+  Q_UNUSED(requestId)
+
+  const QJsonObject inner = response.value(QString::fromUtf8(kEmptyKey)).toObject();
+  const QJsonObject data = inner.value(QStringLiteral("response")).toObject();
+  if (data.contains(QStringLiteral("videoEnabled"))) {
+    setServerVideoEnabled(data.value(QStringLiteral("videoEnabled")).toBool());
+  }
+
   m_chat->handleResponse(requestId, response);
   m_addressBook->handleResponse(requestId, response);
 }
 
 void CommunicatorClient::onConnectionFailed(const QString &error)
 {
+  setServerVideoEnabled(false);
   m_addressBook->clear();
   emit statusMessage(tr("Ошибка соединения: %1").arg(error));
   emit stateChanged(AppState::Offline);
@@ -384,6 +438,7 @@ void CommunicatorClient::onConnectionFailed(const QString &error)
 
 void CommunicatorClient::onConnectionClosed(const QString &reason)
 {
+  setServerVideoEnabled(false);
   m_addressBook->clear();
   emit statusMessage(tr("Соединение закрыто: %1").arg(reason));
   emit stateChanged(AppState::Offline);

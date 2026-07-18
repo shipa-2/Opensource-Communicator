@@ -11,6 +11,7 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSignalBlocker>
+#include <QIntValidator>
 #include <QVBoxLayout>
 
 LoginDialog::LoginDialog(itl::CommunicatorClient *client, QWidget *parent)
@@ -62,10 +63,19 @@ LoginDialog::LoginDialog(itl::CommunicatorClient *client, QWidget *parent)
   advancedForm->setContentsMargins(0, 0, 0, 0);
   m_domainEdit = new QLineEdit;
   m_authDomainEdit = new QLineEdit;
+  m_serverPortEdit = new QLineEdit;
+  m_serverPortEdit->setPlaceholderText(QStringLiteral("443"));
+  m_serverPortEdit->setValidator(new QIntValidator(1, 65535, m_serverPortEdit));
   m_partnerEdit = new QLineEdit(QStringLiteral("megafon"));
   advancedForm->addRow(tr("Домен"), m_domainEdit);
   advancedForm->addRow(tr("Auth-домен"), m_authDomainEdit);
+  advancedForm->addRow(tr("Порт сервера"), m_serverPortEdit);
   advancedForm->addRow(tr("Partner"), m_partnerEdit);
+#ifdef OSC_DEBUG_BUILD
+  m_ignoreInsecureTlsCheck = new QCheckBox(tr("Игнорировать небезопасный TLS"));
+  m_ignoreInsecureTlsCheck->setToolTip(tr("Для отладки: ws:// без TLS или wss:// с самоподписанным сертификатом."));
+  advancedForm->addRow(QString(), m_ignoreInsecureTlsCheck);
+#endif
   m_advancedPanel->setLayout(advancedForm);
   m_advancedPanel->setVisible(false);
   layout->addWidget(m_advancedPanel);
@@ -98,7 +108,13 @@ void LoginDialog::applyCredentials(const itl::LoginCredentials &cred)
   m_passwordEdit->setText(cred.password);
   m_domainEdit->setText(cred.domain);
   m_authDomainEdit->setText(cred.authDomain);
+  m_serverPortEdit->setText(cred.serverPort > 0 && cred.serverPort != 443 ? QString::number(cred.serverPort) : QString());
   m_partnerEdit->setText(cred.partner.isEmpty() ? QStringLiteral("megafon") : cred.partner);
+#ifdef OSC_DEBUG_BUILD
+  if (m_ignoreInsecureTlsCheck) {
+    m_ignoreInsecureTlsCheck->setChecked(cred.ignoreInsecureTls);
+  }
+#endif
 }
 
 itl::LoginCredentials LoginDialog::accountAt(int index) const
@@ -160,6 +176,19 @@ itl::LoginCredentials LoginDialog::credentialsFromForm() const
   cred.domain = m_domainEdit->text().trimmed();
   cred.authDomain = m_authDomainEdit->text().trimmed();
   cred.partner = m_partnerEdit->text().trimmed();
+  const QString portText = m_serverPortEdit->text().trimmed();
+  if (!portText.isEmpty()) {
+    bool ok = false;
+    const int port = portText.toInt(&ok);
+    if (ok) {
+      cred.serverPort = port;
+    }
+  }
+#ifdef OSC_DEBUG_BUILD
+  if (m_ignoreInsecureTlsCheck) {
+    cred.ignoreInsecureTls = m_ignoreInsecureTlsCheck->isChecked();
+  }
+#endif
   return cred;
 }
 

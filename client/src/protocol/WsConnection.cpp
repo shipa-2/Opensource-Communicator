@@ -4,6 +4,9 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLoggingCategory>
+#include <QSslConfiguration>
+#include <QSslError>
+#include <QSslSocket>
 
 Q_LOGGING_CATEGORY(lcWs, "itl.ws")
 
@@ -31,13 +34,41 @@ WsConnection::WsConnection(QObject *parent)
   connect(&m_noopTimer, &QTimer::timeout, this, &WsConnection::sendNoop);
 }
 
-void WsConnection::connectToServer(const QUrl &url, const QString &ssoLogin)
+QUrl WsConnection::alternateInsecureScheme(const QUrl &url)
 {
-  if (m_socket) {
+  QUrl alternate = url;
+  if (url.scheme() == QStringLiteral("wss")) {
+    alternate.setScheme(QStringLiteral("ws"));
+  } else if (url.scheme() == QStringLiteral("ws")) {
+    alternate.setScheme(QStringLiteral("wss"));
+  }
+  return alternate;
+}
+
+void WsConnection::applyInsecureTlsOptions(QWebSocket *socket, const QUrl &url)
+{
+  if (!m_ignoreInsecureTls || url.scheme() != QStringLiteral("wss") || !socket) {
     return;
   }
 
-  m_ssoLogin = ssoLogin;
+  QSslConfiguration sslConfig = socket->sslConfiguration();
+  sslConfig.setPeerVerifyMode(QSslSocket::VerifyNone);
+  socket->setSslConfiguration(sslConfig);
+  connect(socket, &QWebSocket::sslErrors, socket, [socket](const QList<QSslError> &errors) {
+    socket->ignoreSslErrors(errors);
+  });
+}
+
+void WsConnection::openSocket(const QUrl &url)
+{
+  if (m_socket) {
+    m_socket->disconnect(this);
+    m_socket->close();
+    m_socket->deleteLater();
+    m_socket = nullptr;
+  }
+
+  m_connectUrl = url;
   m_awaitingHello = true;
 
   m_socket = new QWebSocket(QString(), QWebSocketProtocol::VersionLatest, this);
@@ -51,8 +82,38 @@ void WsConnection::connectToServer(const QUrl &url, const QString &ssoLogin)
           this, &WsConnection::onSocketError);
 #endif
 
+  applyInsecureTlsOptions(m_socket, url);
+
   qCInfo(lcWs) << "Connecting to" << url;
   m_socket->open(url);
+}
+
+void WsConnection::tryInsecureAlternateScheme()
+{
+  if (!m_ignoreInsecureTls || m_insecureAlternateTried) {
+    return;
+  }
+
+  const QUrl alternate = alternateInsecureScheme(m_connectUrl);
+  if (alternate.scheme() == m_connectUrl.scheme()) {
+    return;
+  }
+
+  m_insecureAlternateTried = true;
+  qCInfo(lcWs) << "Insecure connect failed, retrying with" << alternate;
+  openSocket(alternate);
+}
+
+void WsConnection::connectToServer(const QUrl &url, const QString &ssoLogin, bool ignoreInsecureTls)
+{
+  if (m_socket) {
+    return;
+  }
+
+  m_ssoLogin = ssoLogin;
+  m_ignoreInsecureTls = ignoreInsecureTls;
+  m_insecureAlternateTried = false;
+  openSocket(url);
 }
 
 void WsConnection::disconnectFromServer()
@@ -79,6 +140,10 @@ void WsConnection::resetState()
   m_unackedMessages.clear();
   m_deferredPayloads.clear();
   m_awaitingHello = false;
+  m_ignoreInsecureTls = false;
+  m_insecureAlternateTried = false;
+  m_connectedOnce = false;
+  m_connectUrl = QUrl();
 
   for (auto it = m_pendingRequests.begin(); it != m_pendingRequests.end(); ++it) {
     if (it->timer) {
@@ -109,8 +174,20 @@ void WsConnection::sendNoop()
   sendMessage(payload);
 }
 
+void WsConnection::failInitialConnect(const QString &error)
+{
+  if (m_socket) {
+    m_socket->disconnect(this);
+    m_socket->deleteLater();
+    m_socket = nullptr;
+  }
+  resetState();
+  emit connectionFailed(error);
+}
+
 void WsConnection::onSocketConnected()
 {
+  m_connectedOnce = true;
   QJsonObject hello;
   if (!m_sid.isEmpty()) {
     hello.insert(QStringLiteral("sid"), m_sid);
@@ -390,22 +467,43 @@ int WsConnection::resolveUser(const QString &login)
 
 void WsConnection::onSocketDisconnected()
 {
-  m_noopTimer.stop();
-  const bool hadConnection = m_socket != nullptr;
-  resetState();
-  if (hadConnection) {
-    emit disconnected(QStringLiteral("socket_closed"));
-  } else {
-    emit connectionFailed(QStringLiteral("socket_closed"));
+  if (!m_socket || sender() != m_socket) {
+    return;
   }
+
+  m_noopTimer.stop();
+  if (m_connectedOnce) {
+    resetState();
+    emit disconnected(QStringLiteral("socket_closed"));
+    return;
+  }
+
+  if (m_ignoreInsecureTls && !m_insecureAlternateTried) {
+    tryInsecureAlternateScheme();
+    return;
+  }
+
+  failInitialConnect(m_socket->errorString().isEmpty() ? QStringLiteral("socket_closed")
+                                                       : m_socket->errorString());
 }
 
 void WsConnection::onSocketError(QAbstractSocket::SocketError)
 {
-  if (!m_socket) {
+  if (!m_socket || sender() != m_socket) {
     return;
   }
-  emit connectionFailed(m_socket->errorString());
+
+  if (m_connectedOnce) {
+    emit connectionFailed(m_socket->errorString());
+    return;
+  }
+
+  if (m_ignoreInsecureTls && !m_insecureAlternateTried) {
+    tryInsecureAlternateScheme();
+    return;
+  }
+
+  failInitialConnect(m_socket->errorString());
 }
 
 } // namespace itl
