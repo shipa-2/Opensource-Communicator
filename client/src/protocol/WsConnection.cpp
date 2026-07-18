@@ -13,6 +13,15 @@ Q_LOGGING_CATEGORY(lcWs, "itl.ws")
 namespace itl {
 
 namespace {
+QString clientPlatformName()
+{
+#ifdef Q_OS_WIN
+  return QStringLiteral("Windows");
+#else
+  return QStringLiteral("Linux");
+#endif
+}
+
 QJsonObject redactPassword(const QJsonObject &obj)
 {
   QJsonObject copy = obj;
@@ -205,7 +214,7 @@ void WsConnection::onSocketConnected()
   } else {
     QJsonObject params{
         {QStringLiteral("apiVersion"), 2},
-        {QStringLiteral("platform"), QStringLiteral("Linux")},
+        {QStringLiteral("platform"), clientPlatformName()},
         {QStringLiteral("appId"), QStringLiteral("Communicator")},
     };
     for (auto it = m_extParams.begin(); it != m_extParams.end(); ++it) {

@@ -10,6 +10,17 @@ Q_LOGGING_CATEGORY(lcApi, "itl.api")
 
 namespace itl {
 
+namespace {
+QString clientOsName()
+{
+#ifdef Q_OS_WIN
+  return QStringLiteral("Windows");
+#else
+  return QStringLiteral("Linux");
+#endif
+}
+} // namespace
+
 WsApiClient::WsApiClient(QObject *parent)
     : QObject(parent)
 {
@@ -114,7 +125,7 @@ void WsApiClient::login(const QString &username, const QString &password, const 
 
   if (!partner.isEmpty()) {
     request.insert(QStringLiteral("partner"), partner.toLower());
-    request.insert(QStringLiteral("os"), QStringLiteral("Linux"));
+    request.insert(QStringLiteral("os"), clientOsName());
     request.insert(QStringLiteral("appVersion"), QStringLiteral("3.13.11"));
   }
 
