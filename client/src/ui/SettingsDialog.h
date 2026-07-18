@@ -6,6 +6,8 @@
 #include <QHash>
 #include <QString>
 
+#include <functional>
+
 namespace itl {
 class CallManager;
 class CommunicatorClient;
@@ -34,7 +36,13 @@ private slots:
     void stopPreview();
     void onShareAvatar();
     void onShareTheme();
-    void updateShareProfileButton();
+    void updateShareButtons();
+
+private:
+    bool hasSharePeers() const;
+    void showTransientTip(const QString &text, QWidget *anchor);
+    void openShareTransferDialog(const QString &title, const QString &prompt, const QString &acceptLabel,
+                                 const std::function<void(const QString &peer, const QString &displayName)> &onAccepted);
 
 protected:
     void reject() override;

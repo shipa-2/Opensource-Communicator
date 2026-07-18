@@ -61,6 +61,7 @@ void MessageNotifyPlayer::play()
 
   m_phase = 0.0;
   m_ticksLeft = qMax(1, (kDurationMs * sampleRate) / (1000 * kFrameSamples));
+  m_playing = true;
 
   m_timer = new QTimer(this);
   connect(m_timer, &QTimer::timeout, this, &MessageNotifyPlayer::tick);
@@ -70,6 +71,7 @@ void MessageNotifyPlayer::play()
 
 void MessageNotifyPlayer::stop()
 {
+  m_playing = false;
   if (m_timer) {
     m_timer->stop();
     m_timer->deleteLater();
@@ -86,7 +88,11 @@ void MessageNotifyPlayer::stop()
 
 void MessageNotifyPlayer::tick()
 {
-  if (!m_output || m_ticksLeft <= 0) {
+  if (!m_playing || !m_sink || !m_output) {
+    stop();
+    return;
+  }
+  if (m_ticksLeft <= 0) {
     stop();
     return;
   }
@@ -100,7 +106,10 @@ void MessageNotifyPlayer::tick()
     m_phase += phaseStep;
   }
 
-  m_output->write(buffer);
+  if (m_output->write(buffer) <= 0) {
+    stop();
+    return;
+  }
   --m_ticksLeft;
   if (m_ticksLeft <= 0) {
     stop();

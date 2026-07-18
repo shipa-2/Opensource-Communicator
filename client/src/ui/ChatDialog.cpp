@@ -115,10 +115,15 @@ ChatDialog::ChatDialog(itl::CommunicatorClient *client, QWidget *parent)
   auto *row = new QHBoxLayout;
   m_attachBtn = new QPushButton(QStringLiteral("+"));
   m_attachBtn->setToolTip(tr("Приложить файл"));
+  m_attachBtn->setAutoDefault(false);
+  m_attachBtn->setDefault(false);
+  m_attachBtn->setFocusPolicy(Qt::NoFocus);
   configureAttachButton(m_attachBtn);
   m_input = new QLineEdit;
   m_input->setPlaceholderText(tr("Введите сообщение..."));
   auto *sendBtn = new QPushButton(tr("Отправить"));
+  sendBtn->setAutoDefault(false);
+  sendBtn->setDefault(false);
   row->addWidget(m_attachBtn);
   row->addWidget(m_input, 1);
   row->addWidget(sendBtn);
@@ -138,6 +143,9 @@ void ChatDialog::showEvent(QShowEvent *event)
 {
   QDialog::showEvent(event);
   refreshAppearance();
+  if (m_input) {
+    m_input->setFocus(Qt::OtherFocusReason);
+  }
 }
 
 void ChatDialog::refreshViewChrome()
@@ -194,10 +202,12 @@ void ChatDialog::openForPeer(const QString &peer, const QString &peerDisplayName
   show();
   raise();
   activateWindow();
-  m_input->setFocus();
   m_client->chat()->markPeerRead(peer);
   updateAttachEnabled();
   refreshAppearance();
+  if (m_input) {
+    m_input->setFocus(Qt::OtherFocusReason);
+  }
 }
 
 void ChatDialog::updateAttachEnabled()

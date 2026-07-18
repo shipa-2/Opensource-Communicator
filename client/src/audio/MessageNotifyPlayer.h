@@ -32,6 +32,7 @@ private:
     QTimer *m_timer = nullptr;
     double m_phase = 0.0;
     int m_ticksLeft = 0;
+    bool m_playing = false;
 };
 
 } // namespace itl

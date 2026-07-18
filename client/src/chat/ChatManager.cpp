@@ -41,6 +41,24 @@ bool charIsDialable(QChar ch)
   return ch.isDigit() || ch == QLatin1Char('+') || ch == QLatin1Char('*') || ch == QLatin1Char('#');
 }
 
+bool isLoopbackHost(const QString &host)
+{
+  const QString normalized = host.trimmed().toLower();
+  return normalized == QStringLiteral("localhost") || normalized == QStringLiteral("127.0.0.1")
+         || normalized == QStringLiteral("::1");
+}
+
+QString normalizeLoopbackHost(const QString &host, const QString &sessionDomain)
+{
+  if (!isLoopbackHost(host)) {
+    return host.trimmed().toLower();
+  }
+  if (!sessionDomain.isEmpty()) {
+    return sessionDomain.trimmed().toLower();
+  }
+  return QStringLiteral("127.0.0.1");
+}
+
 QRegularExpression fileTransferRe()
 {
   return QRegularExpression(
@@ -296,10 +314,18 @@ QString ChatManager::normalizePeer(QString peer) const
   if (isPhonePeer(peer)) {
     return phoneFromPeer(peer);
   }
-  if (!peer.contains(QLatin1Char('@')) && !m_domain.isEmpty()) {
-    peer += QLatin1Char('@') + m_domain;
+
+  const int at = peer.indexOf(QLatin1Char('@'));
+  if (at > 0) {
+    const QString login = peer.left(at).trimmed();
+    const QString host = normalizeLoopbackHost(peer.mid(at + 1), m_domain);
+    return login + QLatin1Char('@') + host;
   }
-  return peer;
+
+  if (!m_domain.isEmpty()) {
+    peer = peer.trimmed() + QLatin1Char('@') + normalizeLoopbackHost(m_domain, m_domain);
+  }
+  return peer.trimmed();
 }
 
 bool ChatManager::isSmsPeer(const QString &peer) const

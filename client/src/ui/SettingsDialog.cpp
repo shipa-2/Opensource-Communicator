@@ -30,6 +30,7 @@
 #include <QSlider>
 #include <QTabWidget>
 #include <QTimer>
+#include <QToolTip>
 #include <QVBoxLayout>
 
 #include "chat/ChatManager.h"
@@ -38,26 +39,7 @@
 #include <functional>
 
 #include <QPixmap>
-
-namespace {
-void openShareTransferDialog(SettingsDialog *parent, const QHash<QString, QString> &sharePeers,
-                             const QString &selfPeer, const QString &title, const QString &prompt,
-                             const QString &acceptLabel,
-                             const std::function<void(const QString &peer, const QString &displayName)> &onAccepted)
-{
-  auto *dlg = new TransferDialog(sharePeers, selfPeer, {}, parent, title, prompt, acceptLabel);
-  dlg->setWindowModality(Qt::ApplicationModal);
-  dlg->setAttribute(Qt::WA_DeleteOnClose);
-  QObject::connect(dlg, &QDialog::accepted, parent, [dlg, onAccepted]() {
-    const QString peer = dlg->selectedPeer();
-    if (peer.isEmpty()) {
-      return;
-    }
-    onAccepted(peer, dlg->selectedDisplayName());
-  });
-  dlg->open();
-}
-} // namespace
+#include <QPointer>
 
 SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager *calls,
                                const QString &displayName, const QHash<QString, QString> &sharePeers,
@@ -172,6 +154,7 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
   removePhotoBtn->setObjectName(QStringLiteral("avatarMenuBtn"));
   m_shareProfileBtn = new QPushButton;
   m_shareProfileBtn->setObjectName(QStringLiteral("avatarMenuBtn"));
+  m_shareProfileBtn->setAttribute(Qt::WA_AlwaysShowToolTips);
   avatarBtns->addWidget(photoBtn);
   avatarBtns->addWidget(colorBtn);
   avatarBtns->addWidget(removePhotoBtn);
@@ -180,7 +163,7 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
     const bool hasPhoto = m_settings && !m_settings->profileAvatarPath().isEmpty();
     colorBtn->setVisible(!hasPhoto);
     removePhotoBtn->setVisible(hasPhoto);
-    updateShareProfileButton();
+    updateShareButtons();
   };
   syncPhotoButtons();
   avatarBtns->addStretch();
@@ -268,6 +251,7 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
   m_removeWallpaperBtn->setObjectName(QStringLiteral("avatarMenuBtn"));
   m_shareThemeBtn = new QPushButton(tr("Поделиться темой"));
   m_shareThemeBtn->setObjectName(QStringLiteral("avatarMenuBtn"));
+  m_shareThemeBtn->setAttribute(Qt::WA_AlwaysShowToolTips);
   m_shareThemeBtn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
   m_shareThemeBtn->setToolTip(
       tr("Отправить обои и параметры затемнения выбранному пользователю OpenSource Communicator"));
@@ -377,6 +361,7 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
   connect(m_shareThemeBtn, &QPushButton::clicked, this, &SettingsDialog::onShareTheme);
 
   updateWallpaperPreview();
+  updateShareButtons();
 
   accountLayout->addStretch();
 
@@ -654,9 +639,6 @@ void SettingsDialog::updateWallpaperPreview()
     if (m_wallpaperListOpacityRow) {
       m_wallpaperListOpacityRow->setEnabled(enabled);
     }
-    if (m_shareThemeBtn) {
-      m_shareThemeBtn->setEnabled(enabled);
-    }
   };
 
   const QString path = m_settings->appWallpaperPath();
@@ -666,6 +648,7 @@ void SettingsDialog::updateWallpaperPreview()
     m_wallpaperPreview->setText(tr("Нет"));
     m_removeWallpaperBtn->setEnabled(false);
     setOpacityRowsEnabled(false);
+    updateShareButtons();
     return;
   }
 
@@ -675,6 +658,7 @@ void SettingsDialog::updateWallpaperPreview()
     m_wallpaperPreview->setText(tr("Нет"));
     m_removeWallpaperBtn->setEnabled(false);
     setOpacityRowsEnabled(false);
+    updateShareButtons();
     return;
   }
 
@@ -698,6 +682,7 @@ void SettingsDialog::updateWallpaperPreview()
     m_wallpaperListOpacityValue->setText(
         QStringLiteral("%1%").arg(m_settings->appWallpaperListOpacity()));
   }
+  updateShareButtons();
 }
 
 void SettingsDialog::onBrowseRingback()
@@ -718,105 +703,155 @@ void SettingsDialog::onBrowseIncoming()
   }
 }
 
-void SettingsDialog::updateShareProfileButton()
+void SettingsDialog::updateShareButtons()
 {
-  if (!m_shareProfileBtn || !m_settings) {
+  const bool peers = hasSharePeers();
+  const QString noPeersTip = tr("Пока нет других пользователей OpenSource Communicator.\n"
+                                "Они появятся после обмена Openping! при входе в сеть.");
+
+  if (m_shareProfileBtn && m_settings) {
+    const bool hasPhoto = !m_settings->profileAvatarPath().isEmpty();
+    m_shareProfileBtn->setText(hasPhoto ? tr("Поделиться аватаркой") : tr("Поделиться цветом"));
+    m_shareProfileBtn->setEnabled(peers);
+    if (!peers) {
+      m_shareProfileBtn->setToolTip(noPeersTip);
+    } else if (hasPhoto) {
+      m_shareProfileBtn->setToolTip(
+          tr("Отправить аватарку (140×140) выбранному пользователю OpenSource Communicator"));
+    } else {
+      m_shareProfileBtn->setToolTip(
+          tr("Отправить цвет аватарки выбранному пользователю OpenSource Communicator"));
+    }
+  }
+
+  if (m_shareThemeBtn && m_settings) {
+    const QString path = m_settings->appWallpaperPath();
+    const bool hasWallpaper = !path.isEmpty() && QFile::exists(path);
+    m_shareThemeBtn->setEnabled(peers && hasWallpaper);
+    if (!peers) {
+      m_shareThemeBtn->setToolTip(noPeersTip);
+    } else if (!hasWallpaper) {
+      m_shareThemeBtn->setToolTip(tr("Сначала выберите обои."));
+    } else {
+      m_shareThemeBtn->setToolTip(
+          tr("Отправить обои и параметры затемнения выбранному пользователю OpenSource Communicator"));
+    }
+  }
+}
+
+bool SettingsDialog::hasSharePeers() const
+{
+  for (auto it = m_sharePeers.cbegin(); it != m_sharePeers.cend(); ++it) {
+    if (it.key() != m_selfPeer) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void SettingsDialog::showTransientTip(const QString &text, QWidget *anchor)
+{
+  if (!anchor) {
     return;
   }
-  const bool hasPhoto = !m_settings->profileAvatarPath().isEmpty();
-  if (hasPhoto) {
-    m_shareProfileBtn->setText(tr("Поделиться аватаркой"));
-    m_shareProfileBtn->setToolTip(
-        tr("Отправить аватарку (140×140) выбранному пользователю OpenSource Communicator"));
-  } else {
-    m_shareProfileBtn->setText(tr("Поделиться цветом"));
-    m_shareProfileBtn->setToolTip(
-        tr("Отправить цвет аватарки выбранному пользователю OpenSource Communicator"));
+  const QPoint pos = anchor->mapToGlobal(QPoint(anchor->width() / 2, anchor->height()));
+  QToolTip::showText(pos, text, anchor, {}, 4000);
+}
+
+void SettingsDialog::openShareTransferDialog(
+    const QString &title, const QString &prompt, const QString &acceptLabel,
+    const std::function<void(const QString &peer, const QString &displayName)> &onAccepted)
+{
+  if (!hasSharePeers()) {
+    return;
   }
+
+  auto *dlg = new TransferDialog(m_sharePeers, m_selfPeer, {}, this, title, prompt, acceptLabel);
+  dlg->setWindowModality(Qt::WindowModal);
+  dlg->setAttribute(Qt::WA_DeleteOnClose);
+  const QPointer<TransferDialog> guard(dlg);
+  connect(dlg, &QDialog::finished, this, [this, guard, onAccepted](int result) {
+    if (result != QDialog::Accepted || !guard) {
+      return;
+    }
+    const QString peer = guard->selectedPeer();
+    if (peer.isEmpty()) {
+      return;
+    }
+    onAccepted(peer, guard->selectedDisplayName());
+  });
+  dlg->open();
 }
 
 void SettingsDialog::onShareAvatar()
 {
-  if (!m_client || !m_client->chat() || !m_settings) {
+  if (!m_client || !m_client->chat() || !m_settings || !m_shareProfileBtn || !m_shareProfileBtn->isEnabled()) {
     return;
   }
   const bool hasPhoto = !m_settings->profileAvatarPath().isEmpty();
   const QString title = hasPhoto ? tr("Поделиться аватаркой") : tr("Поделиться цветом");
-  if (m_sharePeers.isEmpty()) {
-    QMessageBox::information(this, title,
-                             tr("Пока нет других пользователей OpenSource Communicator.\n"
-                                "Они появятся после обмена Openping! при входе в сеть."));
-    return;
-  }
 
   if (hasPhoto) {
     QPixmap photo(m_settings->profileAvatarPath());
     if (photo.isNull()) {
-      QMessageBox::warning(this, title, tr("Не удалось открыть фото аватарки."));
+      showTransientTip(tr("Не удалось открыть фото аватарки."), m_shareProfileBtn);
       return;
     }
     openShareTransferDialog(
-        this, m_sharePeers, m_selfPeer, title, tr("Выберите контакт, которому отправить аватарку:"),
-        tr("Отправить"), [this, photo, title](const QString &peer, const QString &displayName) {
+        title, tr("Выберите контакт, которому отправить аватарку:"), tr("Отправить"),
+        [this, photo](const QString &peer, const QString &displayName) {
           if (!m_client->chat()->sendAvatarShare(peer, photo)) {
-            QMessageBox::warning(this, title, tr("Не удалось отправить аватарку."));
+            showTransientTip(tr("Не удалось отправить аватарку."), m_shareProfileBtn);
             return;
           }
-          QMessageBox::information(this, title, tr("Аватарка отправлена: %1").arg(displayName));
+          showTransientTip(tr("Аватарка отправлена: %1").arg(displayName), m_shareProfileBtn);
         });
     return;
   }
 
   const QString color = m_settings->profileAvatarColor();
   if (color.isEmpty()) {
-    QMessageBox::information(this, title, tr("Цвет аватарки не задан."));
+    showTransientTip(tr("Цвет аватарки не задан."), m_shareProfileBtn);
     return;
   }
   m_client->chat()->setSelfShareProfile(color, {});
   openShareTransferDialog(
-      this, m_sharePeers, m_selfPeer, title, tr("Выберите контакт, которому отправить цвет:"),
-      tr("Отправить"), [this, color, title](const QString &peer, const QString &displayName) {
+      title, tr("Выберите контакт, которому отправить цвет:"), tr("Отправить"),
+      [this, color](const QString &peer, const QString &displayName) {
         if (!m_client->chat()->sendColorShare(peer)) {
-          QMessageBox::warning(this, title, tr("Не удалось отправить цвет."));
+          showTransientTip(tr("Не удалось отправить цвет."), m_shareProfileBtn);
           return;
         }
-        QMessageBox::information(this, title,
-                                 tr("Цвет %1 отправлен: %2").arg(color, displayName));
+        showTransientTip(tr("Цвет %1 отправлен: %2").arg(color, displayName), m_shareProfileBtn);
       });
 }
 
 void SettingsDialog::onShareTheme()
 {
-  if (!m_client || !m_client->chat() || !m_settings) {
+  if (!m_client || !m_client->chat() || !m_settings || !m_shareThemeBtn || !m_shareThemeBtn->isEnabled()) {
     return;
   }
   const QString title = tr("Поделиться темой");
   const QString path = m_settings->appWallpaperPath();
   if (path.isEmpty() || !QFile::exists(path)) {
-    QMessageBox::information(this, title, tr("Сначала выберите обои."));
+    showTransientTip(tr("Сначала выберите обои."), m_shareThemeBtn);
     return;
   }
   const QPixmap wallpaper(path);
   if (wallpaper.isNull()) {
-    QMessageBox::warning(this, title, tr("Не удалось открыть файл обоев."));
-    return;
-  }
-  if (m_sharePeers.isEmpty()) {
-    QMessageBox::information(this, title,
-                             tr("Пока нет других пользователей OpenSource Communicator.\n"
-                                "Они появятся после обмена Openping! при входе в сеть."));
+    showTransientTip(tr("Не удалось открыть файл обоев."), m_shareThemeBtn);
     return;
   }
 
   openShareTransferDialog(
-      this, m_sharePeers, m_selfPeer, title, tr("Выберите контакт, которому отправить тему:"),
-      tr("Отправить"), [this, wallpaper, title](const QString &peer, const QString &displayName) {
+      title, tr("Выберите контакт, которому отправить тему:"), tr("Отправить"),
+      [this, wallpaper](const QString &peer, const QString &displayName) {
         if (!m_client->chat()->sendThemeShare(peer, wallpaper, m_settings->appWallpaperOpacity(),
                                               m_settings->appWallpaperListOpacity())) {
-          QMessageBox::warning(this, title, tr("Не удалось отправить тему."));
+          showTransientTip(tr("Не удалось отправить тему."), m_shareThemeBtn);
           return;
         }
-        QMessageBox::information(this, title, tr("Тема отправлена: %1").arg(displayName));
+        showTransientTip(tr("Тема отправлена: %1").arg(displayName), m_shareThemeBtn);
       });
 }
 
