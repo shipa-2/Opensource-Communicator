@@ -1,0 +1,4 @@
+build/
+build-debug/
+certs/
+server.conf

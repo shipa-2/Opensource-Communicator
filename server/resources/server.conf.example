@@ -1,0 +1,22 @@
+{
+    "server": {
+        "host": "0.0.0.0",
+        "port": 8443,
+        "ssl_cert": "",
+        "ssl_key": ""
+    },
+    "database": {
+        "host": "localhost",
+        "port": 5432,
+        "name": "communicator",
+        "user": "communicator",
+        "password": ""
+    },
+    "auth": {
+        "session_timeout_sec": 3600,
+        "max_sessions_per_user": 5
+    },
+    "logging": {
+        "level": "info"
+    }
+}
