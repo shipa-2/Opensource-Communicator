@@ -17,7 +17,7 @@ public:
     QString sid() const;
     bool isConnected() const;
 
-    void initialize(const QUrl &url, const QString &ssoLogin = {});
+    void initialize(const QUrl &url, const QString &ssoLogin = {}, bool ignoreInsecureTls = false);
     void disconnect();
 
     void login(const QString &username, const QString &password, const QString &partner = {});
@@ -40,6 +40,7 @@ public:
     void disconnectCall(const QString &leg, int code);
     void ackAccept(const QString &leg);
     void updateCall(const QString &leg, const QString &localSdp);
+    void acceptUpdate(const QString &leg, const QString &localSdp);
     void blindTransfer(const QString &leg, const QString &peer);
 
     void setOwnPresence(const QString &status, bool manual = true);
@@ -48,6 +49,7 @@ public:
     void getDomainContacts();
     int getHistory(const QJsonObject &params);
     int getSmsTelnums();
+    int getCommunicatorSettings();
 
     int sendIm(const QString &peer, const QString &body, const QString &type = {},
                bool persist = true, bool copyToSelf = true);

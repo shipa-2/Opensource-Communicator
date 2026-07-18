@@ -66,6 +66,7 @@ private:
     void resetCallWindowLayout();
     void applyFixedCallWidth();
     void updateCollapsedMinimumHeight();
+    void updateHoldButtonEnabled();
     static QString formatDuration(int seconds);
 
     static constexpr int kNormalWidth = 320;
@@ -105,4 +106,5 @@ private:
     int m_minCollapsedHeight = kNormalHeight;
     int m_collapsedHeight = kNormalHeight;
     QString m_dtmfSent;
+    bool m_remoteOnHold = false;
 };

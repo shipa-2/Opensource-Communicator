@@ -25,7 +25,7 @@ bool WsApiClient::isConnected() const
   return m_connection && m_connection->isConnected();
 }
 
-void WsApiClient::initialize(const QUrl &url, const QString &ssoLogin)
+void WsApiClient::initialize(const QUrl &url, const QString &ssoLogin, bool ignoreInsecureTls)
 {
   disconnect();
 
@@ -36,7 +36,7 @@ void WsApiClient::initialize(const QUrl &url, const QString &ssoLogin)
   connect(m_connection, &WsConnection::payloadReceived, this, &WsApiClient::onPayload);
   connect(m_connection, &WsConnection::responseReceived, this, &WsApiClient::onResponse);
 
-  m_connection->connectToServer(url, ssoLogin);
+  m_connection->connectToServer(url, ssoLogin, ignoreInsecureTls);
 }
 
 void WsApiClient::disconnect()
@@ -331,6 +331,18 @@ void WsApiClient::updateCall(const QString &leg, const QString &localSdp)
   });
 }
 
+void WsApiClient::acceptUpdate(const QString &leg, const QString &localSdp)
+{
+  if (!ensureOnline()) {
+    return;
+  }
+  m_connection->sendRequest(QJsonObject{
+      {QString::fromUtf8(kEmptyKey), QStringLiteral("AcceptUpdate")},
+      {QStringLiteral("leg"), leg},
+      {QStringLiteral("sdp"), localSdp},
+  });
+}
+
 void WsApiClient::blindTransfer(const QString &leg, const QString &peer)
 {
   if (!ensureOnline()) {
@@ -400,6 +412,15 @@ int WsApiClient::getSmsTelnums()
   }
   return m_connection->sendRequestWithResponse(
       QJsonObject{{QString::fromUtf8(kEmptyKey), QStringLiteral("smstelnums")}});
+}
+
+int WsApiClient::getCommunicatorSettings()
+{
+  if (!ensureOnline()) {
+    return -1;
+  }
+  return m_connection->sendRequestWithResponse(
+      QJsonObject{{QString::fromUtf8(kEmptyKey), QStringLiteral("getcommunicatorsettings")}});
 }
 
 int WsApiClient::sendIm(const QString &peer, const QString &body, const QString &type, bool persist, bool copyToSelf)

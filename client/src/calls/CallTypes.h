@@ -31,6 +31,7 @@ struct CallSession {
     bool connected = false;
     bool onHold = false;
     bool acceptPending = false;
+    bool pendingUpdateAnswer = false;
     bool isConference = false;
     CallPhase phase = CallPhase::Idle;
 };

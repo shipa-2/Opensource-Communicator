@@ -340,7 +340,7 @@ void CallWindow::setMode(Mode mode)
   m_transferBtn->setVisible(showCallControls);
   m_dtmfToggleBtn->setVisible(showCallControls);
   m_timerLabel->setVisible(showCallControls);
-  m_holdBtn->setEnabled(activeCall);
+  updateHoldButtonEnabled();
   m_transferBtn->setEnabled(activeCall);
   m_dtmfToggleBtn->setEnabled(activeCall);
   m_dtmfEnabled = activeCall;
@@ -701,11 +701,16 @@ void CallWindow::updateState(const QString &state, const QString &detail)
     return;
   }
   if (state == QStringLiteral("hold")) {
-    m_statusLabel->setText(tr("Удержание"));
+    const bool remoteHold = detail == QStringLiteral("remote");
+    m_remoteOnHold = remoteHold;
+    m_statusLabel->setText(remoteHold ? tr("На удержании") : tr("Удержание"));
+    updateHoldButtonEnabled();
     return;
   }
   if (state == QStringLiteral("resumed")) {
+    m_remoteOnHold = false;
     m_statusLabel->setText(tr("Разговор"));
+    updateHoldButtonEnabled();
     return;
   }
   if (state == QStringLiteral("ended") || state == QStringLiteral("rejected")
@@ -725,6 +730,7 @@ void CallWindow::beginConversationTimer()
 void CallWindow::closeCall()
 {
   stopTimer();
+  m_remoteOnHold = false;
   setRemoteSpeakingIndicator(false);
   m_avatarPhoto = {};
   m_avatarLetter = QStringLiteral("?");
@@ -752,6 +758,15 @@ void CallWindow::onTimerTick()
 {
   ++m_elapsedSeconds;
   m_timerLabel->setText(tr("Продолжит: %1").arg(formatDuration(m_elapsedSeconds)));
+}
+
+void CallWindow::updateHoldButtonEnabled()
+{
+  if (!m_holdBtn) {
+    return;
+  }
+  const bool activeCall = m_mode == Mode::Active || m_mode == Mode::IncomingAccepted;
+  m_holdBtn->setEnabled(activeCall && !m_remoteOnHold);
 }
 
 QString CallWindow::formatDuration(int seconds)

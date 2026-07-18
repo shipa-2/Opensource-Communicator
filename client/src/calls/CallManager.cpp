@@ -39,6 +39,9 @@ CallManager::CallManager(WsApiClient *api, AppSettings *settings, QObject *paren
     if (m_activeLeg.isEmpty() || !m_peers.contains(m_activeLeg)) {
       return;
     }
+    if (m_calls.contains(m_activeLeg) && m_calls[m_activeLeg].onHold) {
+      return;
+    }
     PeerContext &ctx = m_peers[m_activeLeg];
     auto track = ctx.localAudioTrack;
     if (!track || !track->isOpen()) {
@@ -93,6 +96,67 @@ QString CallManager::modifySdpForHold(const QString &sdp, bool hold) const
   QRegularExpression re(QStringLiteral("a=sendrecv"));
   return hold ? result.replace(re, QStringLiteral("a=sendonly"))
               : result.replace(QRegularExpression(QStringLiteral("a=sendonly")), QStringLiteral("a=sendrecv"));
+}
+
+bool CallManager::isSdpMediaOnHold(const QString &sdp) const
+{
+  const QStringList lines = sdp.split(QStringLiteral("\r\n"), Qt::SkipEmptyParts);
+  bool inAudio = false;
+  for (const QString &line : lines) {
+    if (line.startsWith(QStringLiteral("m="))) {
+      inAudio = line.startsWith(QStringLiteral("m=audio"));
+      continue;
+    }
+    if (!inAudio) {
+      continue;
+    }
+    if (line == QStringLiteral("a=sendonly") || line == QStringLiteral("a=inactive")) {
+      return true;
+    }
+    if (line == QStringLiteral("a=sendrecv") || line == QStringLiteral("a=recvonly")) {
+      return false;
+    }
+  }
+  return false;
+}
+
+void CallManager::updateHoldStateFromSdp(const QString &leg, const QString &sdp, bool remoteInitiated)
+{
+  if (!m_calls.contains(leg) || !remoteInitiated) {
+    return;
+  }
+
+  CallSession &session = m_calls[leg];
+  const bool hold = isSdpMediaOnHold(sdp);
+  const CallPhase targetPhase = hold ? CallPhase::Hold : CallPhase::Connected;
+  if (session.onHold == hold && session.phase == targetPhase) {
+    return;
+  }
+
+  session.onHold = hold;
+  session.phase = targetPhase;
+  const QString detail = hold ? QStringLiteral("remote") : QString();
+  emit callStateChanged(leg, hold ? QStringLiteral("hold") : QStringLiteral("resumed"), detail);
+}
+
+void CallManager::answerRemoteUpdate(const QString &leg)
+{
+  if (!m_calls.contains(leg) || !m_peers.contains(leg) || !m_peers[leg].pc) {
+    return;
+  }
+
+  CallSession &session = m_calls[leg];
+  if (!session.connected || session.pendingUpdateAnswer) {
+    return;
+  }
+
+  session.pendingUpdateAnswer = true;
+  try {
+    m_peers[leg].pc->setLocalDescription(rtc::Description::Type::Answer);
+  } catch (const std::exception &e) {
+    session.pendingUpdateAnswer = false;
+    qCWarning(lcCall) << "Failed to create update answer for" << leg << ":" << e.what();
+  }
 }
 
 QString CallManager::bindIPv4() const
@@ -563,6 +627,12 @@ void CallManager::beginNegotiation(const QString &leg, bool createOffer, bool de
       }
       CallSession &session = m_calls[leg];
       session.localSdp = sanitizeLocalSdp(patchSdpLocalAddress(QString::fromStdString(std::string(description))));
+      if (session.pendingUpdateAnswer) {
+        session.pendingUpdateAnswer = false;
+        qCInfo(lcCall) << "Sending AcceptUpdate for" << leg << "sdpBytes:" << session.localSdp.size();
+        m_api->acceptUpdate(leg, session.localSdp);
+        return;
+      }
       if (!session.incoming || session.acceptPending) {
         publishLocalSdp(leg, pc);
       }
@@ -941,7 +1011,7 @@ void CallManager::setHold(const QString &leg, bool hold)
   session.phase = hold ? CallPhase::Hold : CallPhase::Connected;
   session.localSdp = modifySdpForHold(session.localSdp, hold);
   m_api->updateCall(leg, session.localSdp);
-  emit callStateChanged(leg, hold ? QStringLiteral("hold") : QStringLiteral("resumed"), session.peer);
+  emit callStateChanged(leg, hold ? QStringLiteral("hold") : QStringLiteral("resumed"), QStringLiteral("local"));
 }
 
 void CallManager::sendDtmf(const QString &leg, QChar digit)
@@ -1132,10 +1202,13 @@ void CallManager::handleServerCallEvent(const QString &leg, const QString &what,
 
     const SdpType sdpType =
         what == QStringLiteral("updateAccepted") ? SdpType::Answer : SdpType::Offer;
-    qCInfo(lcCall) << "Call" << what << "for" << leg << "sdpBytes:" << newSdp.size();
+    const bool remoteInitiated = what == QStringLiteral("updated");
+    qCInfo(lcCall) << "Call" << what << "for" << leg << "sdpBytes:" << newSdp.size()
+                   << "hold:" << isSdpMediaOnHold(newSdp);
+    updateHoldStateFromSdp(leg, newSdp, remoteInitiated);
     applyRemoteSdp(leg, newSdp, sdpType, true);
-    if (sdpType == SdpType::Offer && session.localSdp.isEmpty() && m_peers.contains(leg)) {
-      m_peers[leg].pc->setLocalDescription(rtc::Description::Type::Answer);
+    if (sdpType == SdpType::Offer && session.connected) {
+      answerRemoteUpdate(leg);
     }
     return;
   }

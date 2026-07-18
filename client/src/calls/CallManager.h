@@ -98,6 +98,9 @@ private:
     bool hasActiveOutgoing() const;
     QString primaryOutgoingLeg() const;
     QString modifySdpForHold(const QString &sdp, bool hold) const;
+    bool isSdpMediaOnHold(const QString &sdp) const;
+    void updateHoldStateFromSdp(const QString &leg, const QString &sdp, bool remoteInitiated);
+    void answerRemoteUpdate(const QString &leg);
     QString patchSdpLocalAddress(const QString &sdp) const;
     QString extractAudioMid(const QString &sdp) const;
     QString sanitizeLocalSdp(const QString &sdp) const;
