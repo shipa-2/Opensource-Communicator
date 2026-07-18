@@ -144,6 +144,48 @@ bool Database::authenticateUser(const QString &login, const QString &passwordHas
     return true;
 }
 
+bool Database::authenticateUserByName(const QString &login, const QString &passwordHash,
+                                      QString *outLogin, QString *outDomain,
+                                      QString *outRole, QString *outPartner)
+{
+    const QString user = login.section(QLatin1Char('@'), 0, 0).trimmed().toLower();
+    const QString requestedDomain = login.section(QLatin1Char('@'), 1).trimmed().toLower();
+    if (user.isEmpty()) {
+        return false;
+    }
+
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral(
+        "SELECT login, domain, role, partner FROM users "
+        "WHERE LOWER(SPLIT_PART(login, '@', 1)) = :user AND password_hash = :pw "
+        "ORDER BY CASE WHEN LOWER(domain) = :domain THEN 0 ELSE 1 END, login"
+    ));
+    q.bindValue(QStringLiteral(":user"), user);
+    q.bindValue(QStringLiteral(":pw"), passwordHash);
+    q.bindValue(QStringLiteral(":domain"), requestedDomain);
+    if (!q.exec() || !q.next()) {
+        return false;
+    }
+
+    const QString matchedLogin = q.value(0).toString();
+    const QString matchedDomain = q.value(1).toString();
+    const QString matchedRole = q.value(2).toString();
+    const QString matchedPartner = q.value(3).toString();
+
+    // If several domains contain the same user/password, an arbitrary domain
+    // alias would be unsafe. A directly matching requested domain remains
+    // deterministic because it is sorted first.
+    if (q.next() && matchedDomain.compare(requestedDomain, Qt::CaseInsensitive) != 0) {
+        return false;
+    }
+
+    if (outLogin) *outLogin = matchedLogin;
+    if (outDomain) *outDomain = matchedDomain;
+    if (outRole) *outRole = matchedRole;
+    if (outPartner) *outPartner = matchedPartner;
+    return true;
+}
+
 bool Database::userExists(const QString &login)
 {
     QSqlQuery q(m_db);

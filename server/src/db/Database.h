@@ -24,6 +24,9 @@ public:
     // Users
     bool authenticateUser(const QString &login, const QString &passwordHash, QString *outDomain,
                           QString *outRole, QString *outPartner);
+    bool authenticateUserByName(const QString &login, const QString &passwordHash,
+                                QString *outLogin, QString *outDomain,
+                                QString *outRole, QString *outPartner);
     bool userExists(const QString &login);
     int userId(const QString &login);
     QString userDomain(const QString &login);

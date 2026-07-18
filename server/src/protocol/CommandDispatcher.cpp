@@ -108,7 +108,7 @@ void CommandDispatcher::handleCommand(WsSession *ws, UserSession *session, const
 
         QJsonObject resp;
         if (result.success) {
-            session->setLogin(username);
+            session->setLogin(result.login.isEmpty() ? username : result.login);
             session->setDomain(result.domain);
             session->setRole(result.role);
             session->setPartner(clientPartner.isEmpty() ? result.partner : clientPartner);

@@ -41,15 +41,23 @@ AuthManager::AuthResult AuthManager::authenticate(const QString &login, const QS
 
     // Full mode: check database
     const QString hash = hashPassword(password);
-    QString domain, role, partner, displayName;
-    if (m_db && m_db->authenticateUser(login, hash, &domain, &role, &partner)) {
+    QString canonicalLogin = login;
+    QString domain, role, partner;
+    bool authenticated = m_db && m_db->authenticateUser(
+        canonicalLogin, hash, &domain, &role, &partner);
+    if (!authenticated && m_db && m_allowDomainAliases) {
+        authenticated = m_db->authenticateUserByName(
+            login, hash, &canonicalLogin, &domain, &role, &partner);
+    }
+    if (authenticated) {
         result.success = true;
-        result.userId = m_db->userId(login);
+        result.login = canonicalLogin;
+        result.userId = m_db->userId(canonicalLogin);
         result.domain = domain;
         result.role = role;
         result.partner = partner;
-        result.displayName = m_db->userDisplayName(login);
-        qCInfo(lcAuth) << "Auth success:" << login;
+        result.displayName = m_db->userDisplayName(canonicalLogin);
+        qCInfo(lcAuth) << "Auth success:" << login << "as" << canonicalLogin;
     } else {
         // Accept any login with password "demo" if user doesn't exist yet (development mode)
         if (password == QStringLiteral("demo")) {

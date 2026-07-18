@@ -15,10 +15,12 @@ public:
 
     void setDemoOnly(bool demo) { m_demoOnly = demo; }
     void setDefaultPartner(const QString &partner) { m_defaultPartner = partner; }
+    void setAllowDomainAliases(bool allow) { m_allowDomainAliases = allow; }
 
     struct AuthResult {
         bool success = false;
         int userId = -1;
+        QString login;
         QString domain;
         QString role;
         QString partner;
@@ -32,6 +34,7 @@ public:
 private:
     Database *m_db;
     bool m_demoOnly = false;
+    bool m_allowDomainAliases = false;
     QString m_defaultPartner;
 };
 

@@ -102,6 +102,9 @@ void Server::wireModules()
 
     m_authMgr = new AuthManager(m_db, this);
     m_authMgr->setDemoOnly(m_config.demoOnly);
+    m_authMgr->setAllowDomainAliases(
+        m_config.server.host == QStringLiteral("0.0.0.0")
+        || m_config.server.host == QStringLiteral("::"));
     if (!m_config.partner.isEmpty()) {
         m_authMgr->setDefaultPartner(m_config.partner);
     }
