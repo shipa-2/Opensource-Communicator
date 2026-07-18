@@ -1804,11 +1804,21 @@ void MainWindow::addOrUpdateContactRow(const QString &peer)
   row->setVideoCallSupported(serverVideoUiAvailable());
   row->setVideoButtonVisible(m_client->appSettings().showVideoButtons());
   row->setUnreadBlink(m_client->appSettings().showChatButtons() && m_client->chat()->hasUnread(peer));
-  const QString peerColor = m_client->chat()->peerColor(peer);
+  const QString peerColor = entry.isSelf
+      ? m_client->appSettings().profileAvatarColor()
+      : m_client->chat()->peerColor(peer);
   if (!peerColor.isEmpty()) {
     row->setPeerColor(peerColor);
   }
-  const QPixmap peerAvatar = m_client->chat()->peerAvatar(peer);
+  QPixmap peerAvatar;
+  if (entry.isSelf) {
+    const QString avatarPath = m_client->appSettings().profileAvatarPath();
+    if (!avatarPath.isEmpty()) {
+      peerAvatar.load(avatarPath);
+    }
+  } else {
+    peerAvatar = m_client->chat()->peerAvatar(peer);
+  }
   if (!peerAvatar.isNull()) {
     row->setPeerAvatar(peerAvatar);
   }
@@ -1977,6 +1987,15 @@ void MainWindow::onProfileAvatarChanged()
 {
   m_client->saveSettings();
   m_headerAvatar->refreshFromSettings();
+  if (ContactRowWidget *selfRow = rowWidgetForPeer(m_selfPeer)) {
+    selfRow->setPeerColor(m_client->appSettings().profileAvatarColor());
+    QPixmap avatar;
+    const QString avatarPath = m_client->appSettings().profileAvatarPath();
+    if (!avatarPath.isEmpty()) {
+      avatar.load(avatarPath);
+    }
+    selfRow->setPeerAvatar(avatar);
+  }
   syncSelfOscShareProfile();
   if (m_online) {
     refreshColorAdvertisementPeers();
