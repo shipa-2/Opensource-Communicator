@@ -126,7 +126,7 @@ int main(int argc, char *argv[])
     parser.addOption({QStringLiteral("allowvideo"), QStringLiteral("Enable video call support (WIP)")});
     parser.addOption({QStringLiteral("bigmessages"),
                       QStringLiteral("Increase max message size limit (for file transfers)")});
-    parser.addOption({QStringLiteral("oncall"),
+    parser.addOption({QStringLiteral("incall"),
                       QStringLiteral("Allow users to set 'on call' presence status")});
     parser.addOption({QStringLiteral("servercontacts"),
                       QStringLiteral("Enable server-side address book (personal contacts on server)")});
@@ -170,8 +170,8 @@ int main(int argc, char *argv[])
     if (parser.isSet(QStringLiteral("bigmessages"))) {
         config.bigMessages = true;
     }
-    if (parser.isSet(QStringLiteral("oncall"))) {
-        config.onCallStatus = true;
+    if (parser.isSet(QStringLiteral("incall"))) {
+        config.inCallStatus = true;
     }
     if (parser.isSet(QStringLiteral("servercontacts"))) {
         config.serverContacts = true;

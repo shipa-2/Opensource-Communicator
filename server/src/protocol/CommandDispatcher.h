@@ -38,6 +38,7 @@ public:
     void setConferenceManager(ConferenceManager *mgr) { m_confMgr = mgr; }
     void setConfigPartner(const QString &partner) { m_configPartner = partner; }
     void setVideoEnabled(bool enabled) { m_videoEnabled = enabled; }
+    void setInCallStatusEnabled(bool enabled) { m_inCallStatusEnabled = enabled; }
 
     void handleHandshake(WsSession *ws, const QJsonObject &hello);
     void handlePayload(WsSession *ws, const QJsonObject &payload);
@@ -61,6 +62,7 @@ private:
     ConferenceManager *m_confMgr = nullptr;
     QString m_configPartner;
     bool m_videoEnabled = false;
+    bool m_inCallStatusEnabled = false;
 };
 
 } // namespace itl

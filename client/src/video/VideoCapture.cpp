@@ -24,7 +24,7 @@ VideoCapture::~VideoCapture()
     stop();
 }
 
-bool VideoCapture::start(int width, int height, int fps)
+bool VideoCapture::start(int width, int height, int fps, const QByteArray &deviceId)
 {
     if (m_running) {
         return true;
@@ -39,9 +39,20 @@ bool VideoCapture::start(int width, int height, int fps)
     m_width = qMax(2, width & ~1);
     m_height = qMax(2, height & ~1);
 
-    const QCameraDevice device = QMediaDevices::defaultVideoInput().isNull()
-                                     ? cameras.constFirst()
-                                     : QMediaDevices::defaultVideoInput();
+    QCameraDevice device;
+    if (!deviceId.isEmpty()) {
+        for (const QCameraDevice &candidate : cameras) {
+            if (candidate.id() == deviceId) {
+                device = candidate;
+                break;
+            }
+        }
+    }
+    if (device.isNull()) {
+        device = QMediaDevices::defaultVideoInput().isNull()
+                     ? cameras.constFirst()
+                     : QMediaDevices::defaultVideoInput();
+    }
     m_camera = new QCamera(device, this);
     m_captureSession = new QMediaCaptureSession(this);
     m_videoSink = new QVideoSink(this);

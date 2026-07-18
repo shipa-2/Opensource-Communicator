@@ -15,6 +15,7 @@ public:
     explicit PresenceManager(SessionManager *sessions, QObject *parent = nullptr);
 
     void broadcastPresence(UserSession *sender, const QString &status);
+    void broadcastPresence(const QString &login, const QString &domain, const QString &status);
     void sendInitialPresence(UserSession *target);
 
 private:

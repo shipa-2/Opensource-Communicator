@@ -28,6 +28,7 @@ public:
 signals:
     void sessionCreated(const QString &sid);
     void sessionDestroyed(const QString &sid);
+    void userWentOffline(const QString &login, const QString &domain);
 
 private slots:
     void cleanupExpiredSessions();

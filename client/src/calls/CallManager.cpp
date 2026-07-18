@@ -1464,8 +1464,10 @@ bool CallManager::startVideoCapture(const QString &leg)
     return false;
   }
   const bool sourceStarted = m_screenSharing
-                                 ? m_screenCapture.start(kVideoWidth, kVideoHeight, kVideoFps)
-                                 : m_videoCapture.start(kVideoWidth, kVideoHeight, kVideoFps);
+                                 ? m_screenCapture.start(kVideoWidth, kVideoHeight, kVideoFps,
+                                                         m_screenName)
+                                 : m_videoCapture.start(kVideoWidth, kVideoHeight, kVideoFps,
+                                                        m_cameraDeviceId);
   if (!sourceStarted) {
     m_videoEncoder.close();
     return false;
@@ -1553,6 +1555,16 @@ void CallManager::setScreenSharing(const QString &leg, bool enabled)
     m_calls[leg].sendVideo = startVideoCapture(leg);
   }
   emit screenSharingChanged(leg, m_screenSharing && m_calls[leg].sendVideo);
+}
+
+void CallManager::setVideoSource(const QByteArray &cameraId, const QString &screenName,
+                                 bool screenSharing)
+{
+  m_cameraDeviceId = cameraId;
+  m_screenName = screenName;
+  if (!m_videoCapture.isRunning() && !m_screenCapture.isRunning()) {
+    m_screenSharing = screenSharing;
+  }
 }
 
 } // namespace itl

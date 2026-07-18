@@ -20,7 +20,8 @@ public:
     explicit ScreenCapture(QObject *parent = nullptr);
     ~ScreenCapture() override;
 
-    bool start(int width = 1280, int height = 720, int fps = 10);
+    bool start(int width = 1280, int height = 720, int fps = 10,
+               const QString &screenName = {});
     void stop();
     bool isRunning() const { return m_running; }
 

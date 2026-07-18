@@ -60,7 +60,7 @@ sudo pacman -S qt6-base qt6-websockets postgresql cmake gcc
 | `--demo` | Только `demo`/`demo` вход. Остальные логины отклоняются |
 | `--allowvideo` | Включает поддержку видеозвонков. Рассылается клиентам через `getcommunicatorsettings` |
 | `--bigmessages` | Увеличенный лимит сообщений (для передачи файлов) |
-| `--oncall` | Разрешает статус «говорит по телефону» |
+| `--incall` | Разрешает статус `in-call` («говорит по телефону»). Без флага сервер отклоняет такой `SetPresence` |
 | `--servercontacts` | Серверная адресная книга (личные контакты) |
 | `--newuser` | Интерактивное создание пользователя в БД (логин, имя, ext, телефон, пароль, роль) |
 | `--deluser <login>` | Удаление пользователя (с подтверждением) |
@@ -283,7 +283,7 @@ sudo -u postgres psql -h 127.0.0.1 -c "CREATE DATABASE communicator OWNER commun
 
 | Команда | Описание | Ответ |
 |---------|----------|-------|
-| `SetPresence` | Статус присутствия | `response: "ok"` + initial presence + broadcast `[PRESENCE]` |
+| `SetPresence` | Статус присутствия | `response: "ok"` + initial presence + broadcast `[PRESENCE]`; `in-call` без `--incall` возвращает ошибку |
 
 При `SetPresence("online")` сервер:
 1. Отправляет текущий статус всех онлайн-пользователей в домене новому пользователю

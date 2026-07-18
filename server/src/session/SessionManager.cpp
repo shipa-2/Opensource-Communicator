@@ -35,8 +35,26 @@ void SessionManager::destroySession(const QString &sid)
         return;
     }
 
+    const QString login = session->login();
+    const QString domain = session->domain();
+    bool hasAnotherSession = false;
+    if (!login.isEmpty() && !domain.isEmpty()) {
+        const QString user = login.section(QLatin1Char('@'), 0, 0);
+        for (UserSession *other : m_sessions) {
+            if (other && other->domain().compare(domain, Qt::CaseInsensitive) == 0
+                && other->login().section(QLatin1Char('@'), 0, 0)
+                       .compare(user, Qt::CaseInsensitive) == 0) {
+                hasAnotherSession = true;
+                break;
+            }
+        }
+    }
+
     qCInfo(lcSession) << "Session destroyed:" << sid << session->login();
     emit sessionDestroyed(sid);
+    if (!login.isEmpty() && !domain.isEmpty() && !hasAnotherSession) {
+        emit userWentOffline(login, domain);
+    }
     session->deleteLater();
 }
 

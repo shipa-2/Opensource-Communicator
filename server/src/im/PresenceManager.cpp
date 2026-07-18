@@ -28,15 +28,24 @@ void PresenceManager::broadcastPresence(UserSession *sender, const QString &stat
     if (!sender || sender->domain().isEmpty()) {
         return;
     }
+    broadcastPresence(sender->login(), sender->domain(), status);
+}
 
-    const QList<UserSession *> domainSessions = m_sessions->sessionsForDomain(sender->domain());
+void PresenceManager::broadcastPresence(const QString &login, const QString &domain,
+                                        const QString &status)
+{
+    if (!m_sessions || login.isEmpty() || domain.isEmpty()) {
+        return;
+    }
+
+    const QList<UserSession *> domainSessions = m_sessions->sessionsForDomain(domain);
 
     QJsonObject entry;
     entry.insert(QStringLiteral("voice"), status);
     entry.insert(QStringLiteral("im"), QJsonObject{{QStringLiteral("status"), status}});
 
     QJsonObject batch;
-    batch.insert(bareLogin(sender->login()), entry);
+    batch.insert(bareLogin(login), entry);
 
     QJsonObject payload;
     payload.insert(QStringLiteral("What"), QStringLiteral("[PRESENCE]"));
@@ -44,16 +53,13 @@ void PresenceManager::broadcastPresence(UserSession *sender, const QString &stat
 
     int delivered = 0;
     for (UserSession *target : domainSessions) {
-        if (target->login() == sender->login()) {
-            continue;
-        }
         if (target->wsSession() && target->isBound()) {
             target->wsSession()->sendPayload(payload);
             delivered++;
         }
     }
 
-    qCInfo(lcPresence) << "Presence broadcast:" << sender->login() << status
+    qCInfo(lcPresence) << "Presence broadcast:" << login << status
                        << "to" << delivered << "peers";
 }
 

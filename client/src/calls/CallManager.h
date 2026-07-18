@@ -82,6 +82,8 @@ public:
     void toggleSendVideo(const QString &leg);
     void setScreenSharing(const QString &leg, bool enabled);
     void setVideoBlur(bool enabled) { m_videoBlur = enabled; }
+    void setVideoSource(const QByteArray &cameraId, const QString &screenName = {},
+                        bool screenSharing = false);
 
     CallSession *call(const QString &leg);
     QString activeLeg() const { return m_activeLeg; }
@@ -163,6 +165,8 @@ private:
     QString m_videoCaptureLeg;
     bool m_screenSharing = false;
     bool m_videoBlur = false;
+    QByteArray m_cameraDeviceId;
+    QString m_screenName;
     QHash<QString, CallSession> m_calls;
     QHash<QString, PeerContext> m_peers;
     QHash<QString, QTimer *> m_publishTimers;

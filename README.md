@@ -108,7 +108,7 @@ Portable ZIP для Windows и tar.gz для Linux публикуются в [Gi
 cd server
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
-./build/communicator-server --demo --port 8443 --oncall --allowvideo
+./build/communicator-server --demo --port 8443 --incall --allowvideo
 ```
 
 Зависимости: Qt6 (Core, WebSockets, Network, Sql), PostgreSQL, OpenSSL, CMake ≥ 3.16. Полная документация, флаги CLI и схема БД — в **[server/README.md](server/README.md)**.
@@ -233,7 +233,7 @@ cmake --build build-debug
 Сервер должен вернуть `videoEnabled: true` из `getcommunicatorsettings`. У собственного сервера это включает флаг `--allowvideo`:
 
 ```bash
-./server/build/communicator-server --port 8443 --allowvideo --oncall
+./server/build/communicator-server --port 8443 --allowvideo --incall
 ```
 
 Клиент захватывает камеру через Qt Multimedia, кодирует 640×360@15 FPS в H.264 baseline (PT 96, RTP clock 90 kHz) и передаёт через `libdatachannel`. Входящий H.264 декодируется OpenH264. На Qt ≥6.5 и KDE Plasma Wayland демонстрация экрана использует `QScreenCapture` и системный PipeWire/xdg-desktop-portal диалог; для Qt 6.4 сохранён X11-совместимый fallback через `QScreen::grabWindow()`.

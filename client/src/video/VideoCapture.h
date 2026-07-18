@@ -18,7 +18,8 @@ public:
     explicit VideoCapture(QObject *parent = nullptr);
     ~VideoCapture() override;
 
-    bool start(int width = 640, int height = 480, int fps = 30);
+    bool start(int width = 640, int height = 480, int fps = 30,
+               const QByteArray &deviceId = {});
     void stop();
     bool isRunning() const { return m_running; }
     QStringList availableDevices() const;

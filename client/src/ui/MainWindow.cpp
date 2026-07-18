@@ -28,6 +28,7 @@
 #include "ui/NativeScrollBars.h"
 #include "ui/StyleHelper.h"
 #include "ui/ThemeHelper.h"
+#include "ui/VideoSourceDialog.h"
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
@@ -1084,6 +1085,16 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   });
   connect(m_callWindow, &CallWindow::screenSharingRequested, this, [this](bool enabled) {
     if (!m_activeLeg.isEmpty()) {
+#ifdef Q_OS_WIN
+      if (enabled) {
+        VideoSourceDialog sourceDialog(/*screensOnly=*/true, this);
+        if (sourceDialog.exec() != QDialog::Accepted) {
+          m_callWindow->setScreenSharing(false);
+          return;
+        }
+        m_calls->setVideoSource({}, sourceDialog.screenName(), true);
+      }
+#endif
       m_calls->setScreenSharing(m_activeLeg, enabled);
     }
   });
@@ -1903,6 +1914,9 @@ void MainWindow::enterCallPresence()
   }
   if (!m_selfPeer.isEmpty()) {
     m_contacts[m_selfPeer].presence = QStringLiteral("in-call");
+    if (ContactRowWidget *row = rowWidgetForPeer(m_selfPeer)) {
+      row->updatePresence(QStringLiteral("in-call"));
+    }
   }
   if (m_online && !m_demoMode && usesOpenSourcePresence()) {
     m_client->api()->setOwnPresence(QStringLiteral("in-call"), true);
@@ -1936,6 +1950,9 @@ void MainWindow::leaveCallPresence()
   }
   if (!m_selfPeer.isEmpty()) {
     m_contacts[m_selfPeer].presence = restore;
+    if (ContactRowWidget *row = rowWidgetForPeer(m_selfPeer)) {
+      row->updatePresence(restore);
+    }
   }
   if (m_online && !m_demoMode) {
     m_client->api()->setOwnPresence(restore, true);
@@ -3722,6 +3739,12 @@ void MainWindow::onVideoCallFromRow(const QString &peer)
     return;
   }
 
+  VideoSourceDialog sourceDialog(/*screensOnly=*/false, this);
+  if (sourceDialog.exec() != QDialog::Accepted) {
+    return;
+  }
+  m_calls->setVideoSource(sourceDialog.cameraId(), sourceDialog.screenName(),
+                          sourceDialog.screenSelected());
   m_activeLeg = m_calls->startOutgoingCall(peer, true);
   m_activeIncomingLeg.clear();
   loadCallNotes(peer);
@@ -3729,6 +3752,7 @@ void MainWindow::onVideoCallFromRow(const QString &peer)
   m_callWindow->setVideoCall(true);
   const itl::CallSession *session = m_calls->call(m_activeLeg);
   m_callWindow->setVideoSending(session && session->sendVideo);
+  m_callWindow->setScreenSharing(sourceDialog.screenSelected() && session && session->sendVideo);
   m_callWindow->setAvatarColor(m_client->chat()->peerColor(peer));
   m_callWindow->setAvatarPixmap(m_client->chat()->peerAvatar(peer));
 }
@@ -3764,6 +3788,15 @@ void MainWindow::onHangup()
 void MainWindow::onAnswer()
 {
   if (!m_activeIncomingLeg.isEmpty()) {
+    const itl::CallSession *session = m_calls->call(m_activeIncomingLeg);
+    if (session && session->videoCall) {
+      VideoSourceDialog sourceDialog(/*screensOnly=*/false, this);
+      if (sourceDialog.exec() != QDialog::Accepted) {
+        return;
+      }
+      m_calls->setVideoSource(sourceDialog.cameraId(), sourceDialog.screenName(),
+                              sourceDialog.screenSelected());
+    }
     m_calls->acceptIncomingCall(m_activeIncomingLeg);
     m_activeLeg = m_activeIncomingLeg;
   }
@@ -3848,12 +3881,18 @@ void MainWindow::onPresenceChanged(int index)
     // Megafon PBX rejects SetPresence(status:"in-call") with error 971.
     if (!m_selfPeer.isEmpty()) {
       m_contacts[m_selfPeer].presence = QStringLiteral("in-call");
+      if (ContactRowWidget *row = rowWidgetForPeer(m_selfPeer)) {
+        row->updatePresence(QStringLiteral("in-call"));
+      }
     }
     return;
   }
 
   if (!m_selfPeer.isEmpty()) {
     m_contacts[m_selfPeer].presence = status;
+    if (ContactRowWidget *row = rowWidgetForPeer(m_selfPeer)) {
+      row->updatePresence(status);
+    }
   }
   m_client->api()->setOwnPresence(status);
 }
@@ -3892,14 +3931,21 @@ void MainWindow::onStatusMessage(const QString &message)
 
 void MainWindow::onContactUpdated(const QString &peer, const QString &name, const QString &presence)
 {
-  ContactEntry &entry = m_contacts[peer];
+  QString key = peer;
+  for (auto it = m_contacts.cbegin(); it != m_contacts.cend(); ++it) {
+    if (isSamePeer(it.key(), peer)) {
+      key = it.key();
+      break;
+    }
+  }
+  ContactEntry &entry = m_contacts[key];
   if (!name.isEmpty()) {
     entry.name = name;
   }
   if (!presence.isEmpty()) {
     entry.presence = presence;
   }
-  if (auto *row = rowWidgetForPeer(peer)) {
+  if (auto *row = rowWidgetForPeer(key)) {
     if (!name.isEmpty()) {
       row->updateName(entry.name);
     }

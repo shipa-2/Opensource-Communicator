@@ -161,6 +161,15 @@ void CommandDispatcher::handleCommand(WsSession *ws, UserSession *session, const
     if (command == QStringLiteral("SetPresence")) {
         const QJsonObject presence = cmdObj.value(QStringLiteral("presence")).toObject();
         const QString status = presence.value(QStringLiteral("status")).toString();
+        if (status == QStringLiteral("in-call") && !m_inCallStatusEnabled) {
+            QJsonObject resp;
+            resp.insert(QStringLiteral("error"),
+                        QStringLiteral("in-call presence is disabled; start server with --incall"));
+            sendResponse(ws, id, resp);
+            qCWarning(lcDispatch) << "Rejected SetPresence(in-call) from"
+                                  << session->login() << "- --incall is not enabled";
+            return;
+        }
         session->setPresenceStatus(status);
         if (m_presenceMgr) {
             // Send current presence of all other online users to this session

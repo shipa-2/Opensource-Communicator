@@ -35,7 +35,7 @@ struct ServerConfig {
     bool demoOnly = false;
     bool videoEnabled = false;
     bool bigMessages = false;
-    bool onCallStatus = false;
+    bool inCallStatus = false;
     bool serverContacts = false;
 
     static ServerConfig load(const QString &filePath);

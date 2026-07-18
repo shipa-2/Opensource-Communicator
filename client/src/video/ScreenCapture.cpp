@@ -27,13 +27,24 @@ ScreenCapture::~ScreenCapture()
     stop();
 }
 
-bool ScreenCapture::start(int width, int height, int fps)
+bool ScreenCapture::start(int width, int height, int fps, const QString &screenName)
 {
     if (m_running) {
         return true;
     }
 
-    m_screen = QGuiApplication::primaryScreen();
+    m_screen = nullptr;
+    if (!screenName.isEmpty()) {
+        for (QScreen *screen : QGuiApplication::screens()) {
+            if (screen && screen->name() == screenName) {
+                m_screen = screen;
+                break;
+            }
+        }
+    }
+    if (!m_screen) {
+        m_screen = QGuiApplication::primaryScreen();
+    }
     if (!m_screen) {
         qCWarning(lcScreenCap) << "No screen available for capture";
         return false;

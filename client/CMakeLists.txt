@@ -67,6 +67,8 @@ add_executable(opensource-communicator
     src/video/ScreenCapture.h
     src/ui/VideoRenderer.cpp
     src/ui/VideoRenderer.h
+    src/ui/VideoSourceDialog.cpp
+    src/ui/VideoSourceDialog.h
     src/audio/AudioBridge.cpp
     src/audio/AudioBridge.h
     src/audio/CallRecorder.cpp

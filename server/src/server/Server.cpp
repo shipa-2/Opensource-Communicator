@@ -44,8 +44,8 @@ bool Server::start(const ServerConfig &config)
     if (config.bigMessages) {
         qCInfo(lcServer) << "Big messages: enabled (extended size limit)";
     }
-    if (config.onCallStatus) {
-        qCInfo(lcServer) << "On-call status: enabled";
+    if (config.inCallStatus) {
+        qCInfo(lcServer) << "In-call status: enabled";
     }
     if (config.serverContacts) {
         qCInfo(lcServer) << "Server contacts: enabled";
@@ -111,6 +111,13 @@ void Server::wireModules()
     m_imMgr = new ImManager(m_db, this);
     m_imMgr->setSessionManager(m_sessionMgr);
     m_presenceMgr = new PresenceManager(m_sessionMgr, this);
+    connect(m_sessionMgr, &SessionManager::userWentOffline, this,
+            [this](const QString &login, const QString &domain) {
+                m_presenceMgr->broadcastPresence(login, domain, QStringLiteral("invisible"));
+                if (m_db) {
+                    m_db->updateUserPresence(login, QStringLiteral("invisible"));
+                }
+            });
     m_callMgr = new CallManager(m_sessionMgr, this);
     m_abMgr = new AddressBookManager(m_db, this);
     m_histMgr = new HistoryManager(m_db, this);
@@ -132,6 +139,7 @@ void Server::wireModules()
         m_dispatcher->setConfigPartner(m_config.partner);
     }
     m_dispatcher->setVideoEnabled(m_config.videoEnabled);
+    m_dispatcher->setInCallStatusEnabled(m_config.inCallStatus);
 
     qCInfo(lcServer) << "All modules wired";
 }
