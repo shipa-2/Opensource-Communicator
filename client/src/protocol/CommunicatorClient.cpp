@@ -125,9 +125,6 @@ void CommunicatorClient::loadSettings()
   loadSavedAccounts();
   m_appSettings.load(m_settings);
   m_appSettings.loadUserData(m_settings);
-  m_chat->loadStoredPeerColors();
-  m_chat->loadStoredPeerAvatars();
-  m_chat->loadStoredOscPeers();
 }
 
 void CommunicatorClient::saveSettings()
@@ -243,6 +240,13 @@ void CommunicatorClient::login()
     m_credentials.domain = m_credentials.login.section(QLatin1Char('@'), 1);
   }
 
+  m_chat->resetSessionState();
+  m_chat->setDomain(m_credentials.domain);
+  m_chat->setSelfLogin(m_credentials.login);
+  m_chat->loadStoredPeerColors();
+  m_chat->loadStoredPeerAvatars();
+  m_chat->loadStoredOscPeers();
+
   emit stateChanged(AppState::Connecting);
   emit statusMessage(tr("Подключение к %1...").arg(buildWebSocketUrl()));
 
@@ -281,7 +285,9 @@ void CommunicatorClient::enterDemoMode()
   }
 
   m_demoMode = true;
+  m_chat->resetSessionState();
   m_chat->setDomain(m_credentials.domain);
+  m_chat->setSelfLogin(m_credentials.login);
   m_chat->setDemoMode(true);
   emit stateChanged(AppState::Online);
   emit statusMessage(tr("В сети"));

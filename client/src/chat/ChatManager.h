@@ -44,6 +44,8 @@ public:
     void setDomain(const QString &domain);
     void setSelfLogin(const QString &login);
     void setUserDataStore(UserDataStore *store);
+    /// Clear all runtime data that belongs to the previous login/server.
+    void resetSessionState();
     void loadStoredPeerColors();
     void loadStoredPeerAvatars();
     void loadStoredOscPeers();

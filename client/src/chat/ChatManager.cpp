@@ -94,6 +94,23 @@ void ChatManager::setUserDataStore(UserDataStore *store)
   m_userData = store;
 }
 
+void ChatManager::resetSessionState()
+{
+  m_smsFromNumber.clear();
+  m_openpingSentAt.clear();
+  m_messages.clear();
+  m_unreadByPeer.clear();
+  m_peerColors.clear();
+  m_peerAvatars.clear();
+  m_themeShares.clear();
+  m_chatFiles.clear();
+  m_openpingCandidates.clear();
+  m_oscPeers.clear();
+  m_historyRequestId = -1;
+  m_smsTelnumsRequestId = -1;
+  emit oscPeersChanged();
+}
+
 void ChatManager::loadStoredPeerColors()
 {
   if (!m_userData) {
@@ -101,11 +118,11 @@ void ChatManager::loadStoredPeerColors()
   }
 
   for (auto it = m_userData->peerColors().cbegin(); it != m_userData->peerColors().cend(); ++it) {
-    m_peerColors.insert(it.key(), it.value());
-    const QString login = it.key().section(QLatin1Char('@'), 0, 0);
-    if (!login.isEmpty()) {
-      m_peerColors.insert(login, it.value());
+    const QString key = canonicalPeer(it.key());
+    if (!m_domain.isEmpty() && key.section(QLatin1Char('@'), 1).compare(m_domain, Qt::CaseInsensitive) != 0) {
+      continue;
     }
+    m_peerColors.insert(key, it.value());
   }
 }
 
@@ -122,11 +139,10 @@ void ChatManager::loadStoredPeerAvatars()
       continue;
     }
     const QString key = canonicalPeer(it.key());
-    m_peerAvatars.insert(key, pixmap);
-    const QString login = key.section(QLatin1Char('@'), 0, 0);
-    if (!login.isEmpty()) {
-      m_peerAvatars.insert(login, pixmap);
+    if (!m_domain.isEmpty() && key.section(QLatin1Char('@'), 1).compare(m_domain, Qt::CaseInsensitive) != 0) {
+      continue;
     }
+    m_peerAvatars.insert(key, pixmap);
   }
 }
 
@@ -137,6 +153,9 @@ void ChatManager::loadStoredOscPeers()
   }
   for (const QString &peer : m_userData->oscPeers()) {
     const QString key = canonicalPeer(peer);
+    if (!m_domain.isEmpty() && key.section(QLatin1Char('@'), 1).compare(m_domain, Qt::CaseInsensitive) != 0) {
+      continue;
+    }
     if (!key.isEmpty() && !isPhonePeer(key)) {
       m_oscPeers.insert(key);
     }
@@ -215,10 +234,6 @@ void ChatManager::storePeerColor(const QString &peer, const QString &color)
   }
   const QString key = canonicalPeer(peer);
   m_peerColors[key] = color;
-  const QString login = key.section(QLatin1Char('@'), 0, 0);
-  if (!login.isEmpty()) {
-    m_peerColors[login] = color;
-  }
   if (m_userData && !m_demoMode) {
     m_userData->setPeerColorForPeer(key, color);
   }
@@ -233,10 +248,6 @@ void ChatManager::storePeerAvatar(const QString &peer, const QPixmap &avatar, co
   }
   const QString key = canonicalPeer(peer);
   m_peerAvatars[key] = avatar;
-  const QString login = key.section(QLatin1Char('@'), 0, 0);
-  if (!login.isEmpty()) {
-    m_peerAvatars[login] = avatar;
-  }
 
   QString b64 = base64Png.trimmed();
   if (b64.isEmpty()) {
@@ -1467,16 +1478,7 @@ QStringList ChatManager::oscPeers() const
 bool ChatManager::isOscPeer(const QString &peer) const
 {
   const QString key = canonicalPeer(peer);
-  if (m_oscPeers.contains(key)) {
-    return true;
-  }
-  const QString login = key.section(QLatin1Char('@'), 0, 0);
-  for (const QString &known : m_oscPeers) {
-    if (known.section(QLatin1Char('@'), 0, 0).compare(login, Qt::CaseInsensitive) == 0) {
-      return true;
-    }
-  }
-  return false;
+  return m_oscPeers.contains(key);
 }
 
 void ChatManager::seedDemoOscPeers(const QStringList &peers)
@@ -1559,39 +1561,13 @@ bool ChatManager::isOpenping(const QString &body)
 QString ChatManager::peerColor(const QString &peer) const
 {
   const QString key = canonicalPeer(peer);
-  if (m_peerColors.contains(key)) {
-    return m_peerColors.value(key);
-  }
-
-  const QString login = key.section(QLatin1Char('@'), 0, 0);
-  if (m_peerColors.contains(login)) {
-    return m_peerColors.value(login);
-  }
-
-  for (auto it = m_peerColors.cbegin(); it != m_peerColors.cend(); ++it) {
-    if (it.key().section(QLatin1Char('@'), 0, 0).compare(login, Qt::CaseInsensitive) == 0) {
-      return it.value();
-    }
-  }
-  return {};
+  return m_peerColors.value(key);
 }
 
 QPixmap ChatManager::peerAvatar(const QString &peer) const
 {
   const QString key = canonicalPeer(peer);
-  if (m_peerAvatars.contains(key)) {
-    return m_peerAvatars.value(key);
-  }
-  const QString login = key.section(QLatin1Char('@'), 0, 0);
-  if (m_peerAvatars.contains(login)) {
-    return m_peerAvatars.value(login);
-  }
-  for (auto it = m_peerAvatars.cbegin(); it != m_peerAvatars.cend(); ++it) {
-    if (it.key().section(QLatin1Char('@'), 0, 0).compare(login, Qt::CaseInsensitive) == 0) {
-      return it.value();
-    }
-  }
-  return {};
+  return m_peerAvatars.value(key);
 }
 
 } // namespace itl
