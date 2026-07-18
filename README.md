@@ -146,7 +146,7 @@ sudo cmake --install build
 - `openh264`
 - `ffmpeg` или `lame` (необязательно, для конвертации записей в MP3)
 
-Готовая сборка для Windows — в разделе [Установка (Windows)](#установка-windows). GitHub Actions также собирает Linux-бинарник (артефакты `linux-build-Release` / `linux-build-Debug`, tar.gz) на Ubuntu 24.04. Архив содержит совместимую библиотеку OpenH264; Qt 6 и остальные системные библиотеки должны быть установлены в системе.
+Готовая сборка для Windows — в разделе [Установка (Windows)](#установка-windows). Portable ZIP включает OpenH264 и FFmpeg runtime, используемый Qt Multimedia для камеры и демонстрации экрана. GitHub Actions также собирает Linux-бинарник (артефакты `linux-build-Release` / `linux-build-Debug`, tar.gz) на Ubuntu 24.04. Linux-архив содержит совместимую библиотеку OpenH264; Qt 6 и остальные системные библиотеки должны быть установлены в системе.
 
 ### Типы сборки (Debug / Release)
 

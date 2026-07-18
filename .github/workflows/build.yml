@@ -47,6 +47,7 @@ jobs:
             mingw-w64-ucrt-x86_64-qt6-tools
             mingw-w64-ucrt-x86_64-opus
             mingw-w64-ucrt-x86_64-openh264
+            mingw-w64-ucrt-x86_64-ffmpeg
             mingw-w64-ucrt-x86_64-openssl
             zip
 
@@ -99,6 +100,18 @@ jobs:
           cp /ucrt64/bin/libopus-0.dll "$STAGE/"
           ldd "$STAGE/opensource-communicator.exe" | awk '/\/ucrt64\// {print $3}' | while read -r dll; do
             cp -n "$dll" "$STAGE/" 2>/dev/null || true
+          done
+          # Qt Multimedia loads its FFmpeg backend as a plugin, so its DLLs are
+          # absent from the executable's direct ldd output. Resolve dependencies
+          # of every deployed plugin recursively to keep camera/video available.
+          for pass in 1 2 3; do
+            find "$STAGE" -type f \( -iname '*.exe' -o -iname '*.dll' \) -print0 |
+              while IFS= read -r -d '' binary; do
+                ldd "$binary" 2>/dev/null | awk '/\/ucrt64\// {print $3}' |
+                  while read -r dll; do
+                    cp -n "$dll" "$STAGE/" 2>/dev/null || true
+                  done
+              done
           done
           (cd "$STAGE" && zip -r9 "$GITHUB_WORKSPACE/dist/OpenSource-Communicator-${VERSION}-${SUFFIX}.zip" .)
 
