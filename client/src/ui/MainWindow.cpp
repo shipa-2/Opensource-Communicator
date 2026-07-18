@@ -3135,7 +3135,10 @@ void MainWindow::applyContactViewSettings()
 
 bool MainWindow::serverVideoUiAvailable() const
 {
-  return m_online && !m_demoMode && m_client->serverVideoEnabled();
+  // The official PBX does not advertise videoEnabled in getcommunicatorsettings,
+  // but it may still pass an H.264 WebRTC media section through call signalling.
+  // Keep the experimental client-side toggle available on every real session.
+  return m_online && !m_demoMode;
 }
 
 bool MainWindow::shouldNotifyForChatMessage(const QString &peer) const
@@ -3715,7 +3718,7 @@ void MainWindow::onCallFromRow(const QString &peer)
 
 void MainWindow::onVideoCallFromRow(const QString &peer)
 {
-  if (!m_online || m_demoMode || !m_client->serverVideoEnabled()) {
+  if (!serverVideoUiAvailable()) {
     return;
   }
 
