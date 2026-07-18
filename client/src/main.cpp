@@ -54,12 +54,14 @@ int main(int argc, char *argv[])
   configureLogging();
   QApplication::setApplicationName(QStringLiteral("opensource-communicator"));
   QApplication::setOrganizationName(QStringLiteral("opensource-communicator"));
-  QApplication::setApplicationVersion(QStringLiteral("0.3.0"));
+  QApplication::setApplicationVersion(QStringLiteral("0.4.0"));
   QApplication::setDesktopFileName(QStringLiteral("opensource-communicator"));
   QApplication::setWindowIcon(QIcon(QStringLiteral(":/logo.png")));
 
-  const QStringList startupArgs = QApplication::arguments().mid(1);
-  if (itl::AppInstance::sendToRunningInstance(startupArgs)) {
+  const QStringList rawArgs = QApplication::arguments().mid(1);
+  const bool newInstance = itl::AppInstance::wantsNewInstance(rawArgs);
+  const QStringList startupArgs = itl::AppInstance::stripInstanceFlags(rawArgs);
+  if (!newInstance && itl::AppInstance::sendToRunningInstance(startupArgs)) {
     return 0;
   }
 
@@ -72,16 +74,19 @@ int main(int argc, char *argv[])
 
   MainWindow window(&client, &calls);
 
-  itl::AppInstance::startServer(&app, [&window](const QStringList &arguments) {
-    const QStringList telUrls = itl::AppInstance::extractTelUrls(arguments);
-    if (telUrls.isEmpty()) {
-      QTimer::singleShot(0, &window, [&window]() { bringWindowToFront(&window); });
-      return;
-    }
+  itl::AppInstance::startServer(
+      &app,
+      [&window](const QStringList &arguments) {
+        const QStringList telUrls = itl::AppInstance::extractTelUrls(arguments);
+        if (telUrls.isEmpty()) {
+          QTimer::singleShot(0, &window, [&window]() { bringWindowToFront(&window); });
+          return;
+        }
 
-    const QString telUrl = telUrls.first();
-    QTimer::singleShot(0, &window, [&window, telUrl]() { window.handleIncomingTelUri(telUrl); });
-  });
+        const QString telUrl = telUrls.first();
+        QTimer::singleShot(0, &window, [&window, telUrl]() { window.handleIncomingTelUri(telUrl); });
+      },
+      newInstance);
 
   window.show();
   QTimer::singleShot(0, &window, [&window]() {

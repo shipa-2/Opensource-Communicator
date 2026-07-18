@@ -4,6 +4,7 @@
 #include <QJsonDocument>
 #include <QLocalServer>
 #include <QLocalSocket>
+#include <QCoreApplication>
 #include <QUrl>
 
 namespace itl {
@@ -11,6 +12,34 @@ namespace itl {
 QString AppInstance::serverName()
 {
   return QStringLiteral("opensource-communicator-v1");
+}
+
+QString AppInstance::isolatedServerName()
+{
+  return serverName() + QLatin1Char('-') + QString::number(QCoreApplication::applicationPid());
+}
+
+bool AppInstance::wantsNewInstance(const QStringList &arguments)
+{
+  for (const QString &argument : arguments) {
+    if (argument == QStringLiteral("--newinstance")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+QStringList AppInstance::stripInstanceFlags(const QStringList &arguments)
+{
+  QStringList filtered;
+  filtered.reserve(arguments.size());
+  for (const QString &argument : arguments) {
+    if (argument == QStringLiteral("--newinstance")) {
+      continue;
+    }
+    filtered.append(argument);
+  }
+  return filtered;
 }
 
 QStringList AppInstance::extractTelUrls(const QStringList &arguments)
@@ -54,15 +83,18 @@ bool AppInstance::sendToRunningInstance(const QStringList &arguments)
   return true;
 }
 
-bool AppInstance::startServer(QObject *owner, const std::function<void(const QStringList &)> &handler)
+bool AppInstance::startServer(QObject *owner, const std::function<void(const QStringList &)> &handler,
+                              bool newInstance)
 {
   if (!owner || !handler) {
     return false;
   }
 
+  const QString name = newInstance ? isolatedServerName() : serverName();
+
   auto *server = new QLocalServer(owner);
-  QLocalServer::removeServer(serverName());
-  if (!server->listen(serverName())) {
+  QLocalServer::removeServer(name);
+  if (!server->listen(name)) {
     server->deleteLater();
     return false;
   }
