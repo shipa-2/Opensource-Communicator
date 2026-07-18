@@ -1077,6 +1077,19 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   connect(m_callWindow, &CallWindow::dtmfRequested, this, &MainWindow::onCallDtmf);
   connect(m_callWindow, &CallWindow::transferRequested, this, &MainWindow::onTransfer);
   connect(m_callWindow, &CallWindow::notesChanged, this, &MainWindow::onCallNotesChanged);
+  connect(m_callWindow, &CallWindow::videoSendingRequested, this, [this](bool enabled) {
+    if (!m_activeLeg.isEmpty()) {
+      m_calls->sendVideo(m_activeLeg, enabled);
+    }
+  });
+  connect(m_callWindow, &CallWindow::screenSharingRequested, this, [this](bool enabled) {
+    if (!m_activeLeg.isEmpty()) {
+      m_calls->setScreenSharing(m_activeLeg, enabled);
+    }
+  });
+  connect(m_callWindow, &CallWindow::videoBlurRequested, this, [this](bool enabled) {
+    m_calls->setVideoBlur(enabled);
+  });
 
   connect(m_client, &itl::CommunicatorClient::statusMessage, this, &MainWindow::onStatusMessage);
   connect(m_client, &itl::CommunicatorClient::contactUpdated, this, &MainWindow::onContactUpdated);
@@ -1162,6 +1175,26 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   connect(m_calls, &itl::CallManager::remoteAudioLevel, this, [this](float level) {
     m_callWindow->updateRemoteAudioLevel(level);
   });
+  connect(m_calls, &itl::CallManager::remoteVideoFrame,
+          this, [this](const QString &leg, const QImage &frame) {
+            if (leg == m_activeLeg || leg == m_activeIncomingLeg) {
+              m_callWindow->setRemoteVideoFrame(frame);
+            }
+          });
+  connect(m_calls, &itl::CallManager::localVideoFrame,
+          m_callWindow, &CallWindow::setLocalVideoFrame);
+  connect(m_calls, &itl::CallManager::videoSendingChanged,
+          this, [this](const QString &leg, bool sending) {
+            if (leg == m_activeLeg || leg == m_activeIncomingLeg) {
+              m_callWindow->setVideoSending(sending);
+            }
+          });
+  connect(m_calls, &itl::CallManager::screenSharingChanged,
+          this, [this](const QString &leg, bool sharing) {
+            if (leg == m_activeLeg || leg == m_activeIncomingLeg) {
+              m_callWindow->setScreenSharing(sharing);
+            }
+          });
 
   m_client->loadSettings();
   m_messageNotify->applySettings(&m_client->appSettings());
@@ -3667,8 +3700,15 @@ void MainWindow::onVideoCallFromRow(const QString &peer)
     return;
   }
 
-  Q_UNUSED(peer)
-  onStatusMessage(tr("Видеозвонки пока не поддерживаются клиентом"));
+  m_activeLeg = m_calls->startOutgoingCall(peer, true);
+  m_activeIncomingLeg.clear();
+  loadCallNotes(peer);
+  m_callWindow->showOutgoing(peer, displayNameForPeer(peer), detailForPeer(peer));
+  m_callWindow->setVideoCall(true);
+  const itl::CallSession *session = m_calls->call(m_activeLeg);
+  m_callWindow->setVideoSending(session && session->sendVideo);
+  m_callWindow->setAvatarColor(m_client->chat()->peerColor(peer));
+  m_callWindow->setAvatarPixmap(m_client->chat()->peerAvatar(peer));
 }
 
 void MainWindow::onChatFromRow(const QString &peer)
@@ -4086,7 +4126,12 @@ void MainWindow::onCallStateChanged(const QString &leg, const QString &state, co
       loadCallNotes(incomingPeer);
     }
     beginCallTracking(leg, incomingPeer, detail, true);
-    m_callWindow->showIncoming(incomingPeer, detail, {});
+    const QString incomingName = detail.isEmpty() ? displayNameForPeer(incomingPeer) : detail;
+    m_callWindow->showIncoming(incomingPeer, incomingName, detailForPeer(incomingPeer));
+    if (itl::CallSession *session = m_calls->call(leg)) {
+      m_callWindow->setVideoCall(session->videoCall);
+      m_callWindow->setVideoSending(session->videoCall);
+    }
     m_callWindow->setAvatarColor(m_client->chat()->peerColor(incomingPeer));
     m_callWindow->setAvatarPixmap(m_client->chat()->peerAvatar(incomingPeer));
     return;

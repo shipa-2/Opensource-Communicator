@@ -36,25 +36,43 @@ bool H264Encoder::open(int width, int height, int fps, int bitrate)
         return false;
     }
 
-    SEncParamBase param;
+    SEncParamExt param;
     memset(&param, 0, sizeof(param));
+    ret = m_data->encoder->GetDefaultParams(&param);
+    if (ret != cmResultSuccess) {
+        qCCritical(lcH264Enc) << "Failed to get default encoder parameters:" << ret;
+        WelsDestroySVCEncoder(m_data->encoder);
+        m_data->encoder = nullptr;
+        return false;
+    }
     param.iUsageType = CAMERA_VIDEO_REAL_TIME;
     param.fMaxFrameRate = fps;
     param.iTargetBitrate = bitrate;
     param.iRCMode = RC_BITRATE_MODE;
     param.iPicWidth = width;
     param.iPicHeight = height;
+    param.iTemporalLayerNum = 1;
+    param.iSpatialLayerNum = 1;
+    param.uiIntraPeriod = qMax(1, fps * 2);
+    param.bEnableFrameSkip = true;
+    param.iMultipleThreadIdc = 1;
+    SSpatialLayerConfig &layer = param.sSpatialLayers[0];
+    layer.iVideoWidth = width;
+    layer.iVideoHeight = height;
+    layer.fFrameRate = fps;
+    layer.iSpatialBitrate = bitrate;
+    layer.iMaxSpatialBitrate = bitrate;
+    layer.uiProfileIdc = PRO_BASELINE;
+    layer.uiLevelIdc = LEVEL_UNKNOWN;
+    layer.sSliceArgument.uiSliceMode = SM_SINGLE_SLICE;
 
-    ret = m_data->encoder->Initialize(&param);
+    ret = m_data->encoder->InitializeExt(&param);
     if (ret != cmResultSuccess) {
         qCCritical(lcH264Enc) << "Failed to initialize encoder:" << ret;
         WelsDestroySVCEncoder(m_data->encoder);
         m_data->encoder = nullptr;
         return false;
     }
-
-    int profile = PRO_BASELINE;
-    m_data->encoder->SetOption(ENCODER_OPTION_PROFILE, &profile);
 
     m_width = width;
     m_height = height;
@@ -94,7 +112,8 @@ QByteArray H264Encoder::encode(const QImage &frame)
 
     const int ySize = m_width * m_height;
     const int uvSize = ySize / 4;
-    uint8_t *yuv = new uint8_t[ySize + uvSize * 2];
+    QByteArray yuvStorage(ySize + uvSize * 2, Qt::Uninitialized);
+    auto *yuv = reinterpret_cast<uint8_t *>(yuvStorage.data());
     srcPic.pData[0] = yuv;
     srcPic.pData[1] = yuv + ySize;
     srcPic.pData[2] = yuv + ySize + uvSize;
@@ -102,10 +121,10 @@ QByteArray H264Encoder::encode(const QImage &frame)
     srcPic.iStride[1] = m_width / 2;
     srcPic.iStride[2] = m_width / 2;
 
-    const uchar *rgb = converted.constBits();
     for (int j = 0; j < m_height; ++j) {
+        const uchar *rgb = converted.constScanLine(j);
         for (int i = 0; i < m_width; ++i) {
-            int idx = (j * m_width + i) * 3;
+            int idx = i * 3;
             int r = rgb[idx], g = rgb[idx + 1], b = rgb[idx + 2];
             int y = qBound(0, ((66 * r + 129 * g + 25 * b + 128) >> 8) + 16, 255);
             int u = qBound(0, ((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128, 255);
@@ -121,7 +140,6 @@ QByteArray H264Encoder::encode(const QImage &frame)
     SFrameBSInfo bsInfo;
     memset(&bsInfo, 0, sizeof(bsInfo));
     int ret = m_data->encoder->EncodeFrame(&srcPic, &bsInfo);
-    delete[] yuv;
 
     if (ret != cmResultSuccess) {
         qCWarning(lcH264Enc) << "EncodeFrame failed:" << ret;

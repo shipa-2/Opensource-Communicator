@@ -43,7 +43,8 @@ void VideoRenderer::paintEvent(QPaintEvent *event)
         painter.fillRect(rect(), Qt::black);
         painter.setPen(Qt::white);
         painter.setFont(QFont(QStringLiteral("Sans"), 14));
-        painter.drawText(rect(), Qt::AlignCenter, m_placeholderText);
+        painter.drawText(rect().adjusted(8, 8, -8, -8),
+                         Qt::AlignCenter | Qt::TextWordWrap, m_placeholderText);
     } else {
         // Draw video frame centered
         painter.fillRect(rect(), Qt::black);

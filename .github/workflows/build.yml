@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - videotest
     tags:
       - 'v*'
 
@@ -45,6 +46,8 @@ jobs:
             mingw-w64-ucrt-x86_64-qt6-multimedia
             mingw-w64-ucrt-x86_64-qt6-tools
             mingw-w64-ucrt-x86_64-opus
+            mingw-w64-ucrt-x86_64-openh264
+            mingw-w64-ucrt-x86_64-ffmpeg
             mingw-w64-ucrt-x86_64-openssl
             zip
 
@@ -134,7 +137,11 @@ jobs:
             qt6-multimedia-dev \
             libgl1-mesa-dev \
             libssl-dev \
-            libopus-dev
+            libopus-dev \
+            libopenh264-dev \
+            libavcodec-dev \
+            libavutil-dev \
+            libswscale-dev
 
       - name: Cache libdatachannel
         id: cache-libdatachannel

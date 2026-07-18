@@ -73,6 +73,25 @@
 - Медиа — **WebRTC** (SDP offer/answer через `StartCall`/`AcceptCall`/`UpdateCall`)
 - Оригинал использует `RTCPeerConnection` в Electron
 
+### Экспериментальное видео OSC
+
+Клиент запрашивает `getcommunicatorsettings`. Поле `videoEnabled: true` разрешает кнопку видеозвонка; собственный `communicator-server` возвращает его с `--allowvideo`.
+
+Видео передаётся в том же PeerConnection и BUNDLE, что и Opus:
+
+| Параметр | Значение |
+|----------|----------|
+| Кодек | H.264 baseline |
+| Payload type | 96 |
+| RTP clock | 90000 Hz |
+| Захват | 640×360, 15 FPS |
+| Packetization | libdatachannel `H264RtpPacketizer`, Annex B start sequences |
+| Декодирование | FFmpeg/libavcodec |
+
+Исходящий offer содержит `m=audio` и `m=video`; answerer использует реальные `a=mid` из offer. `sanitizeLocalSdp` сохраняет video media section и пересобирает BUNDLE/LS с фактическими mid. RTP timestamp увеличивается на `90000 / 15 = 6000` на кадр.
+
+Наличие H.264 и `videoEnabled` не гарантирует совместимость со всеми ITooLabs/Megafon media gateway. Для диагностики сохраняйте полный offer/answer и проверяйте согласованные `rtpmap`, `fmtp`, `profile-level-id`, `packetization-mode`, SSRC и BUNDLE mid.
+
 ## Безопасность (проблемы оригинала)
 
 - `NSAllowsArbitraryLoads: true` в macOS Info.plist

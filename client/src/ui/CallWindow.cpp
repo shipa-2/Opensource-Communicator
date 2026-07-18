@@ -2,6 +2,7 @@
 
 #include "DialKeypadWidget.h"
 #include "ui/StyleHelper.h"
+#include "ui/VideoRenderer.h"
 
 #include <QHBoxLayout>
 #include <QKeyEvent>
@@ -162,6 +163,7 @@ void CallWindow::refreshAppearance()
 void CallWindow::buildUi()
 {
   auto *root = new QVBoxLayout(this);
+  m_rootLayout = root;
   root->setContentsMargins(16, 16, 16, 16);
   root->setSpacing(12);
 
@@ -180,12 +182,38 @@ void CallWindow::buildUi()
   m_detailLabel->setWordWrap(true);
   root->addWidget(m_detailLabel);
 
-  auto *avatarRow = new QHBoxLayout;
+  m_avatarPanel = new QWidget(this);
+  auto *avatarRow = new QHBoxLayout(m_avatarPanel);
+  avatarRow->setContentsMargins(0, 0, 0, 0);
   avatarRow->addStretch();
-  m_avatar = new CallAvatarWidget(this);
+  m_avatar = new CallAvatarWidget(m_avatarPanel);
   avatarRow->addWidget(m_avatar);
   avatarRow->addStretch();
-  root->addLayout(avatarRow);
+  root->addWidget(m_avatarPanel);
+
+  m_videoPanel = new QWidget(this);
+  auto *videoLayout = new QHBoxLayout(m_videoPanel);
+  videoLayout->setContentsMargins(0, 0, 0, 0);
+  videoLayout->setSpacing(12);
+  m_remoteVideo = new itl::VideoRenderer(m_videoPanel);
+  m_remoteVideo->setFixedSize(520, 293);
+  m_remoteVideo->setPlaceholderText(tr("Ожидание видео собеседника..."));
+  videoLayout->addWidget(m_remoteVideo, 1, Qt::AlignTop);
+
+  auto *videoSide = new QWidget(m_videoPanel);
+  videoSide->setFixedWidth(190);
+  m_videoSideLayout = new QVBoxLayout(videoSide);
+  m_videoSideLayout->setContentsMargins(0, 0, 0, 0);
+  m_videoSideLayout->setSpacing(8);
+  m_localVideo = new itl::VideoRenderer(videoSide);
+  m_localVideo->setFixedSize(190, 107);
+  m_localVideo->setPlaceholderText(tr("Камера"));
+  m_videoSideLayout->addWidget(m_localVideo);
+  m_videoSideLayout->addStretch();
+  videoLayout->addWidget(videoSide, 0, Qt::AlignTop);
+  m_videoPanel->setVisible(false);
+  m_videoPanel->setFixedHeight(293);
+  root->addWidget(m_videoPanel);
 
   m_statusLabel = new QLabel;
   m_statusLabel->setObjectName(QStringLiteral("callStatusLabel"));
@@ -203,6 +231,14 @@ void CallWindow::buildUi()
   m_timerLabel->setFont(timerFont);
   m_timerLabel->setFixedHeight(m_timerLabel->fontMetrics().height() + 4);
   root->addWidget(m_timerLabel);
+
+  m_videoInfoRow = new QWidget(this);
+  m_videoInfoLayout = new QHBoxLayout(m_videoInfoRow);
+  m_videoInfoLayout->setContentsMargins(0, 0, 0, 0);
+  m_videoInfoLayout->setSpacing(14);
+  m_videoInfoRow->setFixedHeight(32);
+  m_videoInfoRow->setVisible(false);
+  root->insertWidget(0, m_videoInfoRow);
 
   m_notesEdit = new QTextEdit;
   m_notesEdit->setPlaceholderText(tr("Заметка по этому абоненту..."));
@@ -231,6 +267,25 @@ void CallWindow::buildUi()
   m_dtmfToggleBtn->setCheckable(true);
   m_dtmfToggleBtn->setVisible(false);
   root->addWidget(m_dtmfToggleBtn);
+
+  m_videoToggleBtn = new QPushButton(tr("Выключить камеру"));
+  m_videoToggleBtn->setObjectName(QStringLiteral("callActionBtn"));
+  m_videoToggleBtn->setCheckable(true);
+  m_videoToggleBtn->setChecked(true);
+  m_videoToggleBtn->setVisible(false);
+  m_videoSideLayout->insertWidget(1, m_videoToggleBtn);
+
+  m_screenShareBtn = new QPushButton(tr("Демонстрация экрана"));
+  m_screenShareBtn->setObjectName(QStringLiteral("callActionBtn"));
+  m_screenShareBtn->setCheckable(true);
+  m_screenShareBtn->setVisible(false);
+  m_videoSideLayout->insertWidget(2, m_screenShareBtn);
+
+  m_videoBlurBtn = new QPushButton(tr("Блюр видео"));
+  m_videoBlurBtn->setObjectName(QStringLiteral("callActionBtn"));
+  m_videoBlurBtn->setCheckable(true);
+  m_videoBlurBtn->setVisible(false);
+  m_videoSideLayout->insertWidget(3, m_videoBlurBtn);
 
   m_answerBtn = new QPushButton(tr("Ответить"));
   m_answerBtn->setObjectName(QStringLiteral("callAnswerBtn"));
@@ -267,6 +322,19 @@ void CallWindow::buildUi()
   });
   connect(m_transferBtn, &QPushButton::clicked, this, &CallWindow::transferRequested);
   connect(m_dtmfToggleBtn, &QPushButton::toggled, this, &CallWindow::setDtmfPanelVisible);
+  connect(m_videoToggleBtn, &QPushButton::toggled, this, [this](bool enabled) {
+    m_videoToggleBtn->setText(enabled ? tr("Стоп видео") : tr("Включить видео"));
+    emit videoSendingRequested(enabled);
+  });
+  connect(m_screenShareBtn, &QPushButton::toggled, this, [this](bool enabled) {
+    m_screenShareBtn->setText(enabled ? tr("Стоп трансляцию")
+                                      : tr("Демонстрация экрана"));
+    emit screenSharingRequested(enabled);
+  });
+  connect(m_videoBlurBtn, &QPushButton::toggled, this, [this](bool enabled) {
+    m_videoBlurBtn->setText(enabled ? tr("Убрать блюр") : tr("Блюр видео"));
+    emit videoBlurRequested(enabled);
+  });
   connect(m_dtmfKeypad, &DialKeypadWidget::digitPressed, this, &CallWindow::sendDtmfDigit);
   connect(m_dtmfEdit, &QLineEdit::textEdited, this, [this](const QString &text) {
     int commonPrefix = 0;
@@ -283,8 +351,9 @@ void CallWindow::buildUi()
 
 void CallWindow::applyFixedCallWidth()
 {
-  setMinimumWidth(kNormalWidth);
-  setMaximumWidth(kNormalWidth);
+  const int width = m_videoCall ? 760 : kNormalWidth;
+  setMinimumWidth(width);
+  setMaximumWidth(width);
 }
 
 void CallWindow::updateCollapsedMinimumHeight()
@@ -338,8 +407,8 @@ void CallWindow::setMode(Mode mode)
   m_hangupBtn->setEnabled(mode != Mode::Hidden);
   m_holdBtn->setVisible(showCallControls);
   m_transferBtn->setVisible(showCallControls);
-  m_dtmfToggleBtn->setVisible(showCallControls);
-  m_timerLabel->setVisible(showCallControls);
+  m_dtmfToggleBtn->setVisible(showCallControls && !m_videoCall);
+  m_timerLabel->setVisible(mode != Mode::Hidden);
   updateHoldButtonEnabled();
   m_transferBtn->setEnabled(activeCall);
   m_dtmfToggleBtn->setEnabled(activeCall);
@@ -504,6 +573,135 @@ void CallWindow::appendDtmfDigit(const QString &digit)
   }
 }
 
+void CallWindow::setVideoCall(bool enabled)
+{
+  if (m_videoCall == enabled) {
+    return;
+  }
+  m_videoCall = enabled;
+  if (enabled) {
+    m_rootLayout->removeWidget(m_nameLabel);
+    m_rootLayout->removeWidget(m_detailLabel);
+    m_rootLayout->removeWidget(m_statusLabel);
+    m_rootLayout->removeWidget(m_timerLabel);
+    m_detailLabel->setWordWrap(false);
+    m_nameLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    m_detailLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    m_statusLabel->setAlignment(Qt::AlignCenter);
+    m_timerLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_videoInfoLayout->addWidget(m_nameLabel, 3);
+    m_videoInfoLayout->addWidget(m_detailLabel, 2);
+    m_videoInfoLayout->addWidget(m_statusLabel, 2);
+    m_videoInfoLayout->addWidget(m_timerLabel, 1);
+    m_videoInfoRow->setVisible(true);
+  } else {
+    m_videoInfoLayout->removeWidget(m_nameLabel);
+    m_videoInfoLayout->removeWidget(m_detailLabel);
+    m_videoInfoLayout->removeWidget(m_statusLabel);
+    m_videoInfoLayout->removeWidget(m_timerLabel);
+    m_videoInfoRow->setVisible(false);
+    m_detailLabel->setWordWrap(true);
+    m_nameLabel->setAlignment(Qt::AlignCenter);
+    m_detailLabel->setAlignment(Qt::AlignCenter);
+    m_statusLabel->setAlignment(Qt::AlignCenter);
+    m_timerLabel->setAlignment(Qt::AlignCenter);
+    m_rootLayout->insertWidget(1, m_nameLabel);
+    m_rootLayout->insertWidget(2, m_detailLabel);
+    const int videoIndex = m_rootLayout->indexOf(m_videoPanel);
+    m_rootLayout->insertWidget(videoIndex + 1, m_statusLabel);
+    m_rootLayout->insertWidget(videoIndex + 2, m_timerLabel);
+  }
+  if (m_avatarPanel) {
+    m_avatarPanel->setVisible(!enabled);
+  }
+  if (m_videoPanel) {
+    m_videoPanel->setVisible(enabled);
+  }
+  if (m_videoToggleBtn) {
+    m_videoToggleBtn->setVisible(enabled);
+  }
+  if (m_screenShareBtn) {
+    m_screenShareBtn->setVisible(enabled);
+  }
+  if (m_videoBlurBtn) {
+    m_videoBlurBtn->setVisible(enabled);
+  }
+  if (m_notesEdit) {
+    m_notesEdit->setVisible(!enabled);
+  }
+  if (m_dtmfToggleBtn) {
+    m_dtmfToggleBtn->setVisible(!enabled && m_mode != Mode::Hidden);
+  }
+  if (!enabled) {
+    m_remoteVideo->clear();
+    m_localVideo->clear();
+  }
+  setMinimumWidth(0);
+  setMaximumWidth(QWIDGETSIZE_MAX);
+  applyFixedCallWidth();
+  if (enabled) {
+    setMinimumHeight(kNormalHeight);
+    resize(760, kNormalHeight);
+  } else {
+    setMinimumHeight(0);
+    resize(kNormalWidth, qMax(kNormalHeight, m_collapsedHeight));
+  }
+  updateCollapsedMinimumHeight();
+}
+
+void CallWindow::setVideoSending(bool enabled)
+{
+  if (!m_videoToggleBtn) {
+    return;
+  }
+  const QSignalBlocker blocker(m_videoToggleBtn);
+  m_videoToggleBtn->setChecked(enabled);
+  m_videoToggleBtn->setText(enabled ? tr("Стоп видео") : tr("Включить видео"));
+  m_localVideo->setPlaceholderText(enabled ? tr("Запуск...") : tr("Выключено"));
+  if (!enabled) {
+    m_localVideo->clear();
+  }
+}
+
+void CallWindow::setScreenSharing(bool enabled)
+{
+  if (!m_screenShareBtn) {
+    return;
+  }
+  const QSignalBlocker blocker(m_screenShareBtn);
+  m_screenShareBtn->setChecked(enabled);
+  m_screenShareBtn->setText(enabled ? tr("Стоп трансляцию")
+                                    : tr("Демонстрация экрана"));
+  if (enabled) {
+    m_localVideo->setPlaceholderText(tr("Выбор экрана..."));
+  }
+}
+
+void CallWindow::setVideoBlur(bool enabled)
+{
+  m_videoBlur = enabled;
+  if (!m_videoBlurBtn) {
+    return;
+  }
+  const QSignalBlocker blocker(m_videoBlurBtn);
+  m_videoBlurBtn->setChecked(enabled);
+  m_videoBlurBtn->setText(enabled ? tr("Убрать блюр") : tr("Блюр видео"));
+}
+
+void CallWindow::setRemoteVideoFrame(const QImage &frame)
+{
+  if (m_videoCall && m_remoteVideo) {
+    m_remoteVideo->onFrameReceived(frame);
+  }
+}
+
+void CallWindow::setLocalVideoFrame(const QImage &frame)
+{
+  if (m_videoCall && m_localVideo) {
+    m_localVideo->onFrameReceived(frame);
+  }
+}
+
 void CallWindow::setNotesText(const QString &text)
 {
   const QSignalBlocker blocker(m_notesEdit);
@@ -517,7 +715,7 @@ QString CallWindow::notesText() const
 
 void CallWindow::setNotesVisible(bool visible)
 {
-  m_notesEdit->setVisible(visible);
+  m_notesEdit->setVisible(visible && !m_videoCall);
 }
 
 void CallWindow::setAvatarColor(const QString &color)
@@ -618,7 +816,7 @@ void CallWindow::showOutgoing(const QString &peer, const QString &displayName, c
   m_nameLabel->setText(displayName);
   m_detailLabel->setText(detail);
   m_statusLabel->setText(tr("Дозвон"));
-  m_timerLabel->clear();
+  m_timerLabel->setText(formatDuration(0));
   setAvatarLetter(displayName);
   setMode(Mode::Outgoing);
   stopTimer();
@@ -639,7 +837,7 @@ void CallWindow::showIncoming(const QString &peer, const QString &displayName, c
   m_nameLabel->setText(displayName);
   m_detailLabel->setText(detail);
   m_statusLabel->setText(tr("Входящий"));
-  m_timerLabel->clear();
+  m_timerLabel->setText(formatDuration(0));
   setAvatarLetter(displayName);
   setMode(Mode::Incoming);
   stopTimer();
@@ -668,8 +866,11 @@ void CallWindow::showActive(const QString &peer, const QString &displayName)
 void CallWindow::updateState(const QString &state, const QString &detail)
 {
   if (state == QStringLiteral("connecting") || state == QStringLiteral("dialing")) {
-    showOutgoing(m_peer.isEmpty() ? detail : m_peer, detail, m_peer);
+    if (!isVisible() || m_peer.isEmpty()) {
+      showOutgoing(m_peer.isEmpty() ? detail : m_peer, detail, m_peer);
+    }
     m_statusLabel->setText(tr("Дозвон"));
+    m_timerLabel->setText(formatDuration(0));
     return;
   }
   if (state == QStringLiteral("ringing")) {
@@ -691,7 +892,7 @@ void CallWindow::updateState(const QString &state, const QString &detail)
       m_statusLabel->setText(tr("Разговор"));
       setMode(Mode::Active);
       if (m_timerLabel) {
-        m_timerLabel->setText(tr("Соединение..."));
+        m_timerLabel->setText(formatDuration(0));
         m_timerLabel->setVisible(true);
       }
       if (!isVisible()) {
@@ -736,6 +937,10 @@ void CallWindow::closeCall()
   m_avatarLetter = QStringLiteral("?");
   refreshAvatarContent();
   m_dtmfSent.clear();
+  setVideoCall(false);
+  setVideoSending(false);
+  setScreenSharing(false);
+  setVideoBlur(false);
   hide();
   setMode(Mode::Hidden);
   resetCallWindowLayout();
@@ -744,7 +949,7 @@ void CallWindow::closeCall()
 void CallWindow::startTimer()
 {
   m_elapsedSeconds = 0;
-  m_timerLabel->setText(tr("Продолжит: %1").arg(formatDuration(0)));
+  m_timerLabel->setText(formatDuration(0));
   m_durationTimer->start(1000);
 }
 
@@ -757,7 +962,7 @@ void CallWindow::stopTimer()
 void CallWindow::onTimerTick()
 {
   ++m_elapsedSeconds;
-  m_timerLabel->setText(tr("Продолжит: %1").arg(formatDuration(m_elapsedSeconds)));
+  m_timerLabel->setText(formatDuration(m_elapsedSeconds));
 }
 
 void CallWindow::updateHoldButtonEnabled()

@@ -7,7 +7,12 @@
 #include "audio/IncomingRingPlayer.h"
 #include "audio/RingbackPlayer.h"
 #include "protocol/WsApiClient.h"
+#include "video/H264Decoder.h"
+#include "video/H264Encoder.h"
+#include "video/ScreenCapture.h"
+#include "video/VideoCapture.h"
 
+#include <QElapsedTimer>
 #include <QHash>
 #include <QImage>
 #include <QObject>
@@ -75,6 +80,8 @@ public:
     void sendDtmf(const QString &leg, QChar digit);
     void sendVideo(const QString &leg, bool send);
     void toggleSendVideo(const QString &leg);
+    void setScreenSharing(const QString &leg, bool enabled);
+    void setVideoBlur(bool enabled) { m_videoBlur = enabled; }
 
     CallSession *call(const QString &leg);
     QString activeLeg() const { return m_activeLeg; }
@@ -86,6 +93,9 @@ signals:
     void remoteAudioStarted(const QString &leg);
     void remoteAudioLevel(float level);
     void remoteVideoFrame(const QString &leg, const QImage &frame);
+    void localVideoFrame(const QImage &frame);
+    void videoSendingChanged(const QString &leg, bool sending);
+    void screenSharingChanged(const QString &leg, bool sharing);
 
 public slots:
     void handleServerCallEvent(const QString &leg, const QString &what, const QJsonObject &payload);
@@ -96,9 +106,14 @@ private:
     void beginIncomingIceGathering(const QString &leg);
     void setupAudioTrack(const QString &leg, const std::shared_ptr<rtc::PeerConnection> &pc,
                          const QString &audioMid = QStringLiteral("audio"));
-    void setupVideoTrack(const QString &leg, const std::shared_ptr<rtc::PeerConnection> &pc);
+    void setupVideoTrack(const QString &leg, const std::shared_ptr<rtc::PeerConnection> &pc,
+                         const QString &videoMid = QStringLiteral("video"));
     void attachIncomingTrack(const QString &leg, const std::shared_ptr<rtc::Track> &track);
     void attachIncomingVideoTrack(const QString &leg, const std::shared_ptr<rtc::Track> &track);
+    bool startVideoCapture(const QString &leg);
+    void stopVideoCapture();
+    void sendCapturedVideoFrame(const QImage &frame);
+    void decodeRemoteVideoFrame(const QString &leg, const QByteArray &payload);
     void applyRemoteSdp(const QString &leg, const QString &sdp, SdpType type, bool force = false);
     void sendLocalSdp(const QString &leg);
     void publishLocalSdp(const QString &leg, const std::shared_ptr<rtc::PeerConnection> &pc);
@@ -140,6 +155,14 @@ private:
     RingbackPlayer m_ringback;
     IncomingRingPlayer m_incomingRing;
     ExternalMediaPauser m_externalMedia;
+    VideoCapture m_videoCapture;
+    ScreenCapture m_screenCapture;
+    H264Encoder m_videoEncoder;
+    H264Decoder m_videoDecoder;
+    QElapsedTimer m_videoFrameTimer;
+    QString m_videoCaptureLeg;
+    bool m_screenSharing = false;
+    bool m_videoBlur = false;
     QHash<QString, CallSession> m_calls;
     QHash<QString, PeerContext> m_peers;
     QHash<QString, QTimer *> m_publishTimers;

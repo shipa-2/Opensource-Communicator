@@ -2,8 +2,12 @@
 
 #include <QObject>
 #include <QImage>
-#include <QTimer>
 #include <QStringList>
+
+class QCamera;
+class QMediaCaptureSession;
+class QVideoFrame;
+class QVideoSink;
 
 namespace itl {
 
@@ -21,14 +25,18 @@ public:
 
 signals:
     void frameReady(const QImage &frame);
+    void error(const QString &message);
 
 private slots:
-    void captureFrame();
+    void onVideoFrameChanged(const QVideoFrame &frame);
 
 private:
     bool m_running = false;
-    QTimer m_timer;
-    QImage m_currentFrame;
+    QCamera *m_camera = nullptr;
+    QMediaCaptureSession *m_captureSession = nullptr;
+    QVideoSink *m_videoSink = nullptr;
+    int m_width = 640;
+    int m_height = 360;
 };
 
 } // namespace itl
