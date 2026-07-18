@@ -78,6 +78,9 @@ public:
     bool showCallButtons() const { return m_showCallButtons; }
     void setShowCallButtons(bool show);
 
+    bool showVideoButtons() const { return m_showVideoButtons; }
+    void setShowVideoButtons(bool show);
+
     QString networkInterfaceName() const { return m_networkInterfaceName; }
     void setNetworkInterfaceName(const QString &name);
 
@@ -140,6 +143,7 @@ private:
     QString m_profileAvatarColor = QStringLiteral("#5a9e2f");
     bool m_showChatButtons = true;
     bool m_showCallButtons = true;
+    bool m_showVideoButtons = true;
     QString m_networkInterfaceName;
     QString m_appWallpaperPath;
     int m_appWallpaperOpacity = 85;

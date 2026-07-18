@@ -74,6 +74,7 @@ private slots:
     void onConference();
     void onDial();
     void onCallFromRow(const QString &peer);
+    void onVideoCallFromRow(const QString &peer);
     void onChatFromRow(const QString &peer);
     void onIncomingChatMessage(const QString &peer, const QString &text, bool incoming, const QDateTime &timestamp);
     void onNotesFromRow(const QString &peer);
@@ -172,6 +173,7 @@ private:
     void updateHistoryButtonStyles();
     void updateDialCallButtonStyle();
     void applyContactViewSettings();
+    bool serverVideoUiAvailable() const;
     void updateUnreadIndicators();
     bool shouldNotifyForChatMessage(const QString &peer) const;
     void scheduleDemoOscDiscovery();
@@ -187,6 +189,7 @@ private:
     void resumeExternalMediaIfIdle();
     void enterCallPresence();
     void leaveCallPresence();
+    bool usesOpenSourcePresence() const;
     static QString formatHistoryDuration(int seconds);
     static QString formatHistoryTime(qint64 ms);
     static QString formatHistoryWhen(qint64 ms);
@@ -208,6 +211,7 @@ private:
     QMenu *m_viewMenu = nullptr;
     QAction *m_viewChatAction = nullptr;
     QAction *m_viewCallAction = nullptr;
+    QAction *m_viewVideoAction = nullptr;
 
     QLabel *m_headerName = nullptr;
     ProfileAvatarWidget *m_headerAvatar = nullptr;

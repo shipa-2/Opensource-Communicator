@@ -1009,8 +1009,10 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   m_viewMenu = new QMenu(viewBtn);
   m_viewChatAction = m_viewMenu->addAction(tr("Кнопка сообщений"));
   m_viewChatAction->setCheckable(true);
-  m_viewCallAction = m_viewMenu->addAction(tr("Кнопка позвонить"));
+  m_viewCallAction = m_viewMenu->addAction(tr("Кнопка звонка"));
   m_viewCallAction->setCheckable(true);
+  m_viewVideoAction = m_viewMenu->addAction(tr("Кнопка видеозвонка"));
+  m_viewVideoAction->setCheckable(true);
   connect(m_addMenu, &QMenu::aboutToShow, this, [this]() {
     applyDimmedMenu(m_addMenu, true);
   });
@@ -1022,6 +1024,10 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
     if (m_viewCallAction) {
       m_viewCallAction->setChecked(m_client->appSettings().showCallButtons());
     }
+    if (m_viewVideoAction) {
+      m_viewVideoAction->setChecked(m_client->appSettings().showVideoButtons());
+      m_viewVideoAction->setVisible(serverVideoUiAvailable());
+    }
   });
   connect(m_viewChatAction, &QAction::triggered, this, [this](bool checked) {
     m_client->appSettings().setShowChatButtons(checked);
@@ -1030,6 +1036,11 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   });
   connect(m_viewCallAction, &QAction::triggered, this, [this](bool checked) {
     m_client->appSettings().setShowCallButtons(checked);
+    m_client->saveSettings();
+    applyContactViewSettings();
+  });
+  connect(m_viewVideoAction, &QAction::triggered, this, [this](bool checked) {
+    m_client->appSettings().setShowVideoButtons(checked);
     m_client->saveSettings();
     applyContactViewSettings();
   });
@@ -1135,6 +1146,9 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
     refreshAllContactPeerAvatars();
   });
   connect(m_client, &itl::CommunicatorClient::callEvent, this, &MainWindow::onCallEvent);
+  connect(m_client, &itl::CommunicatorClient::serverVideoEnabledChanged, this, [this](bool) {
+    applyContactViewSettings();
+  });
   connect(m_client->api(), &itl::WsApiClient::domainContactsLoaded, this, &MainWindow::onContactsLoaded);
   connect(m_client->api(), &itl::WsApiClient::historyLoaded, this, &MainWindow::onServerHistoryLoaded);
   connect(m_calls, &itl::CallManager::callStateChanged, this, &MainWindow::onCallStateChanged);
@@ -1537,11 +1551,13 @@ void MainWindow::setOnlineUi(bool online)
   m_presenceSelector->setEnabled(online);
   m_contactsList->setEnabled(online);
   if (online) {
+    m_presenceSelector->setManualInCallAllowed(usesOpenSourcePresence());
     m_presenceSelector->setCurrentStatus(QStringLiteral("online"));
     refreshServerHistory();
   } else {
     m_callPresenceActive = false;
     m_presenceBeforeCall.clear();
+    m_presenceSelector->setManualInCallAllowed(false);
     m_presenceSelector->setInCall(false);
     m_presenceSelector->setCurrentStatus(QStringLiteral("offline"));
     m_serverHistory.clear();
@@ -1752,6 +1768,8 @@ void MainWindow::addOrUpdateContactRow(const QString &peer)
   }
   row->setChatButtonVisible(m_client->appSettings().showChatButtons());
   row->setCallButtonVisible(m_client->appSettings().showCallButtons());
+  row->setVideoCallSupported(serverVideoUiAvailable());
+  row->setVideoButtonVisible(m_client->appSettings().showVideoButtons());
   row->setUnreadBlink(m_client->appSettings().showChatButtons() && m_client->chat()->hasUnread(peer));
   const QString peerColor = m_client->chat()->peerColor(peer);
   if (!peerColor.isEmpty()) {
@@ -1775,6 +1793,7 @@ void MainWindow::addOrUpdateContactRow(const QString &peer)
   m_contactsList->setItemWidget(item, row);
   m_contactItems.insert(peer, item);
   connect(row, &ContactRowWidget::callRequested, this, &MainWindow::onCallFromRow);
+  connect(row, &ContactRowWidget::videoCallRequested, this, &MainWindow::onVideoCallFromRow);
   connect(row, &ContactRowWidget::callNumberRequested, this, [this](const QString &number) {
     const QString target = resolvePeer(number);
     if (!target.isEmpty()) {
@@ -1842,8 +1861,10 @@ void MainWindow::enterCallPresence()
   if (!m_selfPeer.isEmpty()) {
     m_contacts[m_selfPeer].presence = QStringLiteral("in-call");
   }
-  // PBX sets voice:"in-call" automatically while a call is active.
-  // SetPresence(status:"in-call") is rejected (Invalid presence status 971).
+  if (m_online && !m_demoMode && usesOpenSourcePresence()) {
+    m_client->api()->setOwnPresence(QStringLiteral("in-call"), true);
+  }
+  // Megafon PBX sets voice:"in-call" automatically; SetPresence(in-call) is rejected (971).
 }
 
 void MainWindow::leaveCallPresence()
@@ -1876,6 +1897,14 @@ void MainWindow::leaveCallPresence()
   if (m_online && !m_demoMode) {
     m_client->api()->setOwnPresence(restore, true);
   }
+}
+
+bool MainWindow::usesOpenSourcePresence() const
+{
+  if (!m_client) {
+    return false;
+  }
+  return m_client->credentials().partner.trimmed().compare(QStringLiteral("opensource"), Qt::CaseInsensitive) == 0;
 }
 
 void MainWindow::onFilterChanged(int id)
@@ -2807,6 +2836,8 @@ void MainWindow::beginSessionWithCurrentCredentials()
     demoCred.password = QStringLiteral("demo");
     demoCred.domain = itl::DemoData::demoDomain();
     demoCred.authDomain.clear();
+    demoCred.serverPort = 0;
+    demoCred.ignoreInsecureTls = false;
     m_client->setCredentials(demoCred);
     m_client->enterDemoMode();
     enterDemoInterface();
@@ -3034,9 +3065,13 @@ void MainWindow::applyContactViewSettings()
 {
   const bool showChat = m_client->appSettings().showChatButtons();
   const bool showCall = m_client->appSettings().showCallButtons();
+  const bool showVideo = m_client->appSettings().showVideoButtons();
+  const bool videoSupported = serverVideoUiAvailable();
   for (ContactRowWidget *row : findChildren<ContactRowWidget *>()) {
     row->setChatButtonVisible(showChat);
     row->setCallButtonVisible(showCall);
+    row->setVideoCallSupported(videoSupported);
+    row->setVideoButtonVisible(showVideo);
     if (!showChat) {
       row->setUnreadBlink(false);
     }
@@ -3046,8 +3081,16 @@ void MainWindow::applyContactViewSettings()
   }
 }
 
+bool MainWindow::serverVideoUiAvailable() const
+{
+  return m_online && !m_demoMode && m_client->serverVideoEnabled();
+}
+
 bool MainWindow::shouldNotifyForChatMessage(const QString &peer) const
 {
+  if (QApplication::activeModalWidget()) {
+    return false;
+  }
   if (!m_client->appSettings().showChatButtons()) {
     return false;
   }
@@ -3094,7 +3137,11 @@ void MainWindow::onIncomingChatMessage(const QString &peer, const QString &text,
   updateUnreadIndicators();
 
   if (shouldNotifyForChatMessage(peer)) {
-    m_messageNotify->play();
+    QTimer::singleShot(0, this, [this, peer]() {
+      if (shouldNotifyForChatMessage(peer)) {
+        m_messageNotify->play();
+      }
+    });
   }
 }
 
@@ -3614,6 +3661,16 @@ void MainWindow::onCallFromRow(const QString &peer)
   m_callWindow->setAvatarPixmap(m_client->chat()->peerAvatar(peer));
 }
 
+void MainWindow::onVideoCallFromRow(const QString &peer)
+{
+  if (!m_online || m_demoMode || !m_client->serverVideoEnabled()) {
+    return;
+  }
+
+  Q_UNUSED(peer)
+  onStatusMessage(tr("Видеозвонки пока не поддерживаются клиентом"));
+}
+
 void MainWindow::onChatFromRow(const QString &peer)
 {
   m_chatDialog->openForPeer(peer, displayNameForPeer(peer), m_selfName);
@@ -3725,16 +3782,13 @@ void MainWindow::onPresenceChanged(int index)
   }
 
   const QString status = m_presenceSelector->currentStatus();
-#ifdef OSC_DEBUG_BUILD
-  if (status == QStringLiteral("in-call")) {
-    // Local UI only: АТС rejects SetPresence(status:"in-call").
-    // Real in-call voice presence is set by the PBX for active calls.
+  if (status == QStringLiteral("in-call") && !usesOpenSourcePresence()) {
+    // Megafon PBX rejects SetPresence(status:"in-call") with error 971.
     if (!m_selfPeer.isEmpty()) {
       m_contacts[m_selfPeer].presence = QStringLiteral("in-call");
     }
     return;
   }
-#endif
 
   if (!m_selfPeer.isEmpty()) {
     m_contacts[m_selfPeer].presence = status;

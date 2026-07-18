@@ -32,6 +32,8 @@ public:
     void setPhones(const QString &phone, const QString &personalPhone);
     void setChatButtonVisible(bool visible);
     void setCallButtonVisible(bool visible);
+    void setVideoCallSupported(bool supported);
+    void setVideoButtonVisible(bool visible);
     void setPeerColor(const QString &color);
     void setPeerAvatar(const QPixmap &avatar);
     void setUnreadBlink(bool enabled);
@@ -58,6 +60,7 @@ protected:
 signals:
     void callRequested(const QString &peer);
     void callNumberRequested(const QString &number);
+    void videoCallRequested(const QString &peer);
     void chatRequested(const QString &peer);
     void notesRequested(const QString &peer);
     void deleteRequested(const QString &peer);
@@ -74,6 +77,7 @@ private:
     void paintOscWave(QPainter &painter, const QRectF &frame) const;
     void onOscWaveTick();
     bool isInteractiveChild(QWidget *target) const;
+    bool showsOscPresenceRing() const;
 
     QString m_peer;
     QString m_presence;
@@ -93,6 +97,7 @@ private:
     QLabel *m_nameLabel = nullptr;
     QLabel *m_numberLabel = nullptr;
     QPushButton *m_callBtn = nullptr;
+    QPushButton *m_videoBtn = nullptr;
     QPushButton *m_chatBtn = nullptr;
     QTimer *m_blinkTimer = nullptr;
     QTimer *m_waveTimer = nullptr;
@@ -100,4 +105,5 @@ private:
     qreal m_waveProgress = 0.0;
     bool m_unreadBlink = false;
     bool m_blinkAccentOn = false;
+    bool m_videoCallSupported = false;
 };

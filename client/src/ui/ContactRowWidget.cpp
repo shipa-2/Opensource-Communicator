@@ -186,7 +186,8 @@ void configureEmojiButton(QPushButton *button)
   const QFontMetrics metrics(button->font());
   const int side = qMax(metrics.height() + 8,
                         qMax(metrics.horizontalAdvance(QStringLiteral("📞")) + 14,
-                             metrics.horizontalAdvance(QStringLiteral("💬")) + 14));
+                             qMax(metrics.horizontalAdvance(QStringLiteral("💬")) + 14,
+                                      metrics.horizontalAdvance(QStringLiteral("📹")) + 14)));
   button->setFixedSize(side, side);
   button->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
   button->setFlat(true);
@@ -284,12 +285,20 @@ ContactRowWidget::ContactRowWidget(const QString &peer, const QString &name, con
 
   m_callBtn = new QPushButton(QStringLiteral("📞"));
   m_callBtn->setObjectName(QStringLiteral("rowCallBtn"));
-  m_callBtn->setToolTip(tr("Позвонить (ПКМ — выбор номера)"));
+  m_callBtn->setToolTip(tr("Звонок (ПКМ — выбор номера)"));
   configureEmojiButton(m_callBtn);
   m_callBtn->installEventFilter(this);
   layout->addWidget(m_callBtn);
 
+  m_videoBtn = new QPushButton(QStringLiteral("📹"));
+  m_videoBtn->setObjectName(QStringLiteral("rowVideoBtn"));
+  m_videoBtn->setToolTip(tr("Видеозвонок"));
+  configureEmojiButton(m_videoBtn);
+  m_videoBtn->setVisible(false);
+  layout->addWidget(m_videoBtn);
+
   connect(m_callBtn, &QPushButton::clicked, this, [this]() { emit callRequested(m_peer); });
+  connect(m_videoBtn, &QPushButton::clicked, this, [this]() { emit videoCallRequested(m_peer); });
   connect(m_chatBtn, &QPushButton::clicked, this, [this]() { emit chatRequested(m_peer); });
 }
 
@@ -309,6 +318,18 @@ void ContactRowWidget::setCallButtonVisible(bool visible)
 {
   if (m_callBtn) {
     m_callBtn->setVisible(visible);
+  }
+}
+
+void ContactRowWidget::setVideoCallSupported(bool supported)
+{
+  m_videoCallSupported = supported && !m_isSelf;
+}
+
+void ContactRowWidget::setVideoButtonVisible(bool visible)
+{
+  if (m_videoBtn) {
+    m_videoBtn->setVisible(visible && m_videoCallSupported);
   }
 }
 
@@ -473,7 +494,7 @@ void ContactRowWidget::contextMenuEvent(QContextMenuEvent *event)
   itl::applyPopupMenuStyle(&menu);
 
   if (m_numbers.size() > 1) {
-    auto *callMenu = menu.addMenu(tr("Позвонить"));
+    auto *callMenu = menu.addMenu(tr("Звонок"));
     for (const CallNumber &number : m_numbers) {
       const QString label = number.second.isEmpty()
                                 ? number.first
@@ -485,7 +506,11 @@ void ContactRowWidget::contextMenuEvent(QContextMenuEvent *event)
       });
     }
   } else {
-    menu.addAction(tr("Позвонить"), this, [this]() { emit callRequested(m_peer); });
+    menu.addAction(tr("Звонок"), this, [this]() { emit callRequested(m_peer); });
+  }
+
+  if (m_videoCallSupported) {
+    menu.addAction(tr("Видеозвонок"), this, [this]() { emit videoCallRequested(m_peer); });
   }
 
   menu.addAction(tr("Сообщение"), this, [this]() { emit chatRequested(m_peer); });
@@ -521,7 +546,7 @@ void ContactRowWidget::mouseDoubleClickEvent(QMouseEvent *event)
 bool ContactRowWidget::isInteractiveChild(QWidget *target) const
 {
   while (target && target != this) {
-    if (target == m_callBtn || target == m_chatBtn) {
+    if (target == m_callBtn || target == m_videoBtn || target == m_chatBtn) {
       return true;
     }
     target = target->parentWidget();
@@ -715,6 +740,11 @@ void ContactRowWidget::setOscPeerStyle(bool enabled)
   refreshAvatarStyle();
 }
 
+bool ContactRowWidget::showsOscPresenceRing() const
+{
+  return m_isSelf || m_oscPeerStyle;
+}
+
 void ContactRowWidget::refreshAvatarStyle()
 {
   auto *avatar = dynamic_cast<ContactAvatarLabel *>(m_avatar);
@@ -728,7 +758,7 @@ void ContactRowWidget::refreshAvatarStyle()
     avatar->setBackgroundColor(QColor(m_peerColor));
   }
   avatar->setPhoto(m_peerAvatar);
-  if (m_oscPeerStyle) {
+  if (showsOscPresenceRing()) {
     avatar->setPresenceRingEnabled(true);
     avatar->setPresenceRingColor(QColor(presenceColor(m_presence)));
   } else {
@@ -767,7 +797,7 @@ void ContactRowWidget::setSelected(bool selected)
 
 void ContactRowWidget::refreshStatusDot()
 {
-  if (m_oscPeerStyle) {
+  if (showsOscPresenceRing()) {
     if (m_statusDot) {
       m_statusDot->hide();
     }

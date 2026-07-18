@@ -21,6 +21,7 @@ constexpr auto kProfileAvatarPath = "profile/avatarPath";
 constexpr auto kProfileAvatarColor = "profile/avatarColor";
 constexpr auto kShowChatButtons = "ui/showChatButtons";
 constexpr auto kShowCallButtons = "ui/showCallButtons";
+constexpr auto kShowVideoButtons = "ui/showVideoButtons";
 constexpr auto kRecordingDualTrack = "recording/dualTrack";
 constexpr auto kRecordingCombinedTrack = "recording/combinedTrack";
 constexpr auto kRecordingFilenameTemplate = "recording/filenameTemplate";
@@ -55,6 +56,7 @@ void AppSettings::load(QSettings &settings)
   m_profileAvatarColor = settings.value(QString::fromUtf8(kProfileAvatarColor), QStringLiteral("#5a9e2f")).toString();
   m_showChatButtons = settings.value(QString::fromUtf8(kShowChatButtons), true).toBool();
   m_showCallButtons = settings.value(QString::fromUtf8(kShowCallButtons), true).toBool();
+  m_showVideoButtons = settings.value(QString::fromUtf8(kShowVideoButtons), true).toBool();
   m_recordingDualTrack = settings.value(QString::fromUtf8(kRecordingDualTrack), false).toBool();
   m_recordingCombinedTrack = settings.value(QString::fromUtf8(kRecordingCombinedTrack), false).toBool();
   m_recordingFilenameTemplate =
@@ -85,6 +87,7 @@ void AppSettings::save(QSettings &settings) const
   settings.setValue(QString::fromUtf8(kProfileAvatarColor), m_profileAvatarColor);
   settings.setValue(QString::fromUtf8(kShowChatButtons), m_showChatButtons);
   settings.setValue(QString::fromUtf8(kShowCallButtons), m_showCallButtons);
+  settings.setValue(QString::fromUtf8(kShowVideoButtons), m_showVideoButtons);
   settings.setValue(QString::fromUtf8(kRecordingDualTrack), m_recordingDualTrack);
   settings.setValue(QString::fromUtf8(kRecordingCombinedTrack), m_recordingCombinedTrack);
   settings.setValue(QString::fromUtf8(kRecordingFilenameTemplate), m_recordingFilenameTemplate);
@@ -260,6 +263,15 @@ void AppSettings::setShowCallButtons(bool show)
     return;
   }
   m_showCallButtons = show;
+  emit settingsChanged();
+}
+
+void AppSettings::setShowVideoButtons(bool show)
+{
+  if (m_showVideoButtons == show) {
+    return;
+  }
+  m_showVideoButtons = show;
   emit settingsChanged();
 }
 
