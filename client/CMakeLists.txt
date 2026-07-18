@@ -26,6 +26,10 @@ find_package(OpenSSL REQUIRED)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(OPUS REQUIRED opus)
+pkg_check_modules(OPENH264 REQUIRED openh264)
+pkg_check_modules(AVCODEC REQUIRED libavcodec)
+pkg_check_modules(AVUTIL REQUIRED libavutil)
+pkg_check_modules(SWSCALE REQUIRED libswscale)
 
 find_package(LibDataChannel CONFIG QUIET)
 if(LibDataChannel_FOUND)
@@ -56,6 +60,16 @@ add_executable(opensource-communicator
     src/calls/CallTypes.h
     src/calls/CallManager.cpp
     src/calls/CallManager.h
+    src/video/VideoCapture.cpp
+    src/video/VideoCapture.h
+    src/video/H264Encoder.cpp
+    src/video/H264Encoder.h
+    src/video/H264Decoder.cpp
+    src/video/H264Decoder.h
+    src/video/ScreenCapture.cpp
+    src/video/ScreenCapture.h
+    src/ui/VideoRenderer.cpp
+    src/ui/VideoRenderer.h
     src/audio/AudioBridge.cpp
     src/audio/AudioBridge.h
     src/audio/CallRecorder.cpp
@@ -126,7 +140,7 @@ add_executable(opensource-communicator
     src/ui/ThemeHelper.h
 )
 
-target_include_directories(opensource-communicator PRIVATE src ${OPUS_INCLUDE_DIRS})
+target_include_directories(opensource-communicator PRIVATE src ${OPUS_INCLUDE_DIRS} ${OPENH264_INCLUDE_DIRS} ${AVCODEC_INCLUDE_DIRS} ${AVUTIL_INCLUDE_DIRS} ${SWSCALE_INCLUDE_DIRS})
 
 if(OPUS_LIBRARY_DIRS)
     target_link_directories(opensource-communicator PRIVATE ${OPUS_LIBRARY_DIRS})
@@ -141,6 +155,10 @@ target_link_libraries(opensource-communicator PRIVATE
     Qt6::Multimedia
     ${DATACHANNEL_LIB}
     ${OPUS_LIBRARIES}
+    ${OPENH264_LIBRARIES}
+    ${AVCODEC_LIBRARIES}
+    ${AVUTIL_LIBRARIES}
+    ${SWSCALE_LIBRARIES}
 )
 
 if(UNIX AND NOT APPLE)
