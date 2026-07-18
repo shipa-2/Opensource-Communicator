@@ -253,7 +253,7 @@ jobs:
 
           if [ "$GITHUB_REF_NAME" = "videotest" ]; then
             TAG="videotest-${TIMESTAMP}"
-            RELEASE_NAME="Сборка ветки videotest от ${DAY}.${MONTH}.${YEAR} ${HOUR}:${MINUTE} (UTC)"
+            RELEASE_NAME="${TAG}"
           else
             TAG="${TIMESTAMP}"
             RELEASE_NAME="${TIMESTAMP}"

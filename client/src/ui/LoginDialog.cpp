@@ -71,11 +71,9 @@ LoginDialog::LoginDialog(itl::CommunicatorClient *client, QWidget *parent)
   advancedForm->addRow(tr("Auth-домен"), m_authDomainEdit);
   advancedForm->addRow(tr("Порт сервера"), m_serverPortEdit);
   advancedForm->addRow(tr("Partner"), m_partnerEdit);
-#ifdef OSC_DEBUG_BUILD
   m_ignoreInsecureTlsCheck = new QCheckBox(tr("Игнорировать небезопасный TLS"));
   m_ignoreInsecureTlsCheck->setToolTip(tr("Для отладки: ws:// без TLS или wss:// с самоподписанным сертификатом."));
   advancedForm->addRow(QString(), m_ignoreInsecureTlsCheck);
-#endif
   m_advancedPanel->setLayout(advancedForm);
   m_advancedPanel->setVisible(false);
   layout->addWidget(m_advancedPanel);
@@ -110,11 +108,9 @@ void LoginDialog::applyCredentials(const itl::LoginCredentials &cred)
   m_authDomainEdit->setText(cred.authDomain);
   m_serverPortEdit->setText(cred.serverPort > 0 && cred.serverPort != 443 ? QString::number(cred.serverPort) : QString());
   m_partnerEdit->setText(cred.partner.isEmpty() ? QStringLiteral("megafon") : cred.partner);
-#ifdef OSC_DEBUG_BUILD
   if (m_ignoreInsecureTlsCheck) {
     m_ignoreInsecureTlsCheck->setChecked(cred.ignoreInsecureTls);
   }
-#endif
 }
 
 itl::LoginCredentials LoginDialog::accountAt(int index) const
@@ -184,11 +180,9 @@ itl::LoginCredentials LoginDialog::credentialsFromForm() const
       cred.serverPort = port;
     }
   }
-#ifdef OSC_DEBUG_BUILD
   if (m_ignoreInsecureTlsCheck) {
     cred.ignoreInsecureTls = m_ignoreInsecureTlsCheck->isChecked();
   }
-#endif
   return cred;
 }
 

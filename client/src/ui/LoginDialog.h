@@ -3,7 +3,6 @@
 #include <QDialog>
 
 class QCheckBox;
-class QCheckBox;
 class QComboBox;
 class QLineEdit;
 class QPushButton;
@@ -43,7 +42,5 @@ private:
     QCheckBox *m_rememberCheck = nullptr;
     QWidget *m_advancedPanel = nullptr;
     QPushButton *m_advancedBtn = nullptr;
-#ifdef OSC_DEBUG_BUILD
     QCheckBox *m_ignoreInsecureTlsCheck = nullptr;
-#endif
 };
