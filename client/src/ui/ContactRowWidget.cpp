@@ -166,6 +166,9 @@ QString presenceColor(const QString &presence)
   if (p == QStringLiteral("away")) {
     return QStringLiteral("#d4a017");
   }
+  if (p == QStringLiteral("busy")) {
+    return QStringLiteral("#c03030");
+  }
   return QStringLiteral("#aaaaaa");
 }
 
