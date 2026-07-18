@@ -34,6 +34,9 @@ struct CallSession {
     bool pendingUpdateAnswer = false;
     bool isConference = false;
     CallPhase phase = CallPhase::Idle;
+    bool videoCall = false;
+    bool sendVideo = false;
+    bool receiveVideo = false;
 };
 
 } // namespace itl

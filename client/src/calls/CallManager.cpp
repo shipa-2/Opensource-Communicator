@@ -199,7 +199,7 @@ QString CallManager::extractAudioMid(const QString &sdp) const
   return QStringLiteral("0");
 }
 
-QString CallManager::sanitizeLocalSdp(const QString &sdp) const
+QString CallManager::sanitizeLocalSdp(const QString &sdp, bool hasVideo) const
 {
   // libdatachannel can emit a dual m=audio answer when the offer has no mid and we
   // add a local track with a different mid. Keep a single audio section and drop
@@ -239,9 +239,12 @@ QString CallManager::sanitizeLocalSdp(const QString &sdp) const
 
   QStringList &session = sessionLines[0];
   QList<QStringList> audioSections;
+  QList<QStringList> videoSections;
   for (const QStringList &section : mediaSections) {
     if (!section.isEmpty() && section.first().startsWith(QStringLiteral("m=audio"))) {
       audioSections.append(section);
+    } else if (hasVideo && !section.isEmpty() && section.first().startsWith(QStringLiteral("m=video"))) {
+      videoSections.append(section);
     }
   }
 
@@ -328,14 +331,20 @@ QString CallManager::sanitizeLocalSdp(const QString &sdp) const
   }
   media = cleanedMedia;
 
-  // Rebuild BUNDLE/LS groups for the single mid.
+  // Build BUNDLE/LS groups with both audio and video mids if present.
+  QString videoMid;
   QStringList cleanedSession;
   for (const QString &line : session) {
     if (line.startsWith(QStringLiteral("a=group:BUNDLE")) || line.startsWith(QStringLiteral("a=group:LS"))) {
       const QString prefix = line.startsWith(QStringLiteral("a=group:BUNDLE"))
                                  ? QStringLiteral("a=group:BUNDLE")
                                  : QStringLiteral("a=group:LS");
-      cleanedSession.append(QStringLiteral("%1 %2").arg(prefix, mid));
+      if (!videoSections.isEmpty()) {
+        videoMid = QStringLiteral("1");
+        cleanedSession.append(QStringLiteral("%1 %2 %3").arg(prefix, mid, videoMid));
+      } else {
+        cleanedSession.append(QStringLiteral("%1 %2").arg(prefix, mid));
+      }
       continue;
     }
     cleanedSession.append(line);
@@ -343,6 +352,30 @@ QString CallManager::sanitizeLocalSdp(const QString &sdp) const
 
   QStringList out = cleanedSession;
   out.append(media);
+
+  // Append video section if present
+  if (!videoSections.isEmpty()) {
+    QStringList videoMedia = videoSections.first();
+    // Ensure video mid is set
+    bool hasVideoMid = false;
+    for (const QString &line : videoMedia) {
+      if (line.startsWith(QStringLiteral("a=mid:"))) {
+        hasVideoMid = true;
+        break;
+      }
+    }
+    if (!hasVideoMid && !videoMid.isEmpty()) {
+      videoMedia.insert(1, QStringLiteral("a=mid:%1").arg(videoMid));
+    }
+    // Force setup:active for video too
+    for (QString &line : videoMedia) {
+      if (line.startsWith(QStringLiteral("a=setup:actpass"))) {
+        line = QStringLiteral("a=setup:active");
+      }
+    }
+    out.append(videoMedia);
+  }
+
   while (!out.isEmpty() && out.last().isEmpty()) {
     out.removeLast();
   }
@@ -626,7 +659,7 @@ void CallManager::beginNegotiation(const QString &leg, bool createOffer, bool de
         return;
       }
       CallSession &session = m_calls[leg];
-      session.localSdp = sanitizeLocalSdp(patchSdpLocalAddress(QString::fromStdString(std::string(description))));
+      session.localSdp = sanitizeLocalSdp(patchSdpLocalAddress(QString::fromStdString(std::string(description))), session.videoCall);
       if (session.pendingUpdateAnswer) {
         session.pendingUpdateAnswer = false;
         qCInfo(lcCall) << "Sending AcceptUpdate for" << leg << "sdpBytes:" << session.localSdp.size();
@@ -658,11 +691,12 @@ void CallManager::beginNegotiation(const QString &leg, bool createOffer, bool de
     }
     const QString mediaType = QString::fromStdString(track->description().type());
     qCInfo(lcCall) << "Remote track for" << leg << "type:" << mediaType;
-    if (mediaType != QStringLiteral("audio")) {
-      return;
-    }
-    QMetaObject::invokeMethod(this, [this, leg, track]() {
-      attachIncomingTrack(leg, track);
+    QMetaObject::invokeMethod(this, [this, leg, track, mediaType]() {
+      if (mediaType == QStringLiteral("audio")) {
+        attachIncomingTrack(leg, track);
+      } else if (mediaType == QStringLiteral("video")) {
+        attachIncomingVideoTrack(leg, track);
+      }
     }, Qt::QueuedConnection);
   });
 
@@ -697,6 +731,14 @@ void CallManager::beginNegotiation(const QString &leg, bool createOffer, bool de
     // Answerer: add local track with the offer mid FIRST, then setRemoteDescription.
     // Reverse order makes libdatachannel emit a second m=audio and AcceptCall breaks.
     setupAudioTrack(leg, pc, audioMid);
+
+    // Setup video track if this is a video call or remote SDP has m=video
+    if (m_calls[leg].videoCall || m_calls[leg].remoteSdp.contains(QStringLiteral("m=video"))) {
+      m_calls[leg].videoCall = true;
+      m_calls[leg].receiveVideo = true;
+      setupVideoTrack(leg, pc);
+      qCInfo(lcCall) << "Video track setup for" << leg;
+    }
 
     if (!createOffer) {
       pc->setRemoteDescription(
@@ -848,7 +890,7 @@ void CallManager::sendLocalSdp(const QString &leg)
   }
 }
 
-QString CallManager::startOutgoingCall(const QString &peer)
+QString CallManager::startOutgoingCall(const QString &peer, bool videoCall)
 {
   hangupAll();
 
@@ -858,6 +900,9 @@ QString CallManager::startOutgoingCall(const QString &peer)
   session.peer = peer;
   session.incoming = false;
   session.phase = CallPhase::Negotiating;
+  session.videoCall = videoCall;
+  session.sendVideo = videoCall;
+  session.receiveVideo = videoCall;
   m_calls.insert(leg, session);
   onCallSessionStarted();
 
@@ -1106,6 +1151,7 @@ void CallManager::handleServerCallEvent(const QString &leg, const QString &what,
     session.incoming = true;
     session.phase = CallPhase::Ringing;
     session.remoteSdp = payload.value(QStringLiteral("sdp")).toString();
+    session.videoCall = session.remoteSdp.contains(QStringLiteral("m=video"));
 
     const QJsonObject dest = payload.value(QStringLiteral("dest")).toObject();
     session.peer = dest.value(QStringLiteral("From")).toObject().value(QString::fromUtf8(kEmptyKey)).toString();
@@ -1220,6 +1266,124 @@ void CallManager::handleServerCallEvent(const QString &leg, const QString &what,
     teardownCall(leg);
     emit callStateChanged(leg, QStringLiteral("ended"), payload.value(QStringLiteral("reason")).toString());
   }
+}
+
+void CallManager::setupVideoTrack(const QString &leg, const std::shared_ptr<rtc::PeerConnection> &pc)
+{
+  PeerContext &ctx = m_peers[leg];
+  if (ctx.pc) {
+    return;
+  }
+  ctx.pc = pc;
+  if (ctx.videoSsrc == 0) {
+    ctx.videoSsrc = randomSsrc();
+  }
+
+  const std::string mid = "video";
+  rtc::Description::Video videoDesc(mid, rtc::Description::Direction::SendRecv);
+  videoDesc.addH264Codec(96);
+  videoDesc.addSSRC(ctx.videoSsrc, "video", "stream", "video");
+  ctx.localVideoTrack = pc->addTrack(videoDesc);
+
+  ctx.videoRtpConfig = std::make_shared<rtc::RtpPacketizationConfig>(ctx.videoSsrc, "video", 96, 90000);
+  ctx.nextVideoRtpTimestamp = 0;
+  auto handler = std::make_shared<rtc::H264RtpPacketizer>(ctx.videoRtpConfig);
+  handler->addToChain(std::make_shared<rtc::H264RtpDepacketizer>());
+  handler->addToChain(std::make_shared<rtc::RtcpReceivingSession>());
+  handler->addToChain(std::make_shared<rtc::RtcpSrReporter>(ctx.videoRtpConfig));
+  handler->addToChain(std::make_shared<rtc::RtcpNackResponder>());
+  ctx.localVideoTrack->setMediaHandler(handler);
+
+  ctx.localVideoTrack->onOpen([leg]() {
+    qCInfo(lcCall) << "Local video track open for" << leg;
+  });
+
+  ctx.localVideoTrack->onFrame([this, leg](rtc::binary data, rtc::FrameInfo) {
+    if (data.empty()) {
+      return;
+    }
+    QMetaObject::invokeMethod(this, [this, leg, payload = QByteArray(reinterpret_cast<const char *>(data.data()), static_cast<int>(data.size()))]() {
+      if (!m_calls.contains(leg) || !m_calls[leg].connected) {
+        return;
+      }
+      static int recvCount = 0;
+      if ((recvCount++ % 50) == 0) {
+        qCInfo(lcCall) << "Receiving video frame" << payload.size() << "bytes on" << leg;
+      }
+    }, Qt::QueuedConnection);
+  });
+}
+
+void CallManager::attachIncomingVideoTrack(const QString &leg, const std::shared_ptr<rtc::Track> &track)
+{
+  if (!m_peers.contains(leg)) {
+    qCWarning(lcCall) << "Remote video track before peer context for" << leg;
+    return;
+  }
+
+  PeerContext &ctx = m_peers[leg];
+  ctx.remoteVideoTrack = track;
+
+  auto depacketizer = std::make_shared<rtc::H264RtpDepacketizer>();
+  depacketizer->addToChain(std::make_shared<rtc::RtcpReceivingSession>());
+  track->setMediaHandler(depacketizer);
+
+  track->onOpen([leg]() {
+    qCInfo(lcCall) << "Remote video track open for" << leg;
+  });
+
+  track->onFrame([this, leg](rtc::binary data, rtc::FrameInfo) {
+    QMetaObject::invokeMethod(this, [this, leg, payload = QByteArray(reinterpret_cast<const char *>(data.data()), static_cast<int>(data.size()))]() {
+      if (!m_calls.contains(leg) || !m_calls[leg].connected) {
+        return;
+      }
+      static int recvCount = 0;
+      if ((recvCount++ % 50) == 0) {
+        qCInfo(lcCall) << "Receiving video frame" << payload.size() << "bytes on" << leg
+                       << "(#" << recvCount << ", via remote track)";
+      }
+      // TODO: decode H.264 payload and emit remoteVideoFrame
+    }, Qt::QueuedConnection);
+  });
+}
+
+QString CallManager::extractVideoMid(const QString &sdp) const
+{
+  const QStringList lines = sdp.split(QStringLiteral("\r\n"), Qt::SkipEmptyParts);
+  bool inVideo = false;
+  for (const QString &line : lines) {
+    if (line.startsWith(QStringLiteral("m="))) {
+      inVideo = line.startsWith(QStringLiteral("m=video"));
+      continue;
+    }
+    if (inVideo && line.startsWith(QStringLiteral("a=mid:"))) {
+      return line.mid(6).trimmed();
+    }
+  }
+  return QStringLiteral("1");
+}
+
+void CallManager::sendVideo(const QString &leg, bool send)
+{
+  if (!m_calls.contains(leg) || !m_peers.contains(leg)) {
+    return;
+  }
+  CallSession &session = m_calls[leg];
+  PeerContext &ctx = m_peers[leg];
+
+  session.sendVideo = send;
+
+  if (ctx.localVideoTrack) {
+    qCInfo(lcCall) << "Video send" << (send ? "enabled" : "disabled") << "for" << leg;
+  }
+}
+
+void CallManager::toggleSendVideo(const QString &leg)
+{
+  if (!m_calls.contains(leg)) {
+    return;
+  }
+  sendVideo(leg, !m_calls[leg].sendVideo);
 }
 
 } // namespace itl

@@ -9,6 +9,7 @@
 #include "protocol/WsApiClient.h"
 
 #include <QHash>
+#include <QImage>
 #include <QObject>
 #include <QTimer>
 #include <QUuid>
@@ -43,6 +44,12 @@ struct PeerContext {
     bool remoteSdpApplied = false;
     bool iceGatheringStarted = false;
     QString appliedRemoteSdp;
+    std::shared_ptr<rtc::Track> localVideoTrack;
+    std::shared_ptr<rtc::Track> remoteVideoTrack;
+    std::shared_ptr<rtc::RtpPacketizationConfig> videoRtpConfig;
+    uint32_t videoSsrc = 0;
+    uint32_t nextVideoRtpTimestamp = 0;
+    bool videoTrackOpen = false;
 };
 
 class CallManager : public QObject {
@@ -54,7 +61,7 @@ public:
 
     void applySettings();
 
-    QString startOutgoingCall(const QString &peer);
+    QString startOutgoingCall(const QString &peer, bool videoCall = false);
     QString startConferenceCall(const QString &subject, const QList<ConferenceParticipant> &participants);
     void acceptIncomingCall(const QString &leg);
     void rejectIncomingCall(const QString &leg);
@@ -66,6 +73,8 @@ public:
     void pauseExternalMedia();
     void resumeExternalMedia();
     void sendDtmf(const QString &leg, QChar digit);
+    void sendVideo(const QString &leg, bool send);
+    void toggleSendVideo(const QString &leg);
 
     CallSession *call(const QString &leg);
     QString activeLeg() const { return m_activeLeg; }
@@ -76,6 +85,7 @@ signals:
     void callRecordingFinished(const QString &path);
     void remoteAudioStarted(const QString &leg);
     void remoteAudioLevel(float level);
+    void remoteVideoFrame(const QString &leg, const QImage &frame);
 
 public slots:
     void handleServerCallEvent(const QString &leg, const QString &what, const QJsonObject &payload);
@@ -86,7 +96,9 @@ private:
     void beginIncomingIceGathering(const QString &leg);
     void setupAudioTrack(const QString &leg, const std::shared_ptr<rtc::PeerConnection> &pc,
                          const QString &audioMid = QStringLiteral("audio"));
+    void setupVideoTrack(const QString &leg, const std::shared_ptr<rtc::PeerConnection> &pc);
     void attachIncomingTrack(const QString &leg, const std::shared_ptr<rtc::Track> &track);
+    void attachIncomingVideoTrack(const QString &leg, const std::shared_ptr<rtc::Track> &track);
     void applyRemoteSdp(const QString &leg, const QString &sdp, SdpType type, bool force = false);
     void sendLocalSdp(const QString &leg);
     void publishLocalSdp(const QString &leg, const std::shared_ptr<rtc::PeerConnection> &pc);
@@ -103,7 +115,8 @@ private:
     void answerRemoteUpdate(const QString &leg);
     QString patchSdpLocalAddress(const QString &sdp) const;
     QString extractAudioMid(const QString &sdp) const;
-    QString sanitizeLocalSdp(const QString &sdp) const;
+    QString extractVideoMid(const QString &sdp) const;
+    QString sanitizeLocalSdp(const QString &sdp, bool hasVideo = false) const;
     QString bindIPv4() const;
     void startAudio();
     void stopAudio();
