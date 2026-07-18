@@ -47,7 +47,6 @@ jobs:
             mingw-w64-ucrt-x86_64-qt6-tools
             mingw-w64-ucrt-x86_64-opus
             mingw-w64-ucrt-x86_64-openh264
-            mingw-w64-ucrt-x86_64-ffmpeg
             mingw-w64-ucrt-x86_64-openssl
             zip
 
@@ -139,9 +138,7 @@ jobs:
             libssl-dev \
             libopus-dev \
             libopenh264-dev \
-            libavcodec-dev \
-            libavutil-dev \
-            libswscale-dev
+            patchelf
 
       - name: Cache libdatachannel
         id: cache-libdatachannel
@@ -188,6 +185,14 @@ jobs:
             SUFFIX="linux-x86_64-debug"
           fi
           cmake --install client/build-linux
+          APP="$GITHUB_WORKSPACE/dist/AppDir/usr/bin/opensource-communicator"
+          LIBDIR="$GITHUB_WORKSPACE/dist/AppDir/usr/lib"
+          mkdir -p "$LIBDIR"
+          OPENH264="$(ldd "$APP" | awk '/libopenh264\.so/ {print $3; exit}')"
+          test -n "$OPENH264"
+          cp -L "$OPENH264" "$LIBDIR/$(basename "$OPENH264")"
+          patchelf --set-rpath '$ORIGIN/../lib' "$APP"
+          patchelf --print-rpath "$APP"
           mkdir -p dist
           tar -C "$GITHUB_WORKSPACE/dist/AppDir/usr" \
             -czf "dist/OpenSource-Communicator-${VERSION}-${SUFFIX}.tar.gz" .

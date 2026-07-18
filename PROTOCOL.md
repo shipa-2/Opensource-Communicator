@@ -86,7 +86,7 @@
 | RTP clock | 90000 Hz |
 | Захват | 640×360, 15 FPS |
 | Packetization | libdatachannel `H264RtpPacketizer`, Annex B start sequences |
-| Декодирование | FFmpeg/libavcodec |
+| Декодирование | OpenH264 |
 
 Исходящий offer содержит `m=audio` и `m=video`; answerer использует реальные `a=mid` из offer. `sanitizeLocalSdp` сохраняет video media section и пересобирает BUNDLE/LS с фактическими mid. RTP timestamp увеличивается на `90000 / 15 = 6000` на кадр.
 

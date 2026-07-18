@@ -144,9 +144,9 @@ sudo cmake --install build
 - `libdatachannel`
 - `opus`
 - `openh264`
-- `ffmpeg` (`libavcodec`, `libavutil`, `libswscale`)
+- `ffmpeg` или `lame` (необязательно, для конвертации записей в MP3)
 
-Готовая сборка для Windows — в разделе [Установка (Windows)](#установка-windows). GitHub Actions также собирает Linux-бинарник (артефакты `linux-build-Release` / `linux-build-Debug`, tar.gz) на Ubuntu 24.04 с системными Qt6 и `libdatachannel-dev`.
+Готовая сборка для Windows — в разделе [Установка (Windows)](#установка-windows). GitHub Actions также собирает Linux-бинарник (артефакты `linux-build-Release` / `linux-build-Debug`, tar.gz) на Ubuntu 24.04. Архив содержит совместимую библиотеку OpenH264; Qt 6 и остальные системные библиотеки должны быть установлены в системе.
 
 ### Типы сборки (Debug / Release)
 
@@ -236,7 +236,7 @@ cmake --build build-debug
 ./server/build/communicator-server --port 8443 --allowvideo --oncall
 ```
 
-Клиент захватывает камеру через Qt Multimedia, кодирует 640×360@15 FPS в H.264 baseline (PT 96, RTP clock 90 kHz) и передаёт через `libdatachannel`. Входящий H.264 декодируется FFmpeg. На Qt ≥6.5 и KDE Plasma Wayland демонстрация экрана использует `QScreenCapture` и системный PipeWire/xdg-desktop-portal диалог; для Qt 6.4 сохранён X11-совместимый fallback через `QScreen::grabWindow()`.
+Клиент захватывает камеру через Qt Multimedia, кодирует 640×360@15 FPS в H.264 baseline (PT 96, RTP clock 90 kHz) и передаёт через `libdatachannel`. Входящий H.264 декодируется OpenH264. На Qt ≥6.5 и KDE Plasma Wayland демонстрация экрана использует `QScreenCapture` и системный PipeWire/xdg-desktop-portal диалог; для Qt 6.4 сохранён X11-совместимый fallback через `QScreen::grabWindow()`.
 
 Ограничения:
 

@@ -3,9 +3,7 @@
 #include <QLoggingCategory>
 
 extern "C" {
-#include <libavcodec/avcodec.h>
-#include <libavutil/imgutils.h>
-#include <libswscale/swscale.h>
+#include <wels/codec_api.h>
 }
 
 Q_LOGGING_CATEGORY(lcH264Dec, "itl.video.h264dec")
@@ -13,11 +11,7 @@ Q_LOGGING_CATEGORY(lcH264Dec, "itl.video.h264dec")
 namespace itl {
 
 struct H264Decoder::DecoderContext {
-    AVCodecContext *codecCtx = nullptr;
-    AVFrame *frame = nullptr;
-    AVFrame *rgbFrame = nullptr;
-    uint8_t *rgbBuffer = nullptr;
-    SwsContext *swsCtx = nullptr;
+    ISVCDecoder *decoder = nullptr;
 };
 
 H264Decoder::H264Decoder(QObject *parent)
@@ -34,131 +28,98 @@ H264Decoder::~H264Decoder()
 
 bool H264Decoder::open()
 {
-    if (m_ctx->codecCtx) {
+    if (m_ctx->decoder) {
         return true;
     }
 
-    const AVCodec *codec = avcodec_find_decoder(AV_CODEC_ID_H264);
-    if (!codec) {
-        qCCritical(lcH264Dec) << "H264 decoder not found";
+    if (WelsCreateDecoder(&m_ctx->decoder) != 0 || !m_ctx->decoder) {
+        qCCritical(lcH264Dec) << "Failed to create OpenH264 decoder";
+        m_ctx->decoder = nullptr;
         return false;
     }
 
-    m_ctx->codecCtx = avcodec_alloc_context3(codec);
-    if (!m_ctx->codecCtx) {
-        qCCritical(lcH264Dec) << "Failed to allocate decoder context";
+    SDecodingParam parameters{};
+    parameters.sVideoProperty.size = sizeof(SVideoProperty);
+    parameters.sVideoProperty.eVideoBsType = VIDEO_BITSTREAM_AVC;
+    parameters.bParseOnly = false;
+    if (m_ctx->decoder->Initialize(&parameters) != 0) {
+        qCCritical(lcH264Dec) << "Failed to initialize OpenH264 decoder";
+        WelsDestroyDecoder(m_ctx->decoder);
+        m_ctx->decoder = nullptr;
         return false;
     }
 
-    m_ctx->codecCtx->thread_count = 2;
-
-    if (avcodec_open2(m_ctx->codecCtx, codec, nullptr) < 0) {
-        qCCritical(lcH264Dec) << "Failed to open H264 decoder";
-        avcodec_free_context(&m_ctx->codecCtx);
-        return false;
-    }
-
-    m_ctx->frame = av_frame_alloc();
-    m_ctx->rgbFrame = av_frame_alloc();
-
-    qCInfo(lcH264Dec) << "H264 decoder opened";
+    qCInfo(lcH264Dec) << "OpenH264 decoder opened";
     return true;
 }
 
 void H264Decoder::close()
 {
-    if (m_ctx->swsCtx) {
-        sws_freeContext(m_ctx->swsCtx);
-        m_ctx->swsCtx = nullptr;
-    }
-    if (m_ctx->rgbBuffer) {
-        av_free(m_ctx->rgbBuffer);
-        m_ctx->rgbBuffer = nullptr;
-    }
-    if (m_ctx->rgbFrame) {
-        av_frame_free(&m_ctx->rgbFrame);
-    }
-    if (m_ctx->frame) {
-        av_frame_free(&m_ctx->frame);
-    }
-    if (m_ctx->codecCtx) {
-        avcodec_free_context(&m_ctx->codecCtx);
+    if (m_ctx->decoder) {
+        m_ctx->decoder->Uninitialize();
+        WelsDestroyDecoder(m_ctx->decoder);
+        m_ctx->decoder = nullptr;
     }
 }
 
 bool H264Decoder::isOpen() const
 {
-    return m_ctx && m_ctx->codecCtx;
+    return m_ctx && m_ctx->decoder;
 }
 
 QImage H264Decoder::decode(const QByteArray &nalu)
 {
-    if (!m_ctx->codecCtx || nalu.isEmpty()) {
+    if (!m_ctx->decoder || nalu.isEmpty()) {
         return {};
     }
 
-    AVPacket *packet = av_packet_alloc();
-    packet->data = reinterpret_cast<uint8_t *>(const_cast<char *>(nalu.constData()));
-    packet->size = nalu.size();
-
-    int ret = avcodec_send_packet(m_ctx->codecCtx, packet);
-    av_packet_free(&packet);
-
-    if (ret < 0) {
-        qCWarning(lcH264Dec) << "Error sending packet to decoder:" << ret;
+    unsigned char *planes[3]{};
+    SBufferInfo bufferInfo{};
+    const DECODING_STATE state = m_ctx->decoder->DecodeFrameNoDelay(
+        reinterpret_cast<const unsigned char *>(nalu.constData()),
+        nalu.size(),
+        planes,
+        &bufferInfo);
+    if (state != dsErrorFree) {
+        qCWarning(lcH264Dec) << "OpenH264 decode state:" << static_cast<int>(state);
+    }
+    if (bufferInfo.iBufferStatus != 1 || !planes[0] || !planes[1] || !planes[2]) {
         return {};
     }
 
-    ret = avcodec_receive_frame(m_ctx->codecCtx, m_ctx->frame);
-    if (ret < 0) {
+    const int width = bufferInfo.UsrData.sSystemBuffer.iWidth;
+    const int height = bufferInfo.UsrData.sSystemBuffer.iHeight;
+    const int yStride = bufferInfo.UsrData.sSystemBuffer.iStride[0];
+    const int uvStride = bufferInfo.UsrData.sSystemBuffer.iStride[1];
+    if (width <= 0 || height <= 0 || yStride <= 0 || uvStride <= 0) {
         return {};
     }
 
-    AVFrame *frame = m_ctx->frame;
-    int width = frame->width;
-    int height = frame->height;
-
-    if (width <= 0 || height <= 0) {
+    QImage image(width, height, QImage::Format_RGB888);
+    if (image.isNull()) {
         return {};
     }
 
-    // Setup SWS context for YUV420P → RGB conversion
-    if (!m_ctx->swsCtx || m_ctx->codecCtx->width != width || m_ctx->codecCtx->height != height) {
-        if (m_ctx->swsCtx) {
-            sws_freeContext(m_ctx->swsCtx);
+    const auto clamp = [](int value) {
+        return static_cast<uchar>(value < 0 ? 0 : (value > 255 ? 255 : value));
+    };
+    for (int y = 0; y < height; ++y) {
+        uchar *destination = image.scanLine(y);
+        const unsigned char *yRow = planes[0] + y * yStride;
+        const unsigned char *uRow = planes[1] + (y / 2) * uvStride;
+        const unsigned char *vRow = planes[2] + (y / 2) * uvStride;
+        for (int x = 0; x < width; ++x) {
+            const int luminance = qMax(0, static_cast<int>(yRow[x]) - 16);
+            const int u = static_cast<int>(uRow[x / 2]) - 128;
+            const int v = static_cast<int>(vRow[x / 2]) - 128;
+            destination[x * 3] = clamp((298 * luminance + 409 * v + 128) >> 8);
+            destination[x * 3 + 1] =
+                clamp((298 * luminance - 100 * u - 208 * v + 128) >> 8);
+            destination[x * 3 + 2] = clamp((298 * luminance + 516 * u + 128) >> 8);
         }
-        if (m_ctx->rgbBuffer) {
-            av_free(m_ctx->rgbBuffer);
-            m_ctx->rgbBuffer = nullptr;
-        }
-
-        m_ctx->swsCtx = sws_getContext(
-            width, height, AV_PIX_FMT_YUV420P,
-            width, height, AV_PIX_FMT_RGB24,
-            SWS_BILINEAR, nullptr, nullptr, nullptr);
-
-        if (!m_ctx->swsCtx) {
-            qCWarning(lcH264Dec) << "Failed to create SWS context";
-            return {};
-        }
-
-        int numBytes = av_image_get_buffer_size(AV_PIX_FMT_RGB24, width, height, 1);
-        m_ctx->rgbBuffer = static_cast<uint8_t *>(av_malloc(numBytes));
-        av_image_fill_arrays(m_ctx->rgbFrame->data, m_ctx->rgbFrame->linesize,
-                             m_ctx->rgbBuffer, AV_PIX_FMT_RGB24, width, height, 1);
     }
 
-    // Convert YUV → RGB
-    sws_scale(m_ctx->swsCtx,
-              frame->data, frame->linesize, 0, height,
-              m_ctx->rgbFrame->data, m_ctx->rgbFrame->linesize);
-
-    // Create QImage from RGB buffer
-    QImage rgbImage(m_ctx->rgbBuffer, width, height, m_ctx->rgbFrame->linesize[0],
-                    QImage::Format_RGB888);
-    QImage result = rgbImage.copy();  // Deep copy before buffer reuse
-
-    return result;
+    return image;
 }
 
 } // namespace itl

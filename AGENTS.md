@@ -74,7 +74,7 @@
 - `ScreenCapture` — Qt ≥6.5: `QScreenCapture` и PipeWire/xdg-desktop-portal на Wayland; Qt 6.4 CI: X11 fallback через `QScreen::grabWindow()`.
 - `H264Encoder` — OpenH264 baseline, 640×360@15 FPS, 700 Кбит/с, Annex B.
 - `CallManager` — H.264 PT 96 / 90 kHz, video track в общем BUNDLE с Opus, RTP step 6000.
-- `H264Decoder` — FFmpeg/libavcodec → `QImage`.
+- `H264Decoder` — OpenH264 I420 → `QImage`.
 - `CallWindow` — широкое окно: одна строка ФИО/номер/статус/таймер, remote video слева, local preview и управление справа.
 - Управление: stop/start video, screen share, blur исходящего кадра.
 - Ошибка `Camera is in use` должна отключать видео без завершения аудиозвонка.
@@ -209,7 +209,7 @@ opensource-communicator/
 - Qt6: Core, Gui, Widgets, WebSockets, Network, Multimedia
 - **Linux/FreeBSD:** дополнительно **Qt6 DBus** (MPRIS)
 - OpenSSL, opus, LibDataChannel
-- OpenH264; FFmpeg libraries (`libavcodec`, `libavutil`, `libswscale`) для видео
+- OpenH264 для кодирования и декодирования видео
 
 ---
 
@@ -474,7 +474,7 @@ cmake --build build
 sudo cmake --install build   # /opt/opensource-communicator по умолчанию
 ```
 
-Зависимости: `qt6-base`, `qt6-websockets`, `qt6-multimedia`, **`qt6-dbus`**, `libdatachannel`, `opus`, `openh264`, `openssl`, `ffmpeg` (`libavcodec`, `libavutil`, `libswscale`; видео и запись MP3), `cmake`.
+Зависимости: `qt6-base`, `qt6-websockets`, `qt6-multimedia`, **`qt6-dbus`**, `libdatachannel`, `opus`, `openh264`, `openssl`, `cmake`. Для конвертации записей в MP3 дополнительно нужен исполняемый `ffmpeg` или `lame`; клиент с библиотеками FFmpeg не линкуется.
 
 **AUR:** `opensource-communicator-git` — `packaging/aur/PKGBUILD`, pkgrel отражает зависимости.
 
