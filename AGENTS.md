@@ -2,7 +2,7 @@
 
 Документ для работы с репозиторием **OpenSource Communicator** вне постоянного рабочего окружения (например, с флешки, в другой машине или в новой сессии агента). **Читайте его до правок кода.**
 
-Последнее обновление: **2026-07-10**, после коммита `884d18f` (*Update AUR package to 0.3.0 with qt6-dbus dependency*).
+Последнее обновление: **2026-07-18**, релиз **0.4.0** (клиент + `communicator-server` в репозитории).
 
 ---
 
@@ -23,12 +23,24 @@
 |---|---|
 | Репозиторий | `https://github.com/shipa-2/Opensource-Communicator` |
 | Ветка разработки | `main` |
-| Версия приложения | **0.3.0** (`client/CMakeLists.txt`, `main.cpp`) |
+| Версия приложения | **0.4.0** (`client/CMakeLists.txt`, `main.cpp`) |
+| Сервер | **`server/`** — `communicator-server` (не в CI-артефактах; см. `server/README.md`) |
 | Протокол (реверс) | `PROTOCOL.md` (ориентир v3.13.11) |
 
 ---
 
 ## Состояние на момент передачи (handoff)
+
+### Что нового в 0.4.0 (кратко)
+
+| Область | Суть |
+|---------|------|
+| **Сервер** | `server/communicator-server` — WS, IM, presence, звонки, hold music, PostgreSQL; сборка локально |
+| **OSC тема/аватар** | Share в настройках, IM `fnm=`, `Themeapplied!`, обои + opacity |
+| **Чат** | Вложения «+», кликабельные URL, file notify |
+| **Hold** | `AcceptUpdate`, «На удержании», mute исходящего при local hold |
+| **Video UI** | `getcommunicatorsettings` → кнопка 📹 (видео не реализовано) |
+| **Клиент** | `--newinstance`, порт/TLS в login, IM localhost normalize |
 
 ### Что сделано к 0.3.0 (основное)
 
@@ -88,7 +100,7 @@
 ```
 opensource-communicator/
 ├── client/
-│   ├── CMakeLists.txt               # VERSION 0.3.0; Qt6::DBus на UNIX (не Apple)
+│   ├── CMakeLists.txt               # VERSION 0.4.0; Qt6::DBus на UNIX (не Apple)
 │   ├── resources/
 │   │   ├── resources.qrc            # logo.png, help.png (PNG!), QSS
 │   │   └── communicator-dialogs.qss
@@ -126,6 +138,7 @@ opensource-communicator/
 ├── CHANGELOG.md
 ├── README.md
 ├── AGENTS.md
+├── server/                          # communicator-server (не в GitHub Release)
 ├── packaging/aur/PKGBUILD           # qt6-dbus, ffmpeg
 └── .github/workflows/build.yml
 ```
