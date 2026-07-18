@@ -71,7 +71,7 @@
 ### Ветка `videotest` — экспериментальное видео
 
 - `VideoCapture` — `QCamera` + `QMediaCaptureSession` + `QVideoSink`, целевой кадр 640×360.
-- `ScreenCapture` — `QScreenCapture`; на KDE Wayland Qt использует PipeWire/xdg-desktop-portal.
+- `ScreenCapture` — Qt ≥6.5: `QScreenCapture` и PipeWire/xdg-desktop-portal на Wayland; Qt 6.4 CI: X11 fallback через `QScreen::grabWindow()`.
 - `H264Encoder` — OpenH264 baseline, 640×360@15 FPS, 700 Кбит/с, Annex B.
 - `CallManager` — H.264 PT 96 / 90 kHz, video track в общем BUNDLE с Opus, RTP step 6000.
 - `H264Decoder` — FFmpeg/libavcodec → `QImage`.

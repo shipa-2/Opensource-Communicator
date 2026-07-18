@@ -2,9 +2,13 @@
 
 #include <QGuiApplication>
 #include <QMediaCaptureSession>
-#include <QScreen>
-#include <QScreenCapture>
 #include <QPainter>
+#include <QPixmap>
+#include <QScreen>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+#include <QScreenCapture>
+#endif
+#include <QTimer>
 #include <QVideoFrame>
 #include <QVideoSink>
 #include <QLoggingCategory>
@@ -29,18 +33,19 @@ bool ScreenCapture::start(int width, int height, int fps)
         return true;
     }
 
-    QScreen *screen = QGuiApplication::primaryScreen();
-    if (!screen) {
+    m_screen = QGuiApplication::primaryScreen();
+    if (!m_screen) {
         qCWarning(lcScreenCap) << "No screen available for capture";
         return false;
     }
 
     m_width = qMax(2, width & ~1);
     m_height = qMax(2, height & ~1);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     m_screenCapture = new QScreenCapture(this);
     m_captureSession = new QMediaCaptureSession(this);
     m_videoSink = new QVideoSink(this);
-    m_screenCapture->setScreen(screen);
+    m_screenCapture->setScreen(m_screen);
     m_captureSession->setScreenCapture(m_screenCapture);
     m_captureSession->setVideoSink(m_videoSink);
     connect(m_videoSink, &QVideoSink::videoFrameChanged,
@@ -50,11 +55,36 @@ bool ScreenCapture::start(int width, int height, int fps)
                 qCWarning(lcScreenCap) << "Screen capture error:" << message;
                 emit error(message);
             }, Qt::QueuedConnection);
+#else
+    // QScreenCapture was introduced in Qt 6.5. Ubuntu 24.04 CI ships Qt 6.4,
+    // so keep an X11-compatible fallback. On modern Wayland installations the
+    // Qt >= 6.5 path above uses PipeWire/xdg-desktop-portal instead.
+    m_fallbackTimer = new QTimer(this);
+    connect(m_fallbackTimer, &QTimer::timeout, this, [this]() {
+        if (!m_running || !m_screen) {
+            return;
+        }
+        const QPixmap pixmap = m_screen->grabWindow(0);
+        if (pixmap.isNull()) {
+            return;
+        }
+        QImage image = pixmap.toImage();
+        if (!image.isNull()) {
+            image = image.scaled(m_width, m_height, Qt::KeepAspectRatio,
+                                 Qt::SmoothTransformation);
+            emit frameReady(image);
+        }
+    });
+#endif
 
     m_running = true;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     m_screenCapture->start();
+#else
+    m_fallbackTimer->start(qMax(1, 1000 / qMax(1, fps)));
+#endif
 
-    qCInfo(lcScreenCap) << "Screen capture requested:" << screen->name()
+    qCInfo(lcScreenCap) << "Screen capture requested:" << m_screen->name()
                         << m_width << "x" << m_height << "target" << fps << "fps";
     return true;
 }
@@ -65,6 +95,7 @@ void ScreenCapture::stop()
         return;
     }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     if (m_screenCapture) {
         m_screenCapture->stop();
     }
@@ -78,6 +109,14 @@ void ScreenCapture::stop()
     m_captureSession = nullptr;
     delete m_screenCapture;
     m_screenCapture = nullptr;
+#else
+    if (m_fallbackTimer) {
+        m_fallbackTimer->stop();
+        delete m_fallbackTimer;
+        m_fallbackTimer = nullptr;
+    }
+#endif
+    m_screen = nullptr;
     m_running = false;
     qCInfo(lcScreenCap) << "Screen capture stopped";
 }

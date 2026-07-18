@@ -2,9 +2,12 @@
 
 #include <QObject>
 #include <QImage>
+#include <QtGlobal>
 
 class QMediaCaptureSession;
+class QScreen;
 class QScreenCapture;
+class QTimer;
 class QVideoFrame;
 class QVideoSink;
 
@@ -33,6 +36,8 @@ private:
     QScreenCapture *m_screenCapture = nullptr;
     QMediaCaptureSession *m_captureSession = nullptr;
     QVideoSink *m_videoSink = nullptr;
+    QScreen *m_screen = nullptr;
+    QTimer *m_fallbackTimer = nullptr;
     int m_width = 1280;
     int m_height = 720;
 };
