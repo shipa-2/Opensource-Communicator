@@ -7,6 +7,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QImage>
+#include <QImageReader>
 #include <QJsonArray>
 #include <QLoggingCategory>
 #include <QRegularExpression>
@@ -383,6 +384,11 @@ InstantMessage ChatManager::parseMessage(const QJsonObject &msg) const
   if (im.origId.isEmpty()) {
     im.origId = im.id;
   }
+  if (im.origId == QStringLiteral("0")) {
+    // Some compatible/self-hosted servers use id=0 when persistence is unavailable.
+    // It is still a valid live push, but cannot be acknowledged with a server-side id.
+    im.origId.clear();
+  }
 
   im.peer = normalizePeer(msg.value(QStringLiteral("from")).toString());
   im.incoming = true;
@@ -504,7 +510,7 @@ void ChatManager::handlePayload(const QJsonObject &payload)
     }
 
     const InstantMessage im = parseMessage(raw);
-    if (im.body.isEmpty() || im.id == QStringLiteral("0")) {
+    if (im.body.isEmpty()) {
       return;
     }
     if (isOpenping(im.body)) {
@@ -533,8 +539,11 @@ void ChatManager::handlePayload(const QJsonObject &payload)
       if (!storeMessage(notice, /*replaceOptimisticOutgoing=*/true)) {
         return;
       }
-      if (notice.incoming && !notice.origId.isEmpty()) {
-        m_unreadByPeer[notice.peer].append(notice.origId);
+      if (notice.incoming) {
+        const QString unreadId = notice.origId.isEmpty()
+            ? QStringLiteral("local-theme:%1").arg(key)
+            : notice.origId;
+        m_unreadByPeer[notice.peer].append(unreadId);
         emit unreadChanged(notice.peer);
       }
       emit messageReceived(notice);
@@ -558,6 +567,12 @@ void ChatManager::handlePayload(const QJsonObject &payload)
         emit unreadChanged(notice.peer);
       }
       emit messageReceived(notice);
+      return;
+    }
+    if (im.id == QStringLiteral("0")) {
+      // Ephemeral ordinary messages are protocol control traffic. OSC theme/file
+      // shares above are intentionally accepted so recipients still see them
+      // when the server is running without persistence.
       return;
     }
     if (isFileTransfer(im.body) || isColorAdvertisement(im.body)) {
@@ -820,7 +835,17 @@ void ChatManager::markPeerRead(const QString &peer)
   if (m_demoMode || !m_api) {
     m_unreadByPeer.remove(normalized);
   } else {
-    sendSeen(normalized, ids);
+    QStringList serverIds;
+    for (const QString &id : ids) {
+      if (!id.startsWith(QStringLiteral("local-"))) {
+        serverIds.append(id);
+      }
+    }
+    if (serverIds.isEmpty()) {
+      m_unreadByPeer.remove(normalized);
+    } else {
+      sendSeen(normalized, serverIds);
+    }
   }
   emit unreadChanged(normalized);
 }
@@ -972,6 +997,8 @@ bool ChatManager::parseThemeShareBody(const QString &body, ThemeSharePayload *ou
 
   QPixmap pixmap;
   if (!pixmap.loadFromData(raw, "JPEG") && !pixmap.loadFromData(raw, "PNG")) {
+    qCWarning(lcChat) << "Theme share image cannot be decoded; bytes:" << raw.size()
+                      << "supported formats:" << QImageReader::supportedImageFormats();
     return false;
   }
 
@@ -985,7 +1012,7 @@ QString ChatManager::registerThemeShare(const QString &peer, const ThemeSharePay
                                           const QString &msgId)
 {
   QString key = msgId.trimmed();
-  if (key.isEmpty()) {
+  if (key.isEmpty() || key == QStringLiteral("0")) {
     key = QStringLiteral("%1:%2")
               .arg(canonicalPeer(peer))
               .arg(QDateTime::currentMSecsSinceEpoch());
