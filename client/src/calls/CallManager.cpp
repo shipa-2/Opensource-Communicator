@@ -675,7 +675,11 @@ void CallManager::beginNegotiation(const QString &leg, bool createOffer, bool de
   const QString localIp = bindIPv4();
 
   rtc::Configuration config;
-  config.enableIceUdpMux = true;
+  // UDP mux makes libjuice drop non-STUN datagrams until ICE is completed, so the
+  // gateway's early DTLS flight (it answers within milliseconds) would be discarded
+  // and the handshake stalls until after nomination (~+5s). We have one agent per
+  // socket anyway, so mux buys nothing.
+  config.enableIceUdpMux = false;
   config.forceMediaTransport = true;
   // We drive offer/answer explicitly. Leaving auto-negotiation on makes
   // setRemoteDescription(offer) create an answer immediately; our follow-up
