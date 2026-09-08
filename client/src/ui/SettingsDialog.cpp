@@ -15,22 +15,35 @@
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
+#include <QCoreApplication>
+#include <QDateTime>
+#include <QDesktopServices>
 #include <QFile>
 #include <QFileDialog>
-#include <QFrame>
 #include <QFormLayout>
+#include <QDir>
+#include <QFileInfo>
+#include <QFrame>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QNetworkAccessManager>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QPixmap>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QSizePolicy>
 #include <QSlider>
+#include <QSysInfo>
 #include <QTabWidget>
 #include <QTimer>
 #include <QToolTip>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include "chat/ChatManager.h"
@@ -228,8 +241,10 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
   accountForm->addRow(tr("Имя:"), nameRow);
 
   m_networkInterface = new QComboBox;
-  m_networkInterface->setToolTip(tr("Интерфейс для WebRTC-звонков (SDP и ICE). Не влияет на вход в систему."));
-  accountForm->addRow(tr("Сеть для звонков:"), m_networkInterface);
+  m_networkInterface->setToolTip(tr("Интерфейс для WebSocket и WebRTC. При смене — сразу переподключение."));
+  accountForm->addRow(tr("Сетевой интерфейс:"), m_networkInterface);
+  connect(m_networkInterface, QOverload<int>::of(&QComboBox::activated), this,
+          &SettingsDialog::onNetworkInterfaceActivated);
 
   accountLayout->addLayout(accountForm);
 
@@ -390,6 +405,11 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
   m_recordingDualTrackCheck->setChecked(m_settings->recordingDualTrack());
   recordingForm->addRow(m_recordingDualTrackCheck);
 
+  m_recordingUseNamesCheck = new QCheckBox(tr("Имена абонентов в названии файлов"));
+  m_recordingUseNamesCheck->setChecked(m_settings->recordingUseContactNames());
+  m_recordingUseNamesCheck->setToolTip(tr("Выключите, чтобы именем файла был только номер телефона"));
+  recordingForm->addRow(m_recordingUseNamesCheck);
+
   auto *combinedContainer = new QWidget;
   auto *combinedLayout = new QHBoxLayout(combinedContainer);
   combinedLayout->setContentsMargins(0, 0, 0, 0);
@@ -453,6 +473,63 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
 
   recordingLayout->addStretch();
   tabs->addTab(recordingTab, tr("Запись"));
+
+  auto *infoTab = new QWidget;
+  auto *infoLayout = new QVBoxLayout(infoTab);
+  infoLayout->setContentsMargins(8, 8, 8, 8);
+  infoLayout->setSpacing(8);
+
+  auto *aboutBox = new QGroupBox(tr("О программе"));
+  auto *aboutLayout = new QVBoxLayout(aboutBox);
+  aboutLayout->setSpacing(4);
+  auto *titleLabel = new QLabel(tr("OpenSource Communicator %1").arg(QCoreApplication::applicationVersion()));
+  auto *systemLabel =
+      new QLabel(tr("Qt %1 · %2").arg(QString::fromLatin1(qVersion()), QSysInfo::prettyProductName()));
+  auto *aboutText =
+      new QLabel(tr("Независимый open-source клиент для ВАТС ITooLabs / Megafon"));
+  auto *linkLabel = new QLabel(QStringLiteral(
+      "<a href=\"https://github.com/shipa-2/Opensource-Communicator\">github.com/shipa-2/Opensource-Communicator</a>"));
+  linkLabel->setOpenExternalLinks(true);
+  aboutText->setWordWrap(true);
+  aboutLayout->addWidget(titleLabel);
+  aboutLayout->addWidget(systemLabel);
+  aboutLayout->addWidget(aboutText);
+  aboutLayout->addWidget(linkLabel);
+  infoLayout->addWidget(aboutBox);
+
+  auto *diagBox = new QGroupBox(tr("Диагностика"));
+  auto *diagLayout = new QVBoxLayout(diagBox);
+  diagLayout->setSpacing(6);
+  auto *saveLogAllBtn = new QPushButton(tr("Сохранить полный лог"));
+  saveLogAllBtn->setToolTip(tr("Все подсистемы с момента запуска"));
+  auto *saveLogMediaBtn = new QPushButton(tr("Сохранить лог звонков и медиа"));
+  saveLogMediaBtn->setToolTip(tr("itl.call, itl.audio, itl.media, itl.record и библиотека WebRTC"));
+  auto *saveLogNetworkBtn = new QPushButton(tr("Сохранить лог сети и входа"));
+  saveLogNetworkBtn->setToolTip(tr("itl.ws и itl.client: соединение, логин, переподключения"));
+  diagLayout->addWidget(saveLogAllBtn);
+  diagLayout->addWidget(saveLogMediaBtn);
+  diagLayout->addWidget(saveLogNetworkBtn);
+  infoLayout->addWidget(diagBox);
+
+  auto *updateBox = new QGroupBox(tr("Обновления"));
+  auto *updateLayout = new QVBoxLayout(updateBox);
+  updateLayout->setSpacing(6);
+  m_checkUpdatesBtn = new QPushButton(tr("Проверить обновления на GitHub"));
+  m_updateStatus = new QLabel(tr("Проверка не выполнялась"));
+  m_updateStatus->setWordWrap(true);
+  m_updateStatus->setTextInteractionFlags(Qt::TextBrowserInteraction);
+  m_updateStatus->setOpenExternalLinks(true);
+  updateLayout->addWidget(m_checkUpdatesBtn);
+  updateLayout->addWidget(m_updateStatus);
+  infoLayout->addWidget(updateBox);
+
+  infoLayout->addStretch();
+  tabs->addTab(infoTab, tr("Информация"));
+
+  connect(saveLogAllBtn, &QPushButton::clicked, this, &SettingsDialog::onSaveLogAll);
+  connect(saveLogMediaBtn, &QPushButton::clicked, this, &SettingsDialog::onSaveLogMedia);
+  connect(saveLogNetworkBtn, &QPushButton::clicked, this, &SettingsDialog::onSaveLogNetwork);
+  connect(m_checkUpdatesBtn, &QPushButton::clicked, this, &SettingsDialog::onCheckUpdates);
 
   mainLayout->addWidget(tabs, 1);
 
@@ -855,6 +932,22 @@ void SettingsDialog::onShareTheme()
       });
 }
 
+void SettingsDialog::onNetworkInterfaceActivated(int index)
+{
+  const QString iface = m_networkInterface->itemData(index).toString();
+  if (iface == m_settings->networkInterfaceName()) {
+    return;
+  }
+
+  m_settings->setNetworkInterfaceName(iface);
+  m_client->saveSettings();
+  m_calls->applySettings();
+
+  if (!m_client->isDemoMode()) {
+    m_client->reconnectSession();
+  }
+}
+
 void SettingsDialog::onAccept()
 {
   stopPreview();
@@ -867,6 +960,7 @@ void SettingsDialog::onAccept()
   m_settings->setNetworkInterfaceName(m_networkInterface->currentData().toString());
 
   m_settings->setRecordingEnabled(m_recordingEnabledCheck->isChecked());
+  m_settings->setRecordingUseContactNames(m_recordingUseNamesCheck->isChecked());
   m_settings->setRecordingDualTrack(m_recordingDualTrackCheck->isChecked());
   m_settings->setRecordingCombinedTrack(m_recordingCombinedCheck->isChecked());
   m_settings->setRecordingDirectory(m_recordingDirEdit->text());
@@ -875,4 +969,119 @@ void SettingsDialog::onAccept()
   m_client->saveSettings();
   m_calls->applySettings();
   accept();
+}
+
+void SettingsDialog::saveSessionLog(itl::SessionLog::Scope scope, QWidget *anchor)
+{
+  QString scopeTag;
+  switch (scope) {
+  case itl::SessionLog::Scope::Media: scopeTag = QStringLiteral("media"); break;
+  case itl::SessionLog::Scope::Network: scopeTag = QStringLiteral("network"); break;
+  case itl::SessionLog::Scope::All: break;
+  }
+  if (scopeTag.isEmpty()) {
+    scopeTag = QStringLiteral("full");
+  }
+  const QString defaultPath = QDir::home().filePath(QStringLiteral("opensource-communicator-%1-%2.log")
+                                                        .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss")),
+                                                             scopeTag));
+  const QString path =
+      QFileDialog::getSaveFileName(this, tr("Сохранить лог"), defaultPath, tr("Файлы логов (*.log *.txt)"));
+  if (path.isEmpty()) {
+    return;
+  }
+  QString error;
+  if (itl::SessionLog::saveLog(scope, path, &error)) {
+    showTransientTip(tr("Лог сохранён: %1").arg(QFileInfo(path).fileName()), anchor);
+  } else {
+    QMessageBox::warning(this, tr("Настройки"), tr("Не удалось сохранить лог: %1").arg(error));
+  }
+}
+
+void SettingsDialog::onSaveLogAll()
+{
+  saveSessionLog(itl::SessionLog::Scope::All, qobject_cast<QPushButton *>(sender()));
+}
+
+void SettingsDialog::onSaveLogMedia()
+{
+  saveSessionLog(itl::SessionLog::Scope::Media, qobject_cast<QPushButton *>(sender()));
+}
+
+void SettingsDialog::onSaveLogNetwork()
+{
+  saveSessionLog(itl::SessionLog::Scope::Network, qobject_cast<QPushButton *>(sender()));
+}
+
+void SettingsDialog::onCheckUpdates()
+{
+  if (!m_updateNetwork) {
+    m_updateNetwork = new QNetworkAccessManager(this);
+  }
+  m_checkUpdatesBtn->setEnabled(false);
+  m_updateStatus->setText(tr("Проверка..."));
+
+  QNetworkRequest request{QUrl(QStringLiteral("https://api.github.com/repos/shipa-2/Opensource-Communicator/releases/latest"))};
+  request.setRawHeader(QByteArrayLiteral("Accept"), QByteArrayLiteral("application/vnd.github+json"));
+  request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+  QNetworkReply *reply = m_updateNetwork->get(request);
+  connect(reply, &QNetworkReply::finished, this, [this, reply] {
+    reply->deleteLater();
+    m_checkUpdatesBtn->setEnabled(true);
+    const QString currentVersion = QCoreApplication::applicationVersion();
+
+    if (reply->error() != QNetworkReply::NoError) {
+      m_updateStatus->setText(tr("Не удалось проверить обновления: %1").arg(reply->errorString()));
+      return;
+    }
+
+    const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+    const QString tagName = doc.object().value(QStringLiteral("tag_name")).toString();
+    if (tagName.isEmpty()) {
+      m_updateStatus->setText(tr("Не удалось разобрать ответ GitHub"));
+      return;
+    }
+
+    auto parseVersion = [](const QString &raw) {
+      QString tag = raw;
+      if (tag.startsWith(QLatin1Char('v')) || tag.startsWith(QLatin1Char('V'))) {
+        tag.remove(0, 1);
+      }
+      QStringList parts = tag.split(QLatin1Char('.'));
+      QList<int> numbers;
+      for (const QString &part : parts) {
+        QString digits;
+        for (QChar ch : part) {
+          if (ch.isDigit()) {
+            digits.append(ch);
+          } else {
+            break;
+          }
+        }
+        numbers.append(digits.isEmpty() ? 0 : digits.toInt());
+      }
+      while (numbers.size() < 3) {
+        numbers.append(0);
+      }
+      return numbers;
+    };
+
+    const QList<int> latest = parseVersion(tagName);
+    const QList<int> current = parseVersion(currentVersion);
+    bool newer = false;
+    for (int i = 0; i < 3; ++i) {
+      if (latest.at(i) != current.at(i)) {
+        newer = latest.at(i) > current.at(i);
+        break;
+      }
+    }
+
+    if (newer) {
+      const QString url = doc.object().value(QStringLiteral("html_url")).toString();
+      m_updateStatus->setText(tr("Доступна новая версия: <b>%1</b> — <a href=\"%2\">открыть релиз</a>")
+                                  .arg(tagName, url.toHtmlEscaped()));
+    } else {
+      m_updateStatus->setText(tr("Установлена последняя версия (%1)").arg(currentVersion));
+    }
+  });
 }

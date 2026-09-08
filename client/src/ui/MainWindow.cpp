@@ -1676,6 +1676,16 @@ QString MainWindow::recordingNameForPeer(const QString &peer, const QString &fal
   const QString resolved = resolvePeer(peer);
   const ContactEntry entry = m_contacts.value(resolved.isEmpty() ? peer : resolved);
 
+  if (!m_client->appSettings().recordingUseContactNames()) {
+    // Number-only names: skip address-book resolution entirely.
+    const QString target = resolved.isEmpty() ? peer : resolved;
+    if (target.startsWith(QStringLiteral("conf:"))) {
+      return fallbackDisplayName;
+    }
+    const QString number = target.section(QLatin1Char('@'), 0, 0).trimmed();
+    return number.isEmpty() ? fallbackDisplayName : number;
+  }
+
   if (!entry.name.isEmpty()) {
     return entry.name;
   }
@@ -3978,18 +3988,11 @@ void MainWindow::onContactsLoaded(const QJsonObject &contacts)
     if (!ext.isEmpty()) {
       entry.ext = ext.first().toString();
     }
-    entry.phone = acc.value(QStringLiteral("mobile")).toString();
-    if (entry.phone.isEmpty()) {
-      const QJsonArray tn = acc.value(QStringLiteral("tn")).toArray();
-      if (!tn.isEmpty()) {
-        entry.phone = tn.first().toString();
-      }
-    }
-    entry.personalPhone = acc.value(QStringLiteral("sim")).toString();
-    if (entry.phone.isEmpty()) {
-      entry.phone = entry.personalPhone;
-      entry.personalPhone.clear();
-    }
+    // Work number = "tn" (PBX telnum; "sim" is its FMC SIM, usually the same number),
+    // personal mobile = "mobile". These feed the copy menu and contact display.
+    const QJsonArray tn = acc.value(QStringLiteral("tn")).toArray();
+    entry.phone = tn.isEmpty() ? QString() : tn.first().toString();
+    entry.personalPhone = acc.value(QStringLiteral("mobile")).toString();
     entry.isSelf = (entry.login == selfLogin);
     const QString peer = entry.login + QLatin1Char('@') + domain;
     if (entry.isSelf) {

@@ -101,11 +101,13 @@ public:
     bool recordingCombinedTrack() const { return m_recordingCombinedTrack; }
     QString recordingFilenameTemplate() const { return m_recordingFilenameTemplate; }
     bool recordingEnabled() const { return m_recordingEnabled; }
+    bool recordingUseContactNames() const { return m_recordingUseContactNames; }
     QString recordingDirectory() const { return m_recordingDirectory; }
     void setRecordingDualTrack(bool dual);
     void setRecordingCombinedTrack(bool combined);
     void setRecordingFilenameTemplate(const QString &templateText);
     void setRecordingEnabled(bool enabled);
+    void setRecordingUseContactNames(bool useNames);
     void setRecordingDirectory(const QString &directory);
 
     QString noteForPeer(const QString &peer) const;
@@ -151,6 +153,7 @@ private:
     bool m_recordingDualTrack = false;
     bool m_recordingCombinedTrack = false;
     bool m_recordingEnabled = true;
+    bool m_recordingUseContactNames = true;
     QString m_recordingFilenameTemplate = QStringLiteral("%dmy_%h-%m-%s_%name");
     QString m_recordingDirectory;
 };

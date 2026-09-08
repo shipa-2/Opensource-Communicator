@@ -6,6 +6,7 @@ class QCheckBox;
 class QComboBox;
 class QLineEdit;
 class QPushButton;
+class QToolButton;
 class QWidget;
 
 namespace itl {
@@ -35,6 +36,7 @@ private:
     itl::CommunicatorClient *m_client = nullptr;
     QComboBox *m_loginCombo = nullptr;
     QLineEdit *m_passwordEdit = nullptr;
+    QToolButton *m_showPasswordBtn = nullptr;
     QLineEdit *m_domainEdit = nullptr;
     QLineEdit *m_authDomainEdit = nullptr;
     QLineEdit *m_serverPortEdit = nullptr;

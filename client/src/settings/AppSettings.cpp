@@ -27,6 +27,7 @@ constexpr auto kRecordingCombinedTrack = "recording/combinedTrack";
 constexpr auto kRecordingFilenameTemplate = "recording/filenameTemplate";
 constexpr auto kRecordingEnabled = "recording/enabled";
 constexpr auto kRecordingDirectory = "recording/directory";
+constexpr auto kRecordingUseContactNames = "recording/useContactNames";
 constexpr auto kNetworkInterface = "network/bindInterface";
 constexpr auto kAppWallpaperPath = "ui/appWallpaperPath";
 constexpr auto kAppWallpaperOpacity = "ui/appWallpaperOpacity";
@@ -63,6 +64,7 @@ void AppSettings::load(QSettings &settings)
       settings.value(QString::fromUtf8(kRecordingFilenameTemplate), QStringLiteral("%dmy_%h-%m-%s_%name")).toString();
   m_recordingEnabled = settings.value(QString::fromUtf8(kRecordingEnabled), true).toBool();
   m_recordingDirectory = settings.value(QString::fromUtf8(kRecordingDirectory)).toString();
+  m_recordingUseContactNames = settings.value(QString::fromUtf8(kRecordingUseContactNames), true).toBool();
   m_networkInterfaceName = settings.value(QString::fromUtf8(kNetworkInterface)).toString();
   m_appWallpaperPath = settings.value(QString::fromUtf8(kAppWallpaperPath)).toString();
   m_appWallpaperOpacity =
@@ -92,6 +94,7 @@ void AppSettings::save(QSettings &settings) const
   settings.setValue(QString::fromUtf8(kRecordingCombinedTrack), m_recordingCombinedTrack);
   settings.setValue(QString::fromUtf8(kRecordingFilenameTemplate), m_recordingFilenameTemplate);
   settings.setValue(QString::fromUtf8(kRecordingEnabled), m_recordingEnabled);
+  settings.setValue(QString::fromUtf8(kRecordingUseContactNames), m_recordingUseContactNames);
   settings.setValue(QString::fromUtf8(kRecordingDirectory), m_recordingDirectory);
   settings.setValue(QString::fromUtf8(kNetworkInterface), m_networkInterfaceName);
   settings.setValue(QString::fromUtf8(kAppWallpaperPath), m_appWallpaperPath);
@@ -318,6 +321,15 @@ void AppSettings::setRecordingEnabled(bool enabled)
     return;
   }
   m_recordingEnabled = enabled;
+  emit settingsChanged();
+}
+
+void AppSettings::setRecordingUseContactNames(bool useNames)
+{
+  if (m_recordingUseContactNames == useNames) {
+    return;
+  }
+  m_recordingUseContactNames = useNames;
   emit settingsChanged();
 }
 

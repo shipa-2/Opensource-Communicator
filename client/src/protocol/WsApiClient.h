@@ -17,7 +17,8 @@ public:
     QString sid() const;
     bool isConnected() const;
 
-    void initialize(const QUrl &url, const QString &ssoLogin = {}, bool ignoreInsecureTls = false);
+    void initialize(const QUrl &url, const QString &ssoLogin = {}, bool ignoreInsecureTls = false,
+                    const QString &bindInterface = {});
     void disconnect();
 
     void login(const QString &username, const QString &password, const QString &partner = {});

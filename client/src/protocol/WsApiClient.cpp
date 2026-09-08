@@ -36,7 +36,8 @@ bool WsApiClient::isConnected() const
   return m_connection && m_connection->isConnected();
 }
 
-void WsApiClient::initialize(const QUrl &url, const QString &ssoLogin, bool ignoreInsecureTls)
+void WsApiClient::initialize(const QUrl &url, const QString &ssoLogin, bool ignoreInsecureTls,
+                             const QString &bindInterface)
 {
   disconnect();
 
@@ -47,7 +48,7 @@ void WsApiClient::initialize(const QUrl &url, const QString &ssoLogin, bool igno
   connect(m_connection, &WsConnection::payloadReceived, this, &WsApiClient::onPayload);
   connect(m_connection, &WsConnection::responseReceived, this, &WsApiClient::onResponse);
 
-  m_connection->connectToServer(url, ssoLogin, ignoreInsecureTls);
+  m_connection->connectToServer(url, ssoLogin, ignoreInsecureTls, bindInterface);
 }
 
 void WsApiClient::disconnect()

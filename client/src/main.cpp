@@ -2,6 +2,7 @@
 #include "ui/AppInstance.h"
 
 #include "calls/CallManager.h"
+#include "logging/SessionLog.h"
 #include "protocol/CommunicatorClient.h"
 
 #include <QApplication>
@@ -13,9 +14,14 @@
 
 namespace {
 
+#ifndef APP_VERSION
+#define APP_VERSION "0.4.0"
+#endif
+
 void configureLogging()
 {
   qSetMessagePattern(QStringLiteral("[%{time HH:mm:ss.zzz}] %{type} %{category}: %{message}"));
+  itl::SessionLog::install();
 #ifdef OSC_DEBUG_BUILD
   QLoggingCategory::setFilterRules(QStringLiteral(
       "itl.*.debug=true\n"
@@ -54,7 +60,7 @@ int main(int argc, char *argv[])
   configureLogging();
   QApplication::setApplicationName(QStringLiteral("opensource-communicator"));
   QApplication::setOrganizationName(QStringLiteral("opensource-communicator"));
-  QApplication::setApplicationVersion(QStringLiteral("0.4.0"));
+  QApplication::setApplicationVersion(QStringLiteral(APP_VERSION));
   QApplication::setDesktopFileName(QStringLiteral("opensource-communicator"));
   QApplication::setWindowIcon(QIcon(QStringLiteral(":/logo.png")));
 

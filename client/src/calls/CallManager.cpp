@@ -1,6 +1,7 @@
 #include "CallManager.h"
 
 #include "network/NetworkUtils.h"
+#include "logging/SessionLog.h"
 #include "settings/AppSettings.h"
 
 #include <rtc/rtc.hpp>
@@ -37,7 +38,9 @@ CallManager::CallManager(WsApiClient *api, AppSettings *settings, QObject *paren
     , m_api(api)
     , m_settings(settings)
 {
-  rtc::InitLogger(rtc::LogLevel::Warning);
+  rtc::InitLogger(rtc::LogLevel::Warning, [](rtc::LogLevel level, std::string message) {
+    itl::SessionLog::addRtcLine(static_cast<int>(level), message.c_str());
+  });
   applySettings();
 
   connect(&m_audio, &AudioBridge::opusFrameReady, this, [this](const QByteArray &opus) {
@@ -1049,7 +1052,10 @@ void CallManager::hangup(const QString &leg)
   }
 
   const CallSession &session = m_calls[leg];
-  if (session.incoming && session.phase == CallPhase::Ringing) {
+  // An unanswered incoming call must be rejected even while its WebRTC answer is
+  // being prepared (phase is Negotiating then): the gateway ignores DisconnectCall
+  // for a leg that is still ringing on its side and keeps ringing other devices.
+  if (session.incoming && !session.connected) {
     m_api->rejectCall(leg, 603, QStringLiteral("Decline"));
   } else if (!session.incoming && !session.connected) {
     m_api->cancelCall(leg, 487, QStringLiteral("Request Terminated"));
@@ -1069,7 +1075,7 @@ void CallManager::hangupAll()
       continue;
     }
     const CallSession session = m_calls[leg];
-    if (session.incoming && session.phase == CallPhase::Ringing) {
+    if (session.incoming && !session.connected) {
       m_api->rejectCall(leg, 603, QStringLiteral("Decline"));
     } else if (!session.incoming && !session.connected) {
       m_api->cancelCall(leg, 487, QStringLiteral("Request Terminated"));

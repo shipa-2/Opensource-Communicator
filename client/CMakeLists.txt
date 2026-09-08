@@ -43,6 +43,8 @@ endif()
 add_executable(opensource-communicator
     resources/resources.qrc
     src/main.cpp
+    src/logging/SessionLog.cpp
+    src/logging/SessionLog.h
     src/protocol/ProtocolTypes.h
     src/protocol/WsConnection.cpp
     src/protocol/WsConnection.h
@@ -183,6 +185,38 @@ if(CMAKE_CONFIGURATION_TYPES)
 elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_definitions(opensource-communicator PRIVATE OSC_DEBUG_BUILD)
 endif()
+
+# Build channel: version carries the git branch suffix (e.g. 0.4.0-videotest),
+# main and detached checkouts (CI) stay plain 0.4.0. Non-main branches also embed
+# the UTC commit timestamp in the GitHub pre-release tag format
+# (videotest-DDMMYYYY-HHMM) so a binary maps to its release.
+execute_process(
+    COMMAND git -C ${CMAKE_CURRENT_SOURCE_DIR} rev-parse --abbrev-ref HEAD
+    OUTPUT_VARIABLE OSC_GIT_BRANCH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+    RESULT_VARIABLE OSC_GIT_BRANCH_RESULT
+)
+set(OSC_VERSION_SUFFIX "")
+if(OSC_GIT_BRANCH_RESULT EQUAL 0 AND NOT OSC_GIT_BRANCH MATCHES "^(main|HEAD|)$")
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E env TZ=UTC git -C ${CMAKE_CURRENT_SOURCE_DIR} log -1
+                --format=%cd --date=format:%d%m%Y-%H%M
+        OUTPUT_VARIABLE OSC_BUILD_STAMP
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+        RESULT_VARIABLE OSC_BUILD_STAMP_RESULT
+    )
+    # NOTE: CMake regex has no {n} quantifiers.
+    if(OSC_BUILD_STAMP_RESULT EQUAL 0 AND OSC_BUILD_STAMP MATCHES "^[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]$")
+        set(OSC_VERSION_SUFFIX "-${OSC_GIT_BRANCH}-${OSC_BUILD_STAMP}")
+    else()
+        set(OSC_VERSION_SUFFIX "-${OSC_GIT_BRANCH}")
+    endif()
+endif()
+target_compile_definitions(opensource-communicator PRIVATE
+    APP_VERSION="${PROJECT_VERSION}${OSC_VERSION_SUFFIX}"
+)
 
 install(TARGETS opensource-communicator RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 

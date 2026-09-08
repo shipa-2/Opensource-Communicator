@@ -55,6 +55,7 @@ public:
     void removeSavedAccount(const QString &login);
 
     void login();
+    void reconnectSession();
     void logout();
     void enterDemoMode();
     void leaveDemoMode();

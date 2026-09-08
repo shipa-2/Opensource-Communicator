@@ -4,6 +4,8 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLoggingCategory>
+#include <QNetworkProxy>
+#include <QPointer>
 #include <QSslConfiguration>
 #include <QSslError>
 #include <QSslSocket>
@@ -34,7 +36,33 @@ QJsonObject redactPassword(const QJsonObject &obj)
   }
   return copy;
 }
+
+QString socketStateName(QAbstractSocket::SocketState state)
+{
+  switch (state) {
+  case QAbstractSocket::UnconnectedState:
+    return QStringLiteral("Unconnected");
+  case QAbstractSocket::HostLookupState:
+    return QStringLiteral("HostLookup");
+  case QAbstractSocket::ConnectingState:
+    return QStringLiteral("Connecting");
+  case QAbstractSocket::ConnectedState:
+    return QStringLiteral("Connected");
+  case QAbstractSocket::BoundState:
+    return QStringLiteral("Bound");
+  case QAbstractSocket::ClosingState:
+    return QStringLiteral("Closing");
+  case QAbstractSocket::ListeningState:
+    return QStringLiteral("Listening");
+  }
+  return QStringLiteral("Unknown");
+}
 } // namespace
+
+void WsConnection::emitTrace(const QString &line)
+{
+  qCInfo(lcWs) << line;
+}
 
 WsConnection::WsConnection(QObject *parent)
     : QObject(parent)
@@ -63,9 +91,6 @@ void WsConnection::applyInsecureTlsOptions(QWebSocket *socket, const QUrl &url)
   QSslConfiguration sslConfig = socket->sslConfiguration();
   sslConfig.setPeerVerifyMode(QSslSocket::VerifyNone);
   socket->setSslConfiguration(sslConfig);
-  connect(socket, &QWebSocket::sslErrors, socket, [socket](const QList<QSslError> &errors) {
-    socket->ignoreSslErrors(errors);
-  });
 }
 
 void WsConnection::openSocket(const QUrl &url)
@@ -79,6 +104,7 @@ void WsConnection::openSocket(const QUrl &url)
 
   m_connectUrl = url;
   m_awaitingHello = true;
+  m_connectedOnce = false;
 
   m_socket = new QWebSocket(QString(), QWebSocketProtocol::VersionLatest, this);
   connect(m_socket, &QWebSocket::connected, this, &WsConnection::onSocketConnected);
@@ -90,11 +116,49 @@ void WsConnection::openSocket(const QUrl &url)
   connect(m_socket, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error),
           this, &WsConnection::onSocketError);
 #endif
+  connect(m_socket, &QWebSocket::sslErrors, this, [this](const QList<QSslError> &errors) {
+    for (const QSslError &err : errors) {
+      emitTrace(QStringLiteral("TLS: %1").arg(err.errorString()));
+    }
+    if (m_ignoreInsecureTls && m_socket) {
+      m_socket->ignoreSslErrors(errors);
+    }
+  });
+  connect(m_socket, &QWebSocket::stateChanged, this, [this](QAbstractSocket::SocketState state) {
+    emitTrace(QStringLiteral("socket → %1").arg(socketStateName(state)));
+  });
 
   applyInsecureTlsOptions(m_socket, url);
 
-  qCInfo(lcWs) << "Connecting to" << url;
+  if (!m_bindInterfaceName.isEmpty()) {
+    // QWebSocket cannot bind to a source address. Interface selection still applies
+    // to WebRTC media (CallManager binds libjuice), signaling uses default routing.
+    emitTrace(QStringLiteral("interface %1 applies to WebRTC media only; WS uses default routing")
+                  .arg(m_bindInterfaceName));
+  }
+
+  const QNetworkProxy appProxy = QNetworkProxy::applicationProxy();
+  if (appProxy.type() != QNetworkProxy::NoProxy) {
+    emitTrace(QStringLiteral("application proxy %1:%2 type=%3 — WS uses direct connection")
+                  .arg(appProxy.hostName())
+                  .arg(appProxy.port())
+                  .arg(static_cast<int>(appProxy.type())));
+  }
+  m_socket->setProxy(QNetworkProxy::NoProxy);
+
+  emitTrace(QStringLiteral("open %1 (host=%2 path=%3 query=%4)")
+                .arg(url.toString(QUrl::FullyEncoded), url.host(), url.path(), url.query(QUrl::FullyEncoded)));
   m_socket->open(url);
+
+  QPointer<QWebSocket> socketGuard(m_socket);
+  QTimer::singleShot(25000, this, [this, socketGuard]() {
+    if (!socketGuard || m_connectedOnce || !m_awaitingHello) {
+      return;
+    }
+    qCWarning(lcWs) << "WebSocket connect timed out for" << m_connectUrl;
+    emitTrace(QStringLiteral("connect timeout (25s)"));
+    failInitialConnect(QStringLiteral("connect timeout"));
+  });
 }
 
 void WsConnection::tryInsecureAlternateScheme()
@@ -109,19 +173,25 @@ void WsConnection::tryInsecureAlternateScheme()
   }
 
   m_insecureAlternateTried = true;
-  qCInfo(lcWs) << "Insecure connect failed, retrying with" << alternate;
+  emitTrace(QStringLiteral("retry alternate scheme %1").arg(alternate.toString(QUrl::FullyEncoded)));
   openSocket(alternate);
 }
 
-void WsConnection::connectToServer(const QUrl &url, const QString &ssoLogin, bool ignoreInsecureTls)
+void WsConnection::connectToServer(const QUrl &url, const QString &ssoLogin, bool ignoreInsecureTls,
+                                     const QString &bindInterface)
 {
   if (m_socket) {
     return;
   }
 
   m_ssoLogin = ssoLogin;
+  m_bindInterfaceName = bindInterface;
   m_ignoreInsecureTls = ignoreInsecureTls;
   m_insecureAlternateTried = false;
+  emitTrace(QStringLiteral("connectToServer scheme=%1 host=%2 path=%3 tls-ignore=%4 bind=%5")
+                .arg(url.scheme(), url.host(), url.path())
+                .arg(ignoreInsecureTls ? QStringLiteral("yes") : QStringLiteral("no"))
+                .arg(bindInterface.isEmpty() ? QStringLiteral("auto") : bindInterface));
   openSocket(url);
 }
 
@@ -152,6 +222,7 @@ void WsConnection::resetState()
   m_ignoreInsecureTls = false;
   m_insecureAlternateTried = false;
   m_connectedOnce = false;
+  m_bindInterfaceName.clear();
   m_connectUrl = QUrl();
 
   for (auto it = m_pendingRequests.begin(); it != m_pendingRequests.end(); ++it) {
@@ -170,6 +241,8 @@ void WsConnection::sendRaw(const QJsonObject &message)
   }
 
   qCInfo(lcWs) << "Send:" << QJsonDocument(redactPassword(message)).toJson(QJsonDocument::Compact);
+  emitTrace(QStringLiteral("→ %1")
+                .arg(QString::fromUtf8(QJsonDocument(redactPassword(message)).toJson(QJsonDocument::Compact))));
   m_socket->sendTextMessage(QJsonDocument(message).toJson(QJsonDocument::Compact));
 
   m_noopTimer.stop();
@@ -185,6 +258,7 @@ void WsConnection::sendNoop()
 
 void WsConnection::failInitialConnect(const QString &error)
 {
+  emitTrace(QStringLiteral("connect failed: %1 (%2)").arg(error, m_connectUrl.toString(QUrl::FullyEncoded)));
   if (m_socket) {
     m_socket->disconnect(this);
     m_socket->deleteLater();
@@ -197,6 +271,7 @@ void WsConnection::failInitialConnect(const QString &error)
 void WsConnection::onSocketConnected()
 {
   m_connectedOnce = true;
+  emitTrace(QStringLiteral("WebSocket connected, sending hello"));
   QJsonObject hello;
   if (!m_sid.isEmpty()) {
     hello.insert(QStringLiteral("sid"), m_sid);
@@ -231,13 +306,12 @@ void WsConnection::onSocketConnected()
 
 void WsConnection::handleHelloResponse(const QJsonObject &data)
 {
-  qCInfo(lcWs) << "Received:" << QJsonDocument(data).toJson(QJsonDocument::Compact);
-
   const QString status = data.value(QStringLiteral("status")).toString();
   if (status == QStringLiteral("ok")) {
     if (data.contains(QStringLiteral("sid"))) {
       m_sid = data.value(QStringLiteral("sid")).toString();
       m_awaitingHello = false;
+      emitTrace(QStringLiteral("hello ok, sid=%1").arg(m_sid));
       if (!m_ssoLogin.isEmpty()) {
         resolveUser(m_ssoLogin);
         return;
@@ -263,8 +337,6 @@ void WsConnection::handleHelloResponse(const QJsonObject &data)
 
 void WsConnection::handleRuntimeMessage(const QJsonObject &data)
 {
-  qCInfo(lcWs) << "Received:" << QJsonDocument(data).toJson(QJsonDocument::Compact);
-
   if (data.contains(QStringLiteral("bye"))) {
     resetState();
     emit disconnected(QStringLiteral("bye"));
@@ -276,9 +348,11 @@ void WsConnection::handleRuntimeMessage(const QJsonObject &data)
 
 void WsConnection::onSocketTextMessage(const QString &message)
 {
+  emitTrace(QStringLiteral("← %1").arg(message));
+
   const QJsonObject data = QJsonDocument::fromJson(message.toUtf8()).object();
   if (data.isEmpty()) {
-    qCWarning(lcWs) << "Invalid JSON message";
+    emitTrace(QStringLiteral("invalid JSON from server"));
     return;
   }
 
@@ -482,12 +556,14 @@ void WsConnection::onSocketDisconnected()
 
   m_noopTimer.stop();
   if (m_connectedOnce) {
+    emitTrace(QStringLiteral("socket closed (was connected)"));
     resetState();
     emit disconnected(QStringLiteral("socket_closed"));
     return;
   }
 
   if (m_ignoreInsecureTls && !m_insecureAlternateTried) {
+    emitTrace(QStringLiteral("disconnect before connect, trying alternate scheme"));
     tryInsecureAlternateScheme();
     return;
   }
@@ -503,11 +579,13 @@ void WsConnection::onSocketError(QAbstractSocket::SocketError)
   }
 
   if (m_connectedOnce) {
+    emitTrace(QStringLiteral("socket error: %1").arg(m_socket->errorString()));
     emit connectionFailed(m_socket->errorString());
     return;
   }
 
   if (m_ignoreInsecureTls && !m_insecureAlternateTried) {
+    emitTrace(QStringLiteral("socket error before connect: %1").arg(m_socket->errorString()));
     tryInsecureAlternateScheme();
     return;
   }

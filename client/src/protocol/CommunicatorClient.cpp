@@ -248,12 +248,46 @@ void CommunicatorClient::login()
   m_chat->loadStoredOscPeers();
 
   emit stateChanged(AppState::Connecting);
-  emit statusMessage(tr("Подключение к %1...").arg(buildWebSocketUrl()));
+  const QString urlStr = buildWebSocketUrl();
+  const QUrl url(urlStr);
+  qCInfo(lcClient) << "login session" << m_credentials.login << m_credentials.domain << m_credentials.partner;
+  qCInfo(lcClient) << "WS URL" << urlStr << "host" << url.host() << "path" << url.path() << "query"
+                   << url.query(QUrl::FullyEncoded);
+  emit statusMessage(tr("Подключение к %1...").arg(urlStr));
 
+  const QString bindInterface = m_appSettings.networkInterfaceName();
 #ifdef OSC_DEBUG_BUILD
-  m_api.initialize(QUrl(buildWebSocketUrl()), {}, m_credentials.ignoreInsecureTls);
+  m_api.initialize(QUrl(urlStr), {}, m_credentials.ignoreInsecureTls, bindInterface);
 #else
-  m_api.initialize(QUrl(buildWebSocketUrl()));
+  m_api.initialize(QUrl(urlStr), {}, false, bindInterface);
+#endif
+}
+
+void CommunicatorClient::reconnectSession()
+{
+  if (m_demoMode) {
+    return;
+  }
+
+  if (m_credentials.login.trimmed().size() <= 2) {
+    return;
+  }
+
+  if (m_credentials.domain.isEmpty()) {
+    m_credentials.domain = m_credentials.login.section(QLatin1Char('@'), 1);
+  }
+
+  emit stateChanged(AppState::Connecting);
+  const QString urlStr = buildWebSocketUrl();
+  const QUrl url(urlStr);
+  qCInfo(lcClient) << "reconnect session via" << m_appSettings.networkInterfaceName() << urlStr;
+  emit statusMessage(tr("Переподключение к %1...").arg(urlStr));
+
+  const QString bindInterface = m_appSettings.networkInterfaceName();
+#ifdef OSC_DEBUG_BUILD
+  m_api.initialize(QUrl(urlStr), {}, m_credentials.ignoreInsecureTls, bindInterface);
+#else
+  m_api.initialize(QUrl(urlStr), {}, false, bindInterface);
 #endif
 }
 
@@ -416,12 +450,12 @@ void CommunicatorClient::handlePresencePayload(const QJsonObject &payload)
         entry.value(QStringLiteral("im")).toObject().value(QStringLiteral("status")).toString();
 
     QString presence;
-    if (imPresence == QStringLiteral("away")
-        || imPresence == QStringLiteral("busy")
-        || imPresence == QStringLiteral("invisible")) {
-      // Manual IM presence takes precedence over the still-online voice service.
+    if (imPresence == QStringLiteral("invisible")) {
+      // Deliberately hidden: stays hidden even during a call.
       presence = imPresence;
     } else if (voicePresence == QStringLiteral("in-call")) {
+      // "На линии" beats away/busy: the PBX marks IM idle automatically, so an
+      // in-call colleague would otherwise show as "Нет на месте".
       presence = voicePresence;
     } else if (!imPresence.isEmpty()) {
       presence = imPresence;
@@ -451,6 +485,7 @@ void CommunicatorClient::onConnectionFailed(const QString &error)
 {
   setServerVideoEnabled(false);
   m_addressBook->clear();
+  qCWarning(lcClient) << "Connection failed:" << error;
   emit statusMessage(tr("Ошибка соединения: %1").arg(error));
   emit stateChanged(AppState::Offline);
 }

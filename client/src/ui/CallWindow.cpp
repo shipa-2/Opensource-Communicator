@@ -87,7 +87,8 @@ protected:
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
 
-    const QRectF outer = QRectF(1.0, 1.0, width() - 2.0, height() - 2.0);
+    // 5px inset keeps the widest stroke (8px speaking glow = 4px outward) inside the widget.
+    const QRectF outer = QRectF(5.0, 5.0, width() - 10.0, height() - 10.0);
 
     if (!m_photo.isNull()) {
       const QColor bg = m_baseColor.isEmpty() ? palette().color(QPalette::Midlight) : QColor(m_baseColor);

@@ -12,6 +12,7 @@
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QIntValidator>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 LoginDialog::LoginDialog(itl::CommunicatorClient *client, QWidget *parent)
@@ -45,9 +46,29 @@ LoginDialog::LoginDialog(itl::CommunicatorClient *client, QWidget *parent)
   m_passwordEdit->setEchoMode(QLineEdit::Password);
   m_passwordEdit->setPlaceholderText(QStringLiteral("demo"));
 
+  m_showPasswordBtn = new QToolButton;
+  m_showPasswordBtn->setText(QStringLiteral("👁"));
+  m_showPasswordBtn->setToolTip(tr("Удерживайте, чтобы показать пароль"));
+  m_showPasswordBtn->setAutoRaise(true);
+  m_showPasswordBtn->setFocusPolicy(Qt::NoFocus);
+
+  auto *passwordRow = new QWidget;
+  auto *passwordLayout = new QHBoxLayout(passwordRow);
+  passwordLayout->setContentsMargins(0, 0, 0, 0);
+  passwordLayout->setSpacing(6);
+  passwordLayout->addWidget(m_passwordEdit, 1);
+  passwordLayout->addWidget(m_showPasswordBtn);
+
   form->addRow(tr("Логин"), m_loginCombo);
-  form->addRow(tr("Пароль"), m_passwordEdit);
+  form->addRow(tr("Пароль"), passwordRow);
   layout->addLayout(form);
+
+  connect(m_showPasswordBtn, &QToolButton::pressed, this, [this]() {
+    m_passwordEdit->setEchoMode(QLineEdit::Normal);
+  });
+  connect(m_showPasswordBtn, &QToolButton::released, this, [this]() {
+    m_passwordEdit->setEchoMode(QLineEdit::Password);
+  });
 
   m_rememberCheck = new QCheckBox(tr("Запомнить меня"));
   m_rememberCheck->setChecked(true);

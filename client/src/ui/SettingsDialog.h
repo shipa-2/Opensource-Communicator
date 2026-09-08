@@ -1,5 +1,6 @@
 #pragma once
 
+#include "logging/SessionLog.h"
 #include "settings/AppSettings.h"
 
 #include <QDialog>
@@ -37,10 +38,16 @@ private slots:
     void onShareAvatar();
     void onShareTheme();
     void updateShareButtons();
+    void onNetworkInterfaceActivated(int index);
+    void onSaveLogAll();
+    void onSaveLogMedia();
+    void onSaveLogNetwork();
+    void onCheckUpdates();
 
 private:
     bool hasSharePeers() const;
     void showTransientTip(const QString &text, QWidget *anchor);
+    void saveSessionLog(itl::SessionLog::Scope scope, QWidget *anchor);
     void openShareTransferDialog(const QString &title, const QString &prompt, const QString &acceptLabel,
                                  const std::function<void(const QString &peer, const QString &displayName)> &onAccepted);
 
@@ -85,6 +92,7 @@ private:
     QString m_selfName;
 
     class QCheckBox *m_recordingEnabledCheck = nullptr;
+    class QCheckBox *m_recordingUseNamesCheck = nullptr;
     class QCheckBox *m_recordingDualTrackCheck = nullptr;
     class QCheckBox *m_recordingCombinedCheck = nullptr;
     class QLineEdit *m_recordingDirEdit = nullptr;
@@ -99,4 +107,8 @@ private:
     class QSlider *m_wallpaperListOpacitySlider = nullptr;
     class QLabel *m_wallpaperListOpacityValue = nullptr;
     class QWidget *m_wallpaperListOpacityRow = nullptr;
+
+    class QPushButton *m_checkUpdatesBtn = nullptr;
+    class QLabel *m_updateStatus = nullptr;
+    class QNetworkAccessManager *m_updateNetwork = nullptr;
 };
