@@ -77,6 +77,8 @@ public:
     void setRecordingName(const QString &leg, const QString &name);
     void pauseExternalMedia();
     void resumeExternalMedia();
+    void playIncomingRing();
+    void stopIncomingRingPlayback();
     void sendDtmf(const QString &leg, QChar digit);
     void sendVideo(const QString &leg, bool send);
     void toggleSendVideo(const QString &leg);

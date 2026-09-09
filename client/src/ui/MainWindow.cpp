@@ -16,6 +16,7 @@
 #include "PresenceSelector.h"
 #include "calls/CallManager.h"
 #include "chat/ChatManager.h"
+#include "audio/JabraHeadset.h"
 #include "audio/MessageNotifyPlayer.h"
 #include "audio/AudioDeviceUtils.h"
 #include "demo/DemoData.h"
@@ -1164,6 +1165,29 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
                 && isSamePeer(m_callTracking.value(m_demoCallLeg).peer, key)) {
               m_callWindow->setAvatarLetter(m_contacts[key].name);
             }
+          });
+  connect(m_client->chat(), &itl::ChatManager::demoIncomingCallRequested, this,
+          [this](const QString &peer, int delaySeconds) {
+            if (!m_demoMode || !m_online || delaySeconds < 1) {
+              return;
+            }
+            if (!m_demoIncomingCallTimer) {
+              m_demoIncomingCallTimer = new QTimer(this);
+              m_demoIncomingCallTimer->setSingleShot(true);
+              connect(m_demoIncomingCallTimer, &QTimer::timeout, this, [this]() {
+                if (!m_demoMode || !m_online || !m_demoCallLeg.isEmpty()) {
+                  return;
+                }
+                const QString callPeer = m_demoIncomingCallPeer;
+                if (callPeer.isEmpty()) {
+                  return;
+                }
+                startDemoIncomingCallSimulation(callPeer, displayNameForPeer(callPeer),
+                                                detailForPeer(callPeer));
+              });
+            }
+            m_demoIncomingCallPeer = peer;
+            m_demoIncomingCallTimer->start(delaySeconds * 1000);
           });
   connect(m_client->chat(), &itl::ChatManager::historyLoaded, this, [this](const QString &) {
     refreshAllContactPeerColors();
@@ -3010,6 +3034,7 @@ void MainWindow::discoverDemoOscAdmin()
 
 void MainWindow::exitDemoInterface()
 {
+  cancelDemoIncomingCallRequest();
   stopDemoCallSimulation();
   if (m_demoOscDiscoverTimer) {
     m_demoOscDiscoverTimer->stop();
@@ -3028,11 +3053,22 @@ void MainWindow::exitDemoInterface()
   setOnlineUi(false);
 }
 
+void MainWindow::cancelDemoIncomingCallRequest()
+{
+  if (m_demoIncomingCallTimer) {
+    m_demoIncomingCallTimer->stop();
+  }
+  m_demoIncomingCallPeer.clear();
+}
+
 void MainWindow::stopDemoCallSimulation()
 {
+  cancelDemoIncomingCallRequest();
   if (!m_demoCallLeg.isEmpty()) {
+    m_calls->stopIncomingRingPlayback();
     m_calls->resumeExternalMedia();
   }
+  itl::JabraHeadset::instance().clear();
   if (m_demoVoiceTimer) {
     m_demoVoiceTimer->stop();
   }
@@ -3041,7 +3077,29 @@ void MainWindow::stopDemoCallSimulation()
     m_callWindow->setRemoteSpeakingIndicator(false);
   }
   m_demoCallLeg.clear();
+  m_activeIncomingLeg.clear();
   leaveCallPresence();
+}
+
+void MainWindow::startDemoIncomingCallSimulation(const QString &peer, const QString &displayName,
+                                                 const QString &detail)
+{
+  if (!m_demoMode || !m_online || !m_demoCallLeg.isEmpty()) {
+    return;
+  }
+
+  stopDemoCallSimulation();
+  m_demoCallLeg = QStringLiteral("demo-call");
+  m_activeIncomingLeg = m_demoCallLeg;
+  m_activeLeg.clear();
+  loadCallNotes(peer);
+  m_callWindow->showIncoming(peer, displayName, detail);
+  m_callWindow->setAvatarColor(m_client->chat()->peerColor(peer));
+  m_callWindow->setAvatarPixmap(m_client->chat()->peerAvatar(peer));
+  m_calls->pauseExternalMedia();
+  m_calls->playIncomingRing();
+  beginCallTracking(m_demoCallLeg, peer, displayName, true);
+  enterCallPresence();
 }
 
 void MainWindow::startDemoVoiceSimulation()
@@ -3081,12 +3139,14 @@ void MainWindow::startDemoCallSimulation(const QString &peer, const QString &dis
       return;
     }
     m_callWindow->updateState(QStringLiteral("ringing"), {});
+    itl::JabraHeadset::instance().showRinging();
     QTimer::singleShot(1800, this, [this, displayName]() {
       if (!m_demoMode || m_activeLeg != m_demoCallLeg) {
         return;
       }
       m_callWindow->updateState(QStringLiteral("connected"), displayName);
       markCallConnected(m_demoCallLeg);
+      itl::JabraHeadset::instance().showInCall();
       m_callWindow->beginConversationTimer();
       startDemoVoiceSimulation();
     });
@@ -3776,13 +3836,14 @@ void MainWindow::onChatFromRow(const QString &peer)
 void MainWindow::onHangup()
 {
   if (m_demoMode) {
-    const QString leg = m_activeLeg;
+    const QString leg = !m_activeLeg.isEmpty() ? m_activeLeg : m_activeIncomingLeg;
+    const bool incomingRinging = m_activeLeg.isEmpty() && !m_activeIncomingLeg.isEmpty();
     stopDemoCallSimulation();
     m_activeLeg.clear();
     m_activeIncomingLeg.clear();
     m_onHold = false;
     if (!leg.isEmpty()) {
-      finalizeCallHistory(leg, QStringLiteral("ended"));
+      finalizeCallHistory(leg, incomingRinging ? QStringLiteral("no-answer") : QStringLiteral("ended"));
     }
     m_callWindow->closeCall();
     return;
@@ -3797,6 +3858,21 @@ void MainWindow::onHangup()
 
 void MainWindow::onAnswer()
 {
+  if (m_demoMode && m_activeIncomingLeg == m_demoCallLeg && !m_demoCallLeg.isEmpty()) {
+    const QString displayName = m_callTracking.contains(m_demoCallLeg)
+                                    ? m_callTracking.value(m_demoCallLeg).displayName
+                                    : m_callWindow->peer();
+    m_calls->stopIncomingRingPlayback();
+    m_activeLeg = m_demoCallLeg;
+    m_activeIncomingLeg.clear();
+    m_callWindow->updateState(QStringLiteral("connected"), displayName);
+    markCallConnected(m_demoCallLeg);
+    itl::JabraHeadset::instance().showInCall();
+    m_callWindow->beginConversationTimer();
+    startDemoVoiceSimulation();
+    return;
+  }
+
   if (!m_activeIncomingLeg.isEmpty()) {
     const itl::CallSession *session = m_calls->call(m_activeIncomingLeg);
     if (session && session->videoCall) {
@@ -3829,6 +3905,11 @@ void MainWindow::onHold()
   if (m_demoMode) {
     m_onHold = !m_onHold;
     m_callWindow->updateState(m_onHold ? QStringLiteral("hold") : QStringLiteral("resumed"), {});
+    if (m_onHold) {
+      itl::JabraHeadset::instance().showHold();
+    } else {
+      itl::JabraHeadset::instance().showInCall();
+    }
     return;
   }
 

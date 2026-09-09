@@ -128,6 +128,8 @@ signals:
     void oscPeerDiscovered(const QString &peer);
     /// Demo only: outbound «Теперь ты …» renames the contact in the UI.
     void demoPeerRenameRequested(const QString &peer, const QString &newName);
+    /// Demo only: outbound «call me N» schedules an incoming call after N seconds.
+    void demoIncomingCallRequested(const QString &peer, int delaySeconds);
 
 private:
     InstantMessage parseMessage(const QJsonObject &msg) const;

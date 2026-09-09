@@ -80,7 +80,11 @@ private:
     void sendDtmfDigit(const QString &digit);
     void updateWindowHeightForDtmf(bool expanded);
     void resetCallWindowLayout();
+    void resetDtmfPanel();
     void applyFixedCallWidth();
+    void captureStandardCallHeight();
+    void applyCollapsedCallBounds();
+    void updateDtmfExpandedBounds();
     void updateCollapsedMinimumHeight();
     void updateHoldButtonEnabled();
     static QString formatDuration(int seconds);
@@ -130,6 +134,7 @@ private:
     bool m_speaking = false;
     bool m_dtmfEnabled = false;
     bool m_dtmfExpanded = false;
+    int m_standardCallHeight = kNormalHeight;
     int m_minCollapsedHeight = kNormalHeight;
     int m_collapsedHeight = kNormalHeight;
     QString m_dtmfSent;

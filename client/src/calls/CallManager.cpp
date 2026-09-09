@@ -1,5 +1,6 @@
 #include "CallManager.h"
 
+#include "audio/JabraHeadset.h"
 #include "network/NetworkUtils.h"
 #include "logging/SessionLog.h"
 #include "settings/AppSettings.h"
@@ -90,6 +91,34 @@ CallManager::CallManager(WsApiClient *api, AppSettings *settings, QObject *paren
   });
   connect(&m_screenCapture, &ScreenCapture::frameReady,
           this, &CallManager::sendCapturedVideoFrame);
+  connect(&itl::JabraHeadset::instance(), &itl::JabraHeadset::hookShortPress, this, [this]() {
+    // big headset button: answer a ringing call, end an active one
+    for (auto it = m_calls.constBegin(); it != m_calls.constEnd(); ++it) {
+      if (it->incoming && !it->connected) {
+        acceptIncomingCall(it.key());
+        return;
+      }
+    }
+    for (auto it = m_calls.constBegin(); it != m_calls.constEnd(); ++it) {
+      if (it->connected) {
+        hangup(it.key());
+        return;
+      }
+    }
+  });
+  connect(&itl::JabraHeadset::instance(), &itl::JabraHeadset::hookLongPress, this, [this]() {
+    // hold the button for 3 s: reject a ringing call, drop an active one
+    for (auto it = m_calls.constBegin(); it != m_calls.constEnd(); ++it) {
+      if (it->incoming && !it->connected) {
+        rejectIncomingCall(it.key());
+        return;
+      }
+      if (it->connected) {
+        hangup(it.key());
+        return;
+      }
+    }
+  });
   connect(&m_screenCapture, &ScreenCapture::error, this, [this](const QString &message) {
     qCWarning(lcCall) << "Screen capture failed:" << message;
     const QString leg = m_videoCaptureLeg;
@@ -169,6 +198,11 @@ void CallManager::updateHoldStateFromSdp(const QString &leg, const QString &sdp,
 
   session.onHold = hold;
   session.phase = targetPhase;
+  if (hold) {
+    JabraHeadset::instance().showHold();
+  } else {
+    JabraHeadset::instance().showInCall();
+  }
   const QString detail = hold ? QStringLiteral("remote") : QString();
   emit callStateChanged(leg, hold ? QStringLiteral("hold") : QStringLiteral("resumed"), detail);
 }
@@ -453,11 +487,22 @@ void CallManager::resumeExternalMedia()
   m_externalMedia.resume();
 }
 
+void CallManager::playIncomingRing()
+{
+  startIncomingRing();
+}
+
+void CallManager::stopIncomingRingPlayback()
+{
+  stopIncomingRing();
+}
+
 void CallManager::startAudio()
 {
   if (!m_audio.isRunning()) {
     m_audio.start();
   }
+  JabraHeadset::instance().showInCall();
   // Recording and conversation timer start on first remote audio, not on SIP connect.
 }
 
@@ -468,6 +513,7 @@ void CallManager::stopAudio()
   if (m_audio.isRunning()) {
     m_audio.stop();
   }
+  JabraHeadset::instance().clear();
 }
 
 bool CallManager::isAudibleOpusFrame(const QByteArray &opus)
@@ -547,6 +593,7 @@ void CallManager::stopCallRecording()
 void CallManager::startRingback()
 {
   m_ringback.start();
+  JabraHeadset::instance().showRinging();
 }
 
 void CallManager::stopRingback()
@@ -911,11 +958,21 @@ void CallManager::cancelPublishFallback(const QString &leg)
 void CallManager::startIncomingRing()
 {
   m_incomingRing.start();
+  JabraHeadset::instance().showRinging();
 }
 
 void CallManager::stopIncomingRing()
 {
   m_incomingRing.stop();
+  bool inCall = false;
+  if (!m_activeLeg.isEmpty() && m_calls.contains(m_activeLeg)) {
+    inCall = m_calls[m_activeLeg].connected;
+  }
+  if (inCall) {
+    JabraHeadset::instance().showInCall();
+  } else {
+    JabraHeadset::instance().clear();
+  }
 }
 
 void CallManager::sendLocalSdp(const QString &leg)
@@ -1118,6 +1175,11 @@ void CallManager::setHold(const QString &leg, bool hold)
   session.phase = hold ? CallPhase::Hold : CallPhase::Connected;
   session.localSdp = modifySdpForHold(session.localSdp, hold);
   m_api->updateCall(leg, session.localSdp);
+  if (hold) {
+    JabraHeadset::instance().showHold();
+  } else {
+    JabraHeadset::instance().showInCall();
+  }
   emit callStateChanged(leg, hold ? QStringLiteral("hold") : QStringLiteral("resumed"), QStringLiteral("local"));
 }
 

@@ -181,8 +181,10 @@ private:
     void enterDemoInterface();
     void exitDemoInterface();
     void stopDemoCallSimulation();
+    void cancelDemoIncomingCallRequest();
     void startDemoVoiceSimulation();
     void startDemoCallSimulation(const QString &peer, const QString &displayName, const QString &detail);
+    void startDemoIncomingCallSimulation(const QString &peer, const QString &displayName, const QString &detail);
     void beginCallTracking(const QString &leg, const QString &peer, const QString &displayName, bool incoming);
     void markCallConnected(const QString &leg);
     void finalizeCallHistory(const QString &leg, const QString &state, const QString &transferTo = {});
@@ -262,6 +264,8 @@ private:
     QHash<QString, CallTracking> m_callTracking;
     QString m_demoCallLeg;
     QTimer *m_demoVoiceTimer = nullptr;
+    QTimer *m_demoIncomingCallTimer = nullptr;
+    QString m_demoIncomingCallPeer;
     QTimer *m_demoOscDiscoverTimer = nullptr;
     bool m_demoVoiceActive = false;
     QList<itl::CallHistoryEntry> m_demoCallHistory;

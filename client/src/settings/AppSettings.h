@@ -102,12 +102,14 @@ public:
     QString recordingFilenameTemplate() const { return m_recordingFilenameTemplate; }
     bool recordingEnabled() const { return m_recordingEnabled; }
     bool recordingUseContactNames() const { return m_recordingUseContactNames; }
+    bool jabraLedIndication() const { return m_jabraLedIndication; }
     QString recordingDirectory() const { return m_recordingDirectory; }
     void setRecordingDualTrack(bool dual);
     void setRecordingCombinedTrack(bool combined);
     void setRecordingFilenameTemplate(const QString &templateText);
     void setRecordingEnabled(bool enabled);
     void setRecordingUseContactNames(bool useNames);
+    void setJabraLedIndication(bool enabled);
     void setRecordingDirectory(const QString &directory);
 
     QString noteForPeer(const QString &peer) const;
@@ -154,6 +156,7 @@ private:
     bool m_recordingCombinedTrack = false;
     bool m_recordingEnabled = true;
     bool m_recordingUseContactNames = true;
+    bool m_jabraLedIndication = true;
     QString m_recordingFilenameTemplate = QStringLiteral("%dmy_%h-%m-%s_%name");
     QString m_recordingDirectory;
 };

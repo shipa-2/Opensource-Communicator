@@ -73,6 +73,8 @@ add_executable(opensource-communicator
     src/ui/VideoSourceDialog.h
     src/audio/AudioBridge.cpp
     src/audio/AudioBridge.h
+    src/audio/JabraHeadset.cpp
+    src/audio/JabraHeadset.h
     src/audio/CallRecorder.cpp
     src/audio/CallRecorder.h
     src/audio/RingbackPlayer.cpp

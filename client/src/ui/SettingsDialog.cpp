@@ -4,6 +4,7 @@
 #include "WallpaperCropDialog.h"
 #include "audio/AudioDeviceUtils.h"
 #include "audio/IncomingRingPlayer.h"
+#include "audio/JabraHeadset.h"
 #include "audio/RingbackPlayer.h"
 #include "network/NetworkUtils.h"
 #include "calls/CallManager.h"
@@ -112,6 +113,11 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
 
   form->addRow(tr("Микрофон:"), m_inputDevice);
   form->addRow(tr("Динамики:"), m_outputDevice);
+
+  m_jabraIndicationCheck = new QCheckBox(tr("Jabra: индикация звонков на гарнитуре"));
+  m_jabraIndicationCheck->setChecked(m_settings->jabraLedIndication());
+  m_jabraIndicationCheck->setToolTip(tr("Красный индикатор: входящий — вспышки, разговор — ровный, удержание — с мьютом микрофона"));
+  form->addRow(m_jabraIndicationCheck);
 
   auto *ringbackToneRow = new QHBoxLayout;
   m_ringbackPreviewBtn = new QPushButton(QStringLiteral("▶"));
@@ -959,6 +965,8 @@ void SettingsDialog::onAccept()
   m_settings->setIncomingRingCustomPath(m_incomingPath->text().trimmed());
   m_settings->setNetworkInterfaceName(m_networkInterface->currentData().toString());
 
+  m_settings->setJabraLedIndication(m_jabraIndicationCheck->isChecked());
+  itl::JabraHeadset::instance().setLedEnabled(m_settings->jabraLedIndication());
   m_settings->setRecordingEnabled(m_recordingEnabledCheck->isChecked());
   m_settings->setRecordingUseContactNames(m_recordingUseNamesCheck->isChecked());
   m_settings->setRecordingDualTrack(m_recordingDualTrackCheck->isChecked());

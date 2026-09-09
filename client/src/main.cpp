@@ -1,6 +1,7 @@
 #include "ui/MainWindow.h"
 #include "ui/AppInstance.h"
 
+#include "audio/JabraHeadset.h"
 #include "calls/CallManager.h"
 #include "logging/SessionLog.h"
 #include "protocol/CommunicatorClient.h"
@@ -75,8 +76,14 @@ int main(int argc, char *argv[])
   itl::ThemeWatcher themeWatcher(&app);
   itl::NoFullscreenGuard noFullscreenGuard(&app);
 
+  QObject::connect(&app, &QCoreApplication::aboutToQuit, &app, []() {
+    // Never strand the headset with a lit call LED if the client exits mid-call.
+    itl::JabraHeadset::instance().clear();
+  });
+
   itl::CommunicatorClient client;
   itl::CallManager calls(client.api(), &client.appSettings());
+  itl::JabraHeadset::instance().setLedEnabled(client.appSettings().jabraLedIndication());
 
   MainWindow window(&client, &calls);
 

@@ -31,6 +31,9 @@ CallWindow::CallWindow(QWidget *parent)
   connect(m_durationTimer, &QTimer::timeout, this, &CallWindow::onTimerTick);
 
   itl::applyDialogStyle(this);
+  captureStandardCallHeight();
+  m_minCollapsedHeight = m_standardCallHeight;
+  m_collapsedHeight = m_standardCallHeight;
 }
 
 namespace {
@@ -158,6 +161,14 @@ void CallWindow::refreshAppearance()
   itl::refreshDialogStyle(this);
   if (m_dtmfKeypad) {
     m_dtmfKeypad->refreshAppearance();
+  }
+  if (m_mode != Mode::Hidden && !m_videoCall) {
+    captureStandardCallHeight();
+    if (m_dtmfExpanded) {
+      updateDtmfExpandedBounds();
+    } else {
+      applyCollapsedCallBounds();
+    }
   }
 }
 
@@ -357,25 +368,103 @@ void CallWindow::applyFixedCallWidth()
   setMaximumWidth(width);
 }
 
-void CallWindow::updateCollapsedMinimumHeight()
+void CallWindow::captureStandardCallHeight()
 {
-  if (m_dtmfExpanded || !layout()) {
+  if (!layout() || m_videoCall) {
+    m_standardCallHeight = kNormalHeight;
     return;
   }
 
+  const bool answerVisible = m_answerBtn && m_answerBtn->isVisible();
+  const bool holdVisible = m_holdBtn && m_holdBtn->isVisible();
+  const bool transferVisible = m_transferBtn && m_transferBtn->isVisible();
+  const bool dtmfVisible = m_dtmfToggleBtn && m_dtmfToggleBtn->isVisible();
+  const bool timerVisible = m_timerLabel && m_timerLabel->isVisible();
+
+  if (m_answerBtn) {
+    m_answerBtn->setVisible(false);
+  }
+  if (m_holdBtn) {
+    m_holdBtn->setVisible(true);
+  }
+  if (m_transferBtn) {
+    m_transferBtn->setVisible(true);
+  }
+  if (m_dtmfToggleBtn) {
+    m_dtmfToggleBtn->setVisible(!m_videoCall);
+  }
+  if (m_timerLabel) {
+    m_timerLabel->setVisible(true);
+  }
+
+  applyFixedCallWidth();
   layout()->activate();
-  m_minCollapsedHeight = qMax(kNormalHeight, layout()->minimumSize().height());
+  const int layoutMin = layout()->minimumSize().height();
+  const int layoutHint = layout()->sizeHint().height();
+  m_standardCallHeight = qMax(kNormalHeight, qMax(layoutMin, layoutHint));
+
+  if (m_answerBtn) {
+    m_answerBtn->setVisible(answerVisible);
+  }
+  if (m_holdBtn) {
+    m_holdBtn->setVisible(holdVisible);
+  }
+  if (m_transferBtn) {
+    m_transferBtn->setVisible(transferVisible);
+  }
+  if (m_dtmfToggleBtn) {
+    m_dtmfToggleBtn->setVisible(dtmfVisible);
+  }
+  if (m_timerLabel) {
+    m_timerLabel->setVisible(timerVisible);
+  }
+}
+
+void CallWindow::applyCollapsedCallBounds()
+{
+  if (m_videoCall || m_dtmfExpanded) {
+    return;
+  }
+
+  applyFixedCallWidth();
+  if (layout()) {
+    layout()->activate();
+  }
+
+  const int layoutMin = layout() ? layout()->minimumSize().height() : kNormalHeight;
+  m_minCollapsedHeight = qMax(m_standardCallHeight, qMax(kNormalHeight, layoutMin));
+  m_collapsedHeight = qMax(m_collapsedHeight, m_minCollapsedHeight);
   setMinimumHeight(m_minCollapsedHeight);
+  setMaximumHeight(QWIDGETSIZE_MAX);
   if (height() < m_minCollapsedHeight) {
     resize(kNormalWidth, m_minCollapsedHeight);
   }
 }
 
-void CallWindow::resetCallWindowLayout()
+void CallWindow::updateDtmfExpandedBounds()
+{
+  applyFixedCallWidth();
+  if (!layout()) {
+    return;
+  }
+
+  layout()->activate();
+  const int minH = qMax(m_minCollapsedHeight, layout()->minimumSize().height());
+  setMinimumHeight(minH);
+  setMaximumHeight(QWIDGETSIZE_MAX);
+  if (height() < minH) {
+    resize(kNormalWidth, minH);
+  }
+}
+
+void CallWindow::updateCollapsedMinimumHeight()
+{
+  applyCollapsedCallBounds();
+}
+
+void CallWindow::resetDtmfPanel()
 {
   m_dtmfExpanded = false;
-  m_minCollapsedHeight = kNormalHeight;
-  m_collapsedHeight = kNormalHeight;
   if (m_dtmfPanel) {
     m_dtmfPanel->hide();
     m_dtmfPanel->setFixedHeight(0);
@@ -389,11 +478,13 @@ void CallWindow::resetCallWindowLayout()
   if (m_dtmfEdit) {
     m_dtmfEdit->clear();
   }
-  setMinimumWidth(0);
-  setMaximumWidth(QWIDGETSIZE_MAX);
-  setMinimumHeight(0);
-  setMaximumHeight(QWIDGETSIZE_MAX);
-  resize(kNormalWidth, kNormalHeight);
+}
+
+void CallWindow::resetCallWindowLayout()
+{
+  resetDtmfPanel();
+  m_collapsedHeight = m_standardCallHeight;
+  applyCollapsedCallBounds();
 }
 
 void CallWindow::setMode(Mode mode)
@@ -409,23 +500,27 @@ void CallWindow::setMode(Mode mode)
   m_holdBtn->setVisible(showCallControls);
   m_transferBtn->setVisible(showCallControls);
   m_dtmfToggleBtn->setVisible(showCallControls && !m_videoCall);
-  m_timerLabel->setVisible(mode != Mode::Hidden);
+  m_timerLabel->setVisible(mode == Mode::Active || mode == Mode::IncomingAccepted);
+  if (mode == Mode::Incoming || mode == Mode::Outgoing) {
+    m_timerLabel->clear();
+  }
   updateHoldButtonEnabled();
   m_transferBtn->setEnabled(activeCall);
   m_dtmfToggleBtn->setEnabled(activeCall);
   m_dtmfEnabled = activeCall;
 
-  if (activeCall) {
+  if (mode == Mode::Hidden) {
+    setMinimumSize(0, 0);
+    setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+  } else if (m_videoCall) {
     applyFixedCallWidth();
-  }
-
-  if (!activeCall) {
-    m_dtmfSent.clear();
-    resetCallWindowLayout();
-  }
-
-  if (showCallControls) {
-    updateCollapsedMinimumHeight();
+    setMinimumHeight(kNormalHeight);
+  } else {
+    if (!activeCall) {
+      m_dtmfSent.clear();
+      resetDtmfPanel();
+    }
+    applyCollapsedCallBounds();
   }
 }
 
@@ -491,8 +586,6 @@ void CallWindow::setDtmfPanelVisible(bool visible)
 
   if (m_dtmfPanel) {
     if (showPanel) {
-      setMinimumHeight(0);
-      setMaximumHeight(QWIDGETSIZE_MAX);
       m_dtmfPanel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
       m_dtmfPanel->setMinimumHeight(0);
       m_dtmfPanel->setMaximumHeight(QWIDGETSIZE_MAX);
@@ -523,8 +616,6 @@ void CallWindow::updateWindowHeightForDtmf(bool expanded)
 
   if (expanded) {
     m_dtmfExpanded = true;
-    setMinimumHeight(0);
-    setMaximumHeight(QWIDGETSIZE_MAX);
     if (layout()) {
       layout()->activate();
     }
@@ -533,25 +624,20 @@ void CallWindow::updateWindowHeightForDtmf(bool expanded)
         return;
       }
       m_dtmfPanel->adjustSize();
-      const int panelHeight = m_dtmfPanel->sizeHint().height();
-      resize(kNormalWidth, m_collapsedHeight + panelHeight + layout()->spacing());
+      updateDtmfExpandedBounds();
+      const int minH = minimumHeight();
+      resize(kNormalWidth, qMax(height(), minH));
     });
     return;
   }
 
   m_dtmfExpanded = false;
-  const int targetHeight = qMax(m_collapsedHeight, m_minCollapsedHeight);
   if (layout()) {
     layout()->activate();
   }
-  QTimer::singleShot(0, this, [this, targetHeight]() {
-    applyFixedCallWidth();
-    setFixedHeight(targetHeight);
-    QTimer::singleShot(0, this, [this, targetHeight]() {
-      setMinimumHeight(m_minCollapsedHeight);
-      setMaximumHeight(QWIDGETSIZE_MAX);
-      resize(kNormalWidth, targetHeight);
-    });
+  QTimer::singleShot(0, this, [this]() {
+    applyCollapsedCallBounds();
+    resize(kNormalWidth, m_minCollapsedHeight);
   });
 }
 
@@ -817,12 +903,11 @@ void CallWindow::showOutgoing(const QString &peer, const QString &displayName, c
   m_nameLabel->setText(displayName);
   m_detailLabel->setText(detail);
   m_statusLabel->setText(tr("Дозвон"));
-  m_timerLabel->setText(formatDuration(0));
+  m_timerLabel->clear();
   setAvatarLetter(displayName);
   setMode(Mode::Outgoing);
   stopTimer();
-  applyFixedCallWidth();
-  resize(kNormalWidth, kNormalHeight);
+  applyCollapsedCallBounds();
   show();
   raise();
   activateWindow();
@@ -838,12 +923,11 @@ void CallWindow::showIncoming(const QString &peer, const QString &displayName, c
   m_nameLabel->setText(displayName);
   m_detailLabel->setText(detail);
   m_statusLabel->setText(tr("Входящий"));
-  m_timerLabel->setText(formatDuration(0));
+  m_timerLabel->clear();
   setAvatarLetter(displayName);
   setMode(Mode::Incoming);
   stopTimer();
-  applyFixedCallWidth();
-  resize(kNormalWidth, height() > 0 ? height() : kNormalHeight);
+  applyCollapsedCallBounds();
   show();
   raise();
 }
@@ -859,8 +943,11 @@ void CallWindow::showActive(const QString &peer, const QString &displayName)
   setAvatarLetter(displayName);
   setMode(Mode::Active);
   stopTimer();
-  applyFixedCallWidth();
-  resize(kNormalWidth, m_dtmfExpanded ? height() : m_collapsedHeight);
+  if (m_dtmfExpanded) {
+    applyFixedCallWidth();
+  } else {
+    applyCollapsedCallBounds();
+  }
   show();
 }
 
@@ -871,7 +958,7 @@ void CallWindow::updateState(const QString &state, const QString &detail)
       showOutgoing(m_peer.isEmpty() ? detail : m_peer, detail, m_peer);
     }
     m_statusLabel->setText(tr("Дозвон"));
-    m_timerLabel->setText(formatDuration(0));
+    m_timerLabel->clear();
     return;
   }
   if (state == QStringLiteral("ringing")) {
@@ -893,8 +980,10 @@ void CallWindow::updateState(const QString &state, const QString &detail)
       m_statusLabel->setText(tr("Разговор"));
       setMode(Mode::Active);
       if (m_timerLabel) {
-        m_timerLabel->setText(formatDuration(0));
-        m_timerLabel->setVisible(true);
+        m_timerLabel->setText(tr("Соединение..."));
+      }
+      if (!m_videoCall && !m_dtmfExpanded) {
+        applyCollapsedCallBounds();
       }
       if (!isVisible()) {
         show();

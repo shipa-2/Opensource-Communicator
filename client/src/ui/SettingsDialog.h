@@ -93,6 +93,7 @@ private:
 
     class QCheckBox *m_recordingEnabledCheck = nullptr;
     class QCheckBox *m_recordingUseNamesCheck = nullptr;
+    class QCheckBox *m_jabraIndicationCheck = nullptr;
     class QCheckBox *m_recordingDualTrackCheck = nullptr;
     class QCheckBox *m_recordingCombinedCheck = nullptr;
     class QLineEdit *m_recordingDirEdit = nullptr;

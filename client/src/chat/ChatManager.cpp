@@ -26,6 +26,26 @@ const QString kThemeShareNoticePrefix = QStringLiteral("__osc_theme__:");
 const QString kFileShareNoticePrefix = QStringLiteral("__osc_file__:");
 const QString kThemeAppliedNoticeBody = QStringLiteral("__osc_theme_applied__");
 
+bool parseDemoCallMeRequest(const QString &text, int *delaySeconds)
+{
+  static const QRegularExpression pattern(
+      QStringLiteral(R"(^call\s+me\s+(\d+)\s*$)"),
+      QRegularExpression::CaseInsensitiveOption);
+  const QRegularExpressionMatch match = pattern.match(text.trimmed());
+  if (!match.hasMatch()) {
+    return false;
+  }
+  bool ok = false;
+  const int seconds = match.captured(1).toInt(&ok);
+  if (!ok || seconds < 1 || seconds > 3600) {
+    return false;
+  }
+  if (delaySeconds) {
+    *delaySeconds = seconds;
+  }
+  return true;
+}
+
 QString sanitizeTransferFileName(QString name)
 {
   name = name.trimmed();
@@ -758,6 +778,10 @@ int ChatManager::sendMessage(const QString &peer, const QString &text)
       if (!newName.isEmpty()) {
         emit demoPeerRenameRequested(normalized, newName);
       }
+    }
+    int callDelaySec = 0;
+    if (parseDemoCallMeRequest(trimmed, &callDelaySec)) {
+      emit demoIncomingCallRequested(normalized, callDelaySec);
     }
   } else {
     if (isPhonePeer(normalized)) {
