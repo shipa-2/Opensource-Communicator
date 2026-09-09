@@ -16,7 +16,7 @@
 namespace {
 
 #ifndef APP_VERSION
-#define APP_VERSION "0.4.0"
+#define APP_VERSION "0.4.5"
 #endif
 
 void configureLogging()

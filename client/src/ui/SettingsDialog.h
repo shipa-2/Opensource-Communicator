@@ -2,6 +2,7 @@
 
 #include "logging/SessionLog.h"
 #include "settings/AppSettings.h"
+#include "update/AppUpdater.h"
 
 #include <QDialog>
 #include <QHash>
@@ -43,6 +44,9 @@ private slots:
     void onSaveLogMedia();
     void onSaveLogNetwork();
     void onCheckUpdates();
+    void onAutoUpdateRelease();
+    void onAutoUpdatePreRelease();
+    void startAutoUpdate(const itl::AppUpdater::ChannelOffer &offer, const QString &channelLabel);
 
 private:
     bool hasSharePeers() const;
@@ -50,6 +54,8 @@ private:
     void saveSessionLog(itl::SessionLog::Scope scope, QWidget *anchor);
     void openShareTransferDialog(const QString &title, const QString &prompt, const QString &acceptLabel,
                                  const std::function<void(const QString &peer, const QString &displayName)> &onAccepted);
+    void setUpdateStatusBar(itl::AppUpdater::Phase phase, const QString &detail = {});
+    void clearUpdateStatusBar();
 
 protected:
     void reject() override;
@@ -110,6 +116,14 @@ private:
     class QWidget *m_wallpaperListOpacityRow = nullptr;
 
     class QPushButton *m_checkUpdatesBtn = nullptr;
+    class QPushButton *m_updateReleaseBtn = nullptr;
+    class QPushButton *m_updatePreReleaseBtn = nullptr;
     class QLabel *m_updateStatus = nullptr;
+    class QFrame *m_updateStatusBar = nullptr;
+    class QLabel *m_updateStatusBarTitle = nullptr;
+    class QLabel *m_updateStatusBarDetail = nullptr;
     class QNetworkAccessManager *m_updateNetwork = nullptr;
+    itl::AppUpdater *m_appUpdater = nullptr;
+    itl::AppUpdater::ChannelOffer m_pendingRelease;
+    itl::AppUpdater::ChannelOffer m_pendingPreRelease;
 };

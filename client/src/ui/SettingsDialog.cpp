@@ -11,6 +11,7 @@
 #include "protocol/CommunicatorClient.h"
 #include "settings/AppSettings.h"
 #include "ui/StyleHelper.h"
+#include "update/AppUpdater.h"
 
 #include <QAudioDevice>
 #include <QCheckBox>
@@ -521,11 +522,17 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
   auto *updateLayout = new QVBoxLayout(updateBox);
   updateLayout->setSpacing(6);
   m_checkUpdatesBtn = new QPushButton(tr("Проверить обновления на GitHub"));
+  m_updateReleaseBtn = new QPushButton(tr("Обновить до Release"));
+  m_updatePreReleaseBtn = new QPushButton(tr("Обновить до Pre-Release"));
+  m_updateReleaseBtn->setVisible(false);
+  m_updatePreReleaseBtn->setVisible(false);
   m_updateStatus = new QLabel(tr("Проверка не выполнялась"));
   m_updateStatus->setWordWrap(true);
   m_updateStatus->setTextInteractionFlags(Qt::TextBrowserInteraction);
   m_updateStatus->setOpenExternalLinks(true);
   updateLayout->addWidget(m_checkUpdatesBtn);
+  updateLayout->addWidget(m_updateReleaseBtn);
+  updateLayout->addWidget(m_updatePreReleaseBtn);
   updateLayout->addWidget(m_updateStatus);
   infoLayout->addWidget(updateBox);
 
@@ -536,8 +543,25 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
   connect(saveLogMediaBtn, &QPushButton::clicked, this, &SettingsDialog::onSaveLogMedia);
   connect(saveLogNetworkBtn, &QPushButton::clicked, this, &SettingsDialog::onSaveLogNetwork);
   connect(m_checkUpdatesBtn, &QPushButton::clicked, this, &SettingsDialog::onCheckUpdates);
+  connect(m_updateReleaseBtn, &QPushButton::clicked, this, &SettingsDialog::onAutoUpdateRelease);
+  connect(m_updatePreReleaseBtn, &QPushButton::clicked, this, &SettingsDialog::onAutoUpdatePreRelease);
 
   mainLayout->addWidget(tabs, 1);
+
+  m_updateStatusBar = new QFrame;
+  m_updateStatusBar->setObjectName(QStringLiteral("updateStatusBar"));
+  m_updateStatusBar->setVisible(false);
+  auto *statusBarLayout = new QHBoxLayout(m_updateStatusBar);
+  statusBarLayout->setContentsMargins(10, 7, 10, 7);
+  statusBarLayout->setSpacing(8);
+  m_updateStatusBarTitle = new QLabel;
+  m_updateStatusBarTitle->setObjectName(QStringLiteral("updateStatusBarTitle"));
+  m_updateStatusBarDetail = new QLabel;
+  m_updateStatusBarDetail->setObjectName(QStringLiteral("updateStatusBarDetail"));
+  m_updateStatusBarDetail->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+  statusBarLayout->addWidget(m_updateStatusBarTitle, 1);
+  statusBarLayout->addWidget(m_updateStatusBarDetail);
+  mainLayout->addWidget(m_updateStatusBar);
 
   QPushButton *cancel = nullptr;
   QPushButton *ok = nullptr;
@@ -1021,15 +1045,42 @@ void SettingsDialog::onSaveLogNetwork()
   saveSessionLog(itl::SessionLog::Scope::Network, qobject_cast<QPushButton *>(sender()));
 }
 
+void SettingsDialog::setUpdateStatusBar(itl::AppUpdater::Phase phase, const QString &detail)
+{
+  if (!m_updateStatusBar) {
+    return;
+  }
+  if (phase == itl::AppUpdater::Phase::Idle) {
+    m_updateStatusBar->setVisible(false);
+    return;
+  }
+
+  m_updateStatusBar->setVisible(true);
+  m_updateStatusBarTitle->setText(itl::AppUpdater::phaseTitle(phase));
+  m_updateStatusBarDetail->setText(detail);
+  m_updateStatusBarDetail->setVisible(!detail.isEmpty());
+}
+
+void SettingsDialog::clearUpdateStatusBar()
+{
+  setUpdateStatusBar(itl::AppUpdater::Phase::Idle);
+}
+
 void SettingsDialog::onCheckUpdates()
 {
   if (!m_updateNetwork) {
     m_updateNetwork = new QNetworkAccessManager(this);
   }
   m_checkUpdatesBtn->setEnabled(false);
+  m_updateReleaseBtn->setVisible(false);
+  m_updatePreReleaseBtn->setVisible(false);
+  m_pendingRelease = {};
+  m_pendingPreRelease = {};
+  setUpdateStatusBar(itl::AppUpdater::Phase::Checking);
   m_updateStatus->setText(tr("Проверка..."));
 
-  QNetworkRequest request{QUrl(QStringLiteral("https://api.github.com/repos/shipa-2/Opensource-Communicator/releases/latest"))};
+  QNetworkRequest request{
+      QUrl(QStringLiteral("https://api.github.com/repos/shipa-2/Opensource-Communicator/releases?per_page=100"))};
   request.setRawHeader(QByteArrayLiteral("Accept"), QByteArrayLiteral("application/vnd.github+json"));
   request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
   QNetworkReply *reply = m_updateNetwork->get(request);
@@ -1039,57 +1090,107 @@ void SettingsDialog::onCheckUpdates()
     const QString currentVersion = QCoreApplication::applicationVersion();
 
     if (reply->error() != QNetworkReply::NoError) {
+      setUpdateStatusBar(itl::AppUpdater::Phase::Failed, reply->errorString());
       m_updateStatus->setText(tr("Не удалось проверить обновления: %1").arg(reply->errorString()));
       return;
     }
 
     const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
-    const QString tagName = doc.object().value(QStringLiteral("tag_name")).toString();
-    if (tagName.isEmpty()) {
+    if (!doc.isArray()) {
+      setUpdateStatusBar(itl::AppUpdater::Phase::Failed, tr("Неверный ответ"));
       m_updateStatus->setText(tr("Не удалось разобрать ответ GitHub"));
       return;
     }
 
-    auto parseVersion = [](const QString &raw) {
-      QString tag = raw;
-      if (tag.startsWith(QLatin1Char('v')) || tag.startsWith(QLatin1Char('V'))) {
-        tag.remove(0, 1);
+    const itl::AppUpdater::ScanResult scan =
+        itl::AppUpdater::scanReleases(doc.array(), currentVersion);
+
+    auto formatLine = [](const QString &label, const itl::AppUpdater::ChannelOffer &offer) {
+      if (!offer.available) {
+        return tr("%1: <i>нет пакета для этой платформы</i>").arg(label);
       }
-      QStringList parts = tag.split(QLatin1Char('.'));
-      QList<int> numbers;
-      for (const QString &part : parts) {
-        QString digits;
-        for (QChar ch : part) {
-          if (ch.isDigit()) {
-            digits.append(ch);
-          } else {
-            break;
-          }
-        }
-        numbers.append(digits.isEmpty() ? 0 : digits.toInt());
+      const QString link = offer.pageUrl.toHtmlEscaped();
+      QString versionLabel = offer.tag.toHtmlEscaped();
+      if (!offer.packageVersion.isEmpty() && offer.tag.startsWith(QStringLiteral("videotest-"))) {
+        versionLabel =
+            tr("%1 · %2").arg(offer.tag.toHtmlEscaped(), offer.packageVersion.toHtmlEscaped());
       }
-      while (numbers.size() < 3) {
-        numbers.append(0);
+      if (offer.updateAvailable) {
+        return tr("%1: <b>%2</b> — <a href=\"%3\">доступно обновление</a>")
+            .arg(label, versionLabel, link);
       }
-      return numbers;
+      if (offer.localBuildAhead) {
+        return tr("%1: %2 — локальная сборка новее GitHub").arg(label, versionLabel);
+      }
+      return tr("%1: %2 — актуально").arg(label, versionLabel);
     };
 
-    const QList<int> latest = parseVersion(tagName);
-    const QList<int> current = parseVersion(currentVersion);
-    bool newer = false;
-    for (int i = 0; i < 3; ++i) {
-      if (latest.at(i) != current.at(i)) {
-        newer = latest.at(i) > current.at(i);
-        break;
-      }
+    QStringList lines;
+    lines << formatLine(tr("Release"), scan.release);
+    lines << formatLine(tr("Pre-Release"), scan.preRelease);
+    m_updateStatus->setText(lines.join(QStringLiteral("<br>")));
+
+    if (scan.release.updateAvailable) {
+      m_pendingRelease = scan.release;
+      m_updateReleaseBtn->setVisible(true);
+    }
+    if (scan.preRelease.updateAvailable) {
+      m_pendingPreRelease = scan.preRelease;
+      m_updatePreReleaseBtn->setVisible(true);
     }
 
-    if (newer) {
-      const QString url = doc.object().value(QStringLiteral("html_url")).toString();
-      m_updateStatus->setText(tr("Доступна новая версия: <b>%1</b> — <a href=\"%2\">открыть релиз</a>")
-                                  .arg(tagName, url.toHtmlEscaped()));
-    } else {
-      m_updateStatus->setText(tr("Установлена последняя версия (%1)").arg(currentVersion));
-    }
+    setUpdateStatusBar(itl::AppUpdater::Phase::Done);
+    QTimer::singleShot(2500, this, &SettingsDialog::clearUpdateStatusBar);
   });
+}
+
+void SettingsDialog::onAutoUpdateRelease()
+{
+  startAutoUpdate(m_pendingRelease, tr("Release"));
+}
+
+void SettingsDialog::onAutoUpdatePreRelease()
+{
+  startAutoUpdate(m_pendingPreRelease, tr("Pre-Release"));
+}
+
+void SettingsDialog::startAutoUpdate(const itl::AppUpdater::ChannelOffer &offer,
+                                     const QString &channelLabel)
+{
+  if (!offer.updateAvailable || offer.assetUrl.isEmpty() || offer.fileName.isEmpty()) {
+    m_updateStatus->setText(tr("Сначала выполните проверку обновлений"));
+    return;
+  }
+
+  const QString prompt = tr("Скачать и установить %1 (%2)?\n\nПриложение перезапустится после установки.")
+                             .arg(offer.tag, channelLabel);
+  if (QMessageBox::question(this, tr("Обновление"), prompt, QMessageBox::Yes | QMessageBox::No,
+                            QMessageBox::No) != QMessageBox::Yes) {
+    return;
+  }
+
+  if (!m_appUpdater) {
+    m_appUpdater = new itl::AppUpdater(this);
+    connect(m_appUpdater, &itl::AppUpdater::progressChanged, this,
+            [this](itl::AppUpdater::Phase phase, const QString &detail) {
+              setUpdateStatusBar(phase, detail);
+            });
+    connect(m_appUpdater, &itl::AppUpdater::finished, this, [this](bool success, const QString &message) {
+      m_checkUpdatesBtn->setEnabled(true);
+      m_updateReleaseBtn->setEnabled(true);
+      m_updatePreReleaseBtn->setEnabled(true);
+      m_updateStatus->setText(message);
+      if (success) {
+        m_updateReleaseBtn->setVisible(false);
+        m_updatePreReleaseBtn->setVisible(false);
+        return;
+      }
+      setUpdateStatusBar(itl::AppUpdater::Phase::Failed, message);
+    });
+  }
+
+  m_checkUpdatesBtn->setEnabled(false);
+  m_updateReleaseBtn->setEnabled(false);
+  m_updatePreReleaseBtn->setEnabled(false);
+  m_appUpdater->downloadAndInstall(QUrl(offer.assetUrl), offer.fileName);
 }

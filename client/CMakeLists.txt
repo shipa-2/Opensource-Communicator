@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(opensource-communicator VERSION 0.4.0 LANGUAGES CXX)
+project(opensource-communicator VERSION 0.4.5 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 
@@ -89,6 +89,8 @@ add_executable(opensource-communicator
     src/audio/AudioDeviceUtils.h
     src/network/NetworkUtils.cpp
     src/network/NetworkUtils.h
+    src/update/AppUpdater.cpp
+    src/update/AppUpdater.h
     src/settings/AppSettings.cpp
     src/settings/AppSettings.h
     src/settings/UserDataStore.cpp
@@ -188,8 +190,8 @@ elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_definitions(opensource-communicator PRIVATE OSC_DEBUG_BUILD)
 endif()
 
-# Build channel: version carries the git branch suffix (e.g. 0.4.0-videotest),
-# main and detached checkouts (CI) stay plain 0.4.0. Non-main branches also embed
+# Build channel: version carries the git branch suffix (e.g. 0.4.5-videotest),
+# main and detached checkouts (CI) stay plain 0.4.5. Non-main branches also embed
 # the UTC commit timestamp in the GitHub pre-release tag format
 # (videotest-DDMMYYYY-HHMM) so a binary maps to its release.
 execute_process(

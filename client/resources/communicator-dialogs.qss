@@ -59,6 +59,23 @@ QDialog#settingsDialog, QDialog#addContactDialog, QDialog#conferenceDialog {
     background: palette(base);
 }
 
+QFrame#updateStatusBar {
+    background: palette(alternate-base);
+    border: 1px solid palette(mid);
+    border-radius: 4px;
+}
+
+QLabel#updateStatusBarTitle {
+    color: palette(text);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+QLabel#updateStatusBarDetail {
+    color: palette(mid);
+    font-size: 12px;
+}
+
 QLabel#noteHint {
     color: palette(mid);
     font-size: 12px;
