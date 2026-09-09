@@ -226,6 +226,7 @@ jobs:
       needs.linux-build.result == 'success' &&
       (github.ref == 'refs/heads/main' ||
        github.ref == 'refs/heads/videotest' ||
+       startsWith(github.ref, 'refs/tags/v') ||
        github.event_name == 'workflow_dispatch')
     needs: [windows-portable, linux-build]
     runs-on: ubuntu-24.04
@@ -251,16 +252,27 @@ jobs:
           HOUR="${TIMESTAMP:9:2}"
           MINUTE="${TIMESTAMP:11:2}"
 
-          if [ "$GITHUB_REF_NAME" = "videotest" ]; then
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            RELEASE_NAME="${GITHUB_REF_NAME}"
+            PRERELEASE=false
+            MAKE_LATEST=true
+          elif [ "$GITHUB_REF_NAME" = "videotest" ]; then
             TAG="videotest-${TIMESTAMP}"
             RELEASE_NAME="${TAG}"
+            PRERELEASE=true
+            MAKE_LATEST=false
           else
             TAG="${TIMESTAMP}"
             RELEASE_NAME="${TIMESTAMP}"
+            PRERELEASE=true
+            MAKE_LATEST=false
           fi
 
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "name=${RELEASE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "prerelease=${PRERELEASE}" >> "$GITHUB_OUTPUT"
+          echo "make_latest=${MAKE_LATEST}" >> "$GITHUB_OUTPUT"
 
           {
             echo "## ${RELEASE_NAME}"
@@ -276,7 +288,7 @@ jobs:
             ' CHANGELOG.md
           } > release-notes.md
 
-          echo "Publishing pre-release assets to ${TAG}:"
+          echo "Publishing release assets to ${TAG} (prerelease=${PRERELEASE}):"
           find artifacts -type f -print
 
       - name: Create or update GitHub release
@@ -287,6 +299,6 @@ jobs:
           files: artifacts/**/*
           body_path: release-notes.md
           generate_release_notes: false
-          prerelease: true
-          make_latest: false
+          prerelease: ${{ steps.meta.outputs.prerelease == 'true' }}
+          make_latest: ${{ steps.meta.outputs.make_latest == 'true' }}
           fail_on_unmatched_files: true
