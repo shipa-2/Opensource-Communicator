@@ -188,6 +188,18 @@ private:
     void beginCallTracking(const QString &leg, const QString &peer, const QString &displayName, bool incoming);
     void markCallConnected(const QString &leg);
     void finalizeCallHistory(const QString &leg, const QString &state, const QString &transferTo = {});
+    void setupWaitingCallWindow();
+    void closeWaitingCallWindow();
+    void positionSecondCallWindow();
+    void restoreActiveCallUi();
+    void updateCallLegUi(const QString &leg, const QString &state, const QString &detail);
+    CallWindow *callWindowForLeg(const QString &leg) const;
+    QString legForCallWindow(const CallWindow *window) const;
+    bool secondLineSessionActive() const;
+    bool hasActiveCallSession() const;
+    void dismissDemoWaitingIncoming(const QString &historyState = QStringLiteral("no-answer"));
+    bool demoSecondLineSlotBusy() const;
+    bool secondLineWaitingUi() const;
     void resumeExternalMediaIfIdle();
     void enterCallPresence();
     void leaveCallPresence();
@@ -208,6 +220,7 @@ private:
     itl::CallManager *m_calls = nullptr;
     itl::MessageNotifyPlayer *m_messageNotify = nullptr;
     CallWindow *m_callWindow = nullptr;
+    CallWindow *m_waitingCallWindow = nullptr;
     ChatDialog *m_chatDialog = nullptr;
     QMenu *m_addMenu = nullptr;
     QMenu *m_viewMenu = nullptr;
@@ -251,6 +264,7 @@ private:
     QString m_selfName;
     QString m_activeIncomingLeg;
     QString m_activeLeg;
+    QString m_heldLeg;
     QString m_presenceBeforeCall;
     bool m_callPresenceActive = false;
     bool m_onHold = false;

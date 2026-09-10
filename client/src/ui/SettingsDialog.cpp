@@ -151,6 +151,13 @@ SettingsDialog::SettingsDialog(itl::CommunicatorClient *client, itl::CallManager
   incomingRow->addWidget(m_incomingBrowse);
   form->addRow(tr("Файл звонка:"), incomingRow);
 
+  m_secondLineCheck = new QCheckBox(tr("Вторая линия"));
+  m_secondLineCheck->setChecked(m_settings->secondLineEnabled());
+  m_secondLineCheck->setToolTip(tr("Входящие во время разговора: выключено — сбрасываются (занято), "
+                                   "включено — принимаются, а текущий звонок ставится на удержание "
+                                   "и снимается после конца второго"));
+  form->addRow(m_secondLineCheck);
+
   soundLayout->addLayout(form);
   soundLayout->addStretch();
   tabs->addTab(soundTab, tr("Звук"));
@@ -989,6 +996,7 @@ void SettingsDialog::onAccept()
   m_settings->setIncomingRingCustomPath(m_incomingPath->text().trimmed());
   m_settings->setNetworkInterfaceName(m_networkInterface->currentData().toString());
 
+  m_settings->setSecondLineEnabled(m_secondLineCheck->isChecked());
   m_settings->setJabraLedIndication(m_jabraIndicationCheck->isChecked());
   itl::JabraHeadset::instance().setLedEnabled(m_settings->jabraLedIndication());
   m_settings->setRecordingEnabled(m_recordingEnabledCheck->isChecked());

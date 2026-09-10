@@ -143,6 +143,7 @@ CallManager::~CallManager()
 
 void CallManager::applySettings()
 {
+  m_secondLineEnabled = m_settings && m_settings->secondLineEnabled();
   m_audio.applySettings(m_settings);
   m_ringback.applySettings(m_settings);
   m_incomingRing.applySettings(m_settings);
@@ -1073,6 +1074,16 @@ void CallManager::acceptIncomingCall(const QString &leg)
 
   stopIncomingRing();
 
+  // Second line: accepting a new call holds every other connected call.
+  if (m_secondLineEnabled) {
+    const QStringList legs = m_calls.keys();
+    for (const QString &other : legs) {
+      if (other != leg && m_calls[other].connected && !m_calls[other].onHold) {
+        setHold(other, true);
+      }
+    }
+  }
+
   CallSession &session = m_calls[leg];
   session.acceptPending = true;
   if (session.videoCall) {
@@ -1122,6 +1133,7 @@ void CallManager::hangup(const QString &leg)
 
   teardownCall(leg);
   emit callStateChanged(leg, QStringLiteral("ended"), {});
+  resumeHeldCallAfterSecondLineEnds();
 }
 
 void CallManager::hangupAll()
@@ -1164,6 +1176,21 @@ QString CallManager::primaryOutgoingLeg() const
   return {};
 }
 
+void CallManager::resumeHeldCallAfterSecondLineEnds()
+{
+  if (!m_secondLineEnabled) {
+    return;
+  }
+  for (const QString &other : m_calls.keys()) {
+    if (m_calls[other].connected && m_calls[other].onHold) {
+      setHold(other, false);
+      m_activeLeg = other;
+      startAudio();
+      return;
+    }
+  }
+}
+
 void CallManager::setHold(const QString &leg, bool hold)
 {
   if (!m_calls.contains(leg)) {
@@ -1171,6 +1198,10 @@ void CallManager::setHold(const QString &leg, bool hold)
   }
 
   CallSession &session = m_calls[leg];
+  if (session.localSdp.isEmpty()) {
+    qCWarning(lcCall) << "setHold: no local SDP for" << leg;
+    return;
+  }
   session.onHold = hold;
   session.phase = hold ? CallPhase::Hold : CallPhase::Connected;
   session.localSdp = modifySdpForHold(session.localSdp, hold);
@@ -1270,8 +1301,11 @@ void CallManager::teardownCall(const QString &leg)
 void CallManager::handleServerCallEvent(const QString &leg, const QString &what, const QJsonObject &payload)
 {
   if (what == QStringLiteral("incomingCall")) {
-    if (hasActiveOutgoing()) {
-      qCInfo(lcCall) << "Rejecting incoming" << leg << "while outgoing call is active";
+    if (hasActiveCalls() && !m_secondLineEnabled) {
+      // Busy: any dialing/ringing/connected/hold call means the new incoming is
+      // rejected right away — otherwise the parallel mobile fork keeps ringing
+      // and rejecting it there tears down the ongoing call.
+      qCInfo(lcCall) << "Rejecting incoming" << leg << "while another call is active";
       m_api->rejectCall(leg, 486, QStringLiteral("Busy Here"));
       return;
     }
@@ -1395,6 +1429,7 @@ void CallManager::handleServerCallEvent(const QString &leg, const QString &what,
                    << payload.value(QStringLiteral("reason")).toString();
     teardownCall(leg);
     emit callStateChanged(leg, QStringLiteral("ended"), payload.value(QStringLiteral("reason")).toString());
+    resumeHeldCallAfterSecondLineEnds();
   }
 }
 

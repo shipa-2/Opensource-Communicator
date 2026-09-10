@@ -29,6 +29,7 @@ constexpr auto kRecordingEnabled = "recording/enabled";
 constexpr auto kRecordingDirectory = "recording/directory";
 constexpr auto kRecordingUseContactNames = "recording/useContactNames";
 constexpr auto kJabraLedIndication = "audio/jabraLedIndication";
+constexpr auto kSecondLine = "calls/secondLine";
 constexpr auto kNetworkInterface = "network/bindInterface";
 constexpr auto kAppWallpaperPath = "ui/appWallpaperPath";
 constexpr auto kAppWallpaperOpacity = "ui/appWallpaperOpacity";
@@ -67,6 +68,7 @@ void AppSettings::load(QSettings &settings)
   m_recordingDirectory = settings.value(QString::fromUtf8(kRecordingDirectory)).toString();
   m_recordingUseContactNames = settings.value(QString::fromUtf8(kRecordingUseContactNames), true).toBool();
   m_jabraLedIndication = settings.value(QString::fromUtf8(kJabraLedIndication), true).toBool();
+  m_secondLineEnabled = settings.value(QString::fromUtf8(kSecondLine), false).toBool();
   m_networkInterfaceName = settings.value(QString::fromUtf8(kNetworkInterface)).toString();
   m_appWallpaperPath = settings.value(QString::fromUtf8(kAppWallpaperPath)).toString();
   m_appWallpaperOpacity =
@@ -98,6 +100,7 @@ void AppSettings::save(QSettings &settings) const
   settings.setValue(QString::fromUtf8(kRecordingEnabled), m_recordingEnabled);
   settings.setValue(QString::fromUtf8(kRecordingUseContactNames), m_recordingUseContactNames);
   settings.setValue(QString::fromUtf8(kJabraLedIndication), m_jabraLedIndication);
+  settings.setValue(QString::fromUtf8(kSecondLine), m_secondLineEnabled);
   settings.setValue(QString::fromUtf8(kRecordingDirectory), m_recordingDirectory);
   settings.setValue(QString::fromUtf8(kNetworkInterface), m_networkInterfaceName);
   settings.setValue(QString::fromUtf8(kAppWallpaperPath), m_appWallpaperPath);
@@ -342,6 +345,15 @@ void AppSettings::setJabraLedIndication(bool enabled)
     return;
   }
   m_jabraLedIndication = enabled;
+  emit settingsChanged();
+}
+
+void AppSettings::setSecondLineEnabled(bool enabled)
+{
+  if (m_secondLineEnabled == enabled) {
+    return;
+  }
+  m_secondLineEnabled = enabled;
   emit settingsChanged();
 }
 

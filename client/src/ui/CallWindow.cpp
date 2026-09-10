@@ -935,6 +935,7 @@ void CallWindow::showIncoming(const QString &peer, const QString &displayName, c
 void CallWindow::showActive(const QString &peer, const QString &displayName)
 {
   setAttribute(Qt::WA_ShowWithoutActivating, false);
+  const bool sameOngoingCall = m_peer == peer && m_durationTimer->isActive();
   m_peer = peer;
   m_displayName = displayName;
   setWindowTitle(tr("%1 — разговор").arg(displayName));
@@ -942,7 +943,9 @@ void CallWindow::showActive(const QString &peer, const QString &displayName)
   m_statusLabel->setText(tr("Разговор"));
   setAvatarLetter(displayName);
   setMode(Mode::Active);
-  stopTimer();
+  if (!sameOngoingCall) {
+    stopTimer();
+  }
   if (m_dtmfExpanded) {
     applyFixedCallWidth();
   } else {
@@ -979,7 +982,7 @@ void CallWindow::updateState(const QString &state, const QString &detail)
       }
       m_statusLabel->setText(tr("Разговор"));
       setMode(Mode::Active);
-      if (m_timerLabel) {
+      if (m_timerLabel && !m_durationTimer->isActive()) {
         m_timerLabel->setText(tr("Соединение..."));
       }
       if (!m_videoCall && !m_dtmfExpanded) {

@@ -1,5 +1,12 @@
 cmake_minimum_required(VERSION 3.16)
-project(opensource-communicator VERSION 0.4.5 LANGUAGES CXX)
+project(opensource-communicator VERSION 0.4.6 LANGUAGES CXX)
+
+include(ProcessorCount)
+ProcessorCount(ITL_BUILD_JOBS)
+if(ITL_BUILD_JOBS GREATER 0)
+    set(CMAKE_BUILD_PARALLEL_LEVEL ${ITL_BUILD_JOBS}
+        CACHE STRING "Parallel build jobs for cmake --build (default: all CPU cores)")
+endif()
 
 include(GNUInstallDirs)
 

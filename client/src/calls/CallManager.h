@@ -151,6 +151,7 @@ private:
     static bool isAudibleOpusFrame(const QByteArray &opus);
     void onCallSessionStarted();
     void onCallSessionEnded();
+    void resumeHeldCallAfterSecondLineEnds();
 
     WsApiClient *m_api = nullptr;
     AppSettings *m_settings = nullptr;
@@ -167,6 +168,7 @@ private:
     QString m_videoCaptureLeg;
     bool m_screenSharing = false;
     bool m_videoBlur = false;
+    bool m_secondLineEnabled = false;
     QByteArray m_cameraDeviceId;
     QString m_screenName;
     QHash<QString, CallSession> m_calls;

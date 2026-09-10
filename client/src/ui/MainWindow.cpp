@@ -91,6 +91,9 @@ Q_LOGGING_CATEGORY(lcHistory, "itl.history")
 
 namespace {
 
+constexpr QLatin1String kDemoCallLeg("demo-call");
+constexpr QLatin1String kDemoSecondCallLeg("demo-call-2");
+
 int countDigits(const QString &value)
 {
   int digits = 0;
@@ -719,8 +722,10 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
     , m_calls(calls)
     , m_messageNotify(new itl::MessageNotifyPlayer(this))
     , m_callWindow(new CallWindow(this))
+    , m_waitingCallWindow(new CallWindow(this))
     , m_chatDialog(new ChatDialog(client, this))
 {
+  setupWaitingCallWindow();
   setWindowTitle(tr("OpenSource Communicator"));
   setProperty("itlNoMaximize", true);
   setWindowFlags(windowFlags() & ~Qt::WindowMaximizeButtonHint);
@@ -1075,6 +1080,7 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
 
   connect(m_callWindow, &CallWindow::hangupRequested, this, &MainWindow::onHangup);
   connect(m_callWindow, &CallWindow::answerRequested, this, &MainWindow::onAnswer);
+  // m_waitingCallWindow signals are wired in setupWaitingCallWindow()
   connect(m_callWindow, &CallWindow::holdRequested, this, &MainWindow::onHold);
   connect(m_callWindow, &CallWindow::dtmfRequested, this, &MainWindow::onCallDtmf);
   connect(m_callWindow, &CallWindow::transferRequested, this, &MainWindow::onTransfer);
@@ -1175,17 +1181,19 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
               m_demoIncomingCallTimer = new QTimer(this);
               m_demoIncomingCallTimer->setSingleShot(true);
               connect(m_demoIncomingCallTimer, &QTimer::timeout, this, [this]() {
-                if (!m_demoMode || !m_online || !m_demoCallLeg.isEmpty()) {
+                if (!m_demoMode || !m_online) {
                   return;
                 }
                 const QString callPeer = m_demoIncomingCallPeer;
                 if (callPeer.isEmpty()) {
                   return;
                 }
+                qInfo() << "Demo call-me timer fired for" << callPeer;
                 startDemoIncomingCallSimulation(callPeer, displayNameForPeer(callPeer),
                                                 detailForPeer(callPeer));
               });
             }
+            qInfo() << "Demo call-me scheduled from" << peer << "in" << delaySeconds << "s";
             m_demoIncomingCallPeer = peer;
             m_demoIncomingCallTimer->start(delaySeconds * 1000);
           });
@@ -1205,29 +1213,36 @@ MainWindow::MainWindow(itl::CommunicatorClient *client, itl::CallManager *calls,
   });
   connect(m_calls, &itl::CallManager::remoteAudioStarted, this, [this](const QString &leg) {
     markCallConnected(leg);
-    m_callWindow->beginConversationTimer();
+    if (CallWindow *win = callWindowForLeg(leg)) {
+      win->beginConversationTimer();
+    }
   });
   connect(m_calls, &itl::CallManager::remoteAudioLevel, this, [this](float level) {
-    m_callWindow->updateRemoteAudioLevel(level);
+    if (CallWindow *win = callWindowForLeg(m_activeLeg)) {
+      win->updateRemoteAudioLevel(level);
+    }
   });
   connect(m_calls, &itl::CallManager::remoteVideoFrame,
           this, [this](const QString &leg, const QImage &frame) {
-            if (leg == m_activeLeg || leg == m_activeIncomingLeg) {
-              m_callWindow->setRemoteVideoFrame(frame);
+            if (CallWindow *win = callWindowForLeg(leg)) {
+              win->setRemoteVideoFrame(frame);
             }
           });
-  connect(m_calls, &itl::CallManager::localVideoFrame,
-          m_callWindow, &CallWindow::setLocalVideoFrame);
+  connect(m_calls, &itl::CallManager::localVideoFrame, this, [this](const QImage &frame) {
+    if (CallWindow *win = callWindowForLeg(m_activeLeg)) {
+      win->setLocalVideoFrame(frame);
+    }
+  });
   connect(m_calls, &itl::CallManager::videoSendingChanged,
           this, [this](const QString &leg, bool sending) {
-            if (leg == m_activeLeg || leg == m_activeIncomingLeg) {
-              m_callWindow->setVideoSending(sending);
+            if (CallWindow *win = callWindowForLeg(leg)) {
+              win->setVideoSending(sending);
             }
           });
   connect(m_calls, &itl::CallManager::screenSharingChanged,
           this, [this](const QString &leg, bool sharing) {
-            if (leg == m_activeLeg || leg == m_activeIncomingLeg) {
-              m_callWindow->setScreenSharing(sharing);
+            if (CallWindow *win = callWindowForLeg(leg)) {
+              win->setScreenSharing(sharing);
             }
           });
 
@@ -1958,15 +1973,23 @@ void MainWindow::enterCallPresence()
   // Megafon PBX sets voice:"in-call" automatically; SetPresence(in-call) is rejected (971).
 }
 
+bool MainWindow::hasActiveCallSession() const
+{
+  if (!m_activeLeg.isEmpty() || !m_activeIncomingLeg.isEmpty() || !m_heldLeg.isEmpty()) {
+    return true;
+  }
+  if (m_demoMode && !m_demoCallLeg.isEmpty()) {
+    return true;
+  }
+  return m_calls && m_calls->hasActiveCalls();
+}
+
 void MainWindow::leaveCallPresence()
 {
   if (!m_callPresenceActive) {
     return;
   }
-  if (m_calls && m_calls->hasActiveCalls()) {
-    return;
-  }
-  if (m_demoMode && !m_demoCallLeg.isEmpty()) {
+  if (hasActiveCallSession()) {
     return;
   }
 
@@ -2706,13 +2729,11 @@ void MainWindow::markCallConnected(const QString &leg)
 
 void MainWindow::resumeExternalMediaIfIdle()
 {
-  if (m_demoMode) {
-    if (m_demoCallLeg.isEmpty()) {
-      m_calls->resumeExternalMedia();
-    }
+  if (hasActiveCallSession()) {
     return;
   }
-  if (m_calls->hasActiveCalls() || !m_activeLeg.isEmpty() || !m_activeIncomingLeg.isEmpty()) {
+  if (m_demoMode) {
+    m_calls->resumeExternalMedia();
     return;
   }
   m_calls->resumeExternalMedia();
@@ -3047,6 +3068,7 @@ void MainWindow::exitDemoInterface()
   m_selfPeer.clear();
   m_selfName.clear();
   m_client->leaveDemoMode();
+  closeWaitingCallWindow();
   m_callWindow->closeCall();
   updateSelfHeader();
   rebuildHistoryList();
@@ -3076,20 +3098,52 @@ void MainWindow::stopDemoCallSimulation()
   if (m_callWindow && m_callWindow->isVisible()) {
     m_callWindow->setRemoteSpeakingIndicator(false);
   }
+  m_activeLeg.clear();
   m_demoCallLeg.clear();
   m_activeIncomingLeg.clear();
+  m_heldLeg.clear();
+  closeWaitingCallWindow();
   leaveCallPresence();
 }
 
 void MainWindow::startDemoIncomingCallSimulation(const QString &peer, const QString &displayName,
                                                  const QString &detail)
 {
-  if (!m_demoMode || !m_online || !m_demoCallLeg.isEmpty()) {
+  if (!m_demoMode || !m_online) {
+    return;
+  }
+
+  const bool firstConnected = !m_activeLeg.isEmpty() && m_callTracking.contains(m_activeLeg)
+                              && m_callTracking.value(m_activeLeg).connectedAtMs > 0;
+  if (firstConnected && m_client->appSettings().secondLineEnabled()) {
+    if (demoSecondLineSlotBusy()) {
+      qInfo() << "Demo second line busy, ignoring call-me from" << peer;
+      return;
+    }
+    if (!m_activeIncomingLeg.isEmpty()) {
+      const QString previousPeer = m_callTracking.value(m_activeIncomingLeg).peer;
+      qInfo() << "Demo call-me replacing waiting incoming from" << previousPeer << "with" << peer;
+      dismissDemoWaitingIncoming();
+    }
+    const QString leg = QString(kDemoSecondCallLeg);
+    m_activeIncomingLeg = leg;
+    loadCallNotes(peer);
+    beginCallTracking(leg, peer, displayName, true);
+    restoreActiveCallUi();
+    m_waitingCallWindow->showIncoming(peer, displayName, detail);
+    m_waitingCallWindow->setAvatarColor(m_client->chat()->peerColor(peer));
+    m_waitingCallWindow->setAvatarPixmap(m_client->chat()->peerAvatar(peer));
+    positionSecondCallWindow();
+    m_calls->playIncomingRing();
+    return;
+  }
+
+  if (!m_demoCallLeg.isEmpty() || !m_activeLeg.isEmpty() || !m_activeIncomingLeg.isEmpty()) {
     return;
   }
 
   stopDemoCallSimulation();
-  m_demoCallLeg = QStringLiteral("demo-call");
+  m_demoCallLeg = QString(kDemoCallLeg);
   m_activeIncomingLeg = m_demoCallLeg;
   m_activeLeg.clear();
   loadCallNotes(peer);
@@ -3107,12 +3161,16 @@ void MainWindow::startDemoVoiceSimulation()
   if (!m_demoVoiceTimer) {
     m_demoVoiceTimer = new QTimer(this);
     connect(m_demoVoiceTimer, &QTimer::timeout, this, [this]() {
-      if (!m_demoMode || m_activeLeg != m_demoCallLeg) {
+      if (!m_demoMode || m_activeLeg.isEmpty() || m_onHold
+          || !m_callTracking.contains(m_activeLeg)
+          || m_callTracking.value(m_activeLeg).connectedAtMs <= 0) {
         m_demoVoiceTimer->stop();
         return;
       }
       m_demoVoiceActive = !m_demoVoiceActive;
-      m_callWindow->setRemoteSpeakingIndicator(m_demoVoiceActive);
+      if (CallWindow *win = callWindowForLeg(m_activeLeg)) {
+        win->setRemoteSpeakingIndicator(m_demoVoiceActive);
+      }
       m_demoVoiceTimer->start(150 + QRandomGenerator::global()->bounded(650));
     });
   }
@@ -3122,8 +3180,11 @@ void MainWindow::startDemoVoiceSimulation()
 
 void MainWindow::startDemoCallSimulation(const QString &peer, const QString &displayName, const QString &detail)
 {
+  if (!m_activeLeg.isEmpty() || !m_activeIncomingLeg.isEmpty()) {
+    return;
+  }
   stopDemoCallSimulation();
-  m_demoCallLeg = QStringLiteral("demo-call");
+  m_demoCallLeg = QString(kDemoCallLeg);
   m_activeLeg = m_demoCallLeg;
   m_activeIncomingLeg.clear();
   loadCallNotes(peer);
@@ -3161,6 +3222,7 @@ void MainWindow::onLogout()
   }
   m_client->logout();
   setOnlineUi(false);
+  closeWaitingCallWindow();
   m_callWindow->closeCall();
 }
 
@@ -3833,14 +3895,304 @@ void MainWindow::onChatFromRow(const QString &peer)
   updateUnreadIndicators();
 }
 
+void MainWindow::setupWaitingCallWindow()
+{
+  if (!m_waitingCallWindow) {
+    return;
+  }
+  m_waitingCallWindow->setWindowTitle(tr("Вторая линия"));
+  connect(m_waitingCallWindow, &CallWindow::hangupRequested, this, &MainWindow::onHangup);
+  connect(m_waitingCallWindow, &CallWindow::answerRequested, this, &MainWindow::onAnswer);
+  connect(m_waitingCallWindow, &CallWindow::holdRequested, this, &MainWindow::onHold);
+  connect(m_waitingCallWindow, &CallWindow::dtmfRequested, this, &MainWindow::onCallDtmf);
+  connect(m_waitingCallWindow, &CallWindow::transferRequested, this, &MainWindow::onTransfer);
+  connect(m_waitingCallWindow, &CallWindow::notesChanged, this, &MainWindow::onCallNotesChanged);
+  connect(m_waitingCallWindow, &CallWindow::videoSendingRequested, this, [this](bool enabled) {
+    const QString leg = legForCallWindow(m_waitingCallWindow);
+    if (!leg.isEmpty()) {
+      m_calls->sendVideo(leg, enabled);
+    }
+  });
+  connect(m_waitingCallWindow, &CallWindow::screenSharingRequested, this, [this](bool enabled) {
+    const QString leg = legForCallWindow(m_waitingCallWindow);
+    if (leg.isEmpty()) {
+      return;
+    }
+#ifdef Q_OS_WIN
+    if (enabled) {
+      VideoSourceDialog sourceDialog(/*screensOnly=*/true, this);
+      if (sourceDialog.exec() != QDialog::Accepted) {
+        m_waitingCallWindow->setScreenSharing(false);
+        return;
+      }
+      m_calls->setVideoSource({}, sourceDialog.screenName(), true);
+    }
+#endif
+    m_calls->setScreenSharing(leg, enabled);
+  });
+  connect(m_waitingCallWindow, &CallWindow::videoBlurRequested, this, [this](bool enabled) {
+    m_calls->setVideoBlur(enabled);
+  });
+}
+
+void MainWindow::closeWaitingCallWindow()
+{
+  if (m_waitingCallWindow) {
+    m_waitingCallWindow->closeCall();
+  }
+}
+
+void MainWindow::positionSecondCallWindow()
+{
+  if (!m_waitingCallWindow || !m_callWindow->isVisible()) {
+    return;
+  }
+  const QPoint anchor = m_callWindow->frameGeometry().topRight();
+  m_waitingCallWindow->move(anchor + QPoint(12, 0));
+}
+
+bool MainWindow::secondLineSessionActive() const
+{
+  return !m_heldLeg.isEmpty();
+}
+
+CallWindow *MainWindow::callWindowForLeg(const QString &leg) const
+{
+  if (leg.isEmpty()) {
+    return nullptr;
+  }
+  if (secondLineSessionActive()) {
+    if (leg == m_heldLeg) {
+      return m_callWindow;
+    }
+    if (leg == m_activeLeg) {
+      return m_waitingCallWindow;
+    }
+  }
+  if (!m_activeIncomingLeg.isEmpty() && leg == m_activeIncomingLeg && secondLineWaitingUi()) {
+    return m_waitingCallWindow;
+  }
+  return m_callWindow;
+}
+
+QString MainWindow::legForCallWindow(const CallWindow *window) const
+{
+  if (!window) {
+    return m_activeLeg;
+  }
+  if (window == m_callWindow && secondLineSessionActive()) {
+    return m_heldLeg;
+  }
+  if (window == m_waitingCallWindow) {
+    if (secondLineSessionActive()) {
+      return m_activeLeg;
+    }
+    if (!m_activeIncomingLeg.isEmpty()) {
+      return m_activeIncomingLeg;
+    }
+  }
+  return m_activeLeg;
+}
+
+void MainWindow::updateCallLegUi(const QString &leg, const QString &state, const QString &detail)
+{
+  CallWindow *win = callWindowForLeg(leg);
+  if (!win) {
+    return;
+  }
+
+  QString peer;
+  QString name;
+  if (m_demoMode && m_callTracking.contains(leg)) {
+    const CallTracking &tracking = m_callTracking.value(leg);
+    peer = tracking.peer;
+    name = tracking.displayName.isEmpty() ? displayNameForPeer(peer) : tracking.displayName;
+  } else if (itl::CallSession *session = m_calls->call(leg)) {
+    peer = session->peer;
+    name = session->realName.isEmpty() ? displayNameForPeer(peer) : session->realName;
+  } else {
+    return;
+  }
+
+  loadCallNotes(peer);
+  win->setAvatarColor(m_client->chat()->peerColor(peer));
+  win->setAvatarPixmap(m_client->chat()->peerAvatar(peer));
+  const bool samePeerVisible = win->peer() == peer && win->isVisible();
+  if (!samePeerVisible
+      && (state == QStringLiteral("connected") || state == QStringLiteral("resumed")
+          || state == QStringLiteral("hold"))) {
+    win->showActive(peer, name);
+  }
+  const QString display = detail.isEmpty() ? name : detail;
+  win->updateState(state, display);
+  if (leg == m_heldLeg && state == QStringLiteral("hold")) {
+    m_onHold = true;
+  } else if (leg == m_activeLeg && (state == QStringLiteral("connected") || state == QStringLiteral("resumed"))) {
+    m_onHold = false;
+  }
+}
+
+bool MainWindow::demoSecondLineSlotBusy() const
+{
+  return m_activeLeg == QString(kDemoSecondCallLeg);
+}
+
+void MainWindow::dismissDemoWaitingIncoming(const QString &historyState)
+{
+  if (m_activeIncomingLeg.isEmpty()) {
+    return;
+  }
+  m_calls->stopIncomingRingPlayback();
+  finalizeCallHistory(m_activeIncomingLeg, historyState);
+  m_activeIncomingLeg.clear();
+  closeWaitingCallWindow();
+}
+
+bool MainWindow::secondLineWaitingUi() const
+{
+  if (!m_client->appSettings().secondLineEnabled() || m_activeLeg.isEmpty()) {
+    return false;
+  }
+  if (m_demoMode) {
+    return m_callTracking.contains(m_activeLeg)
+           && m_callTracking.value(m_activeLeg).connectedAtMs > 0;
+  }
+  const itl::CallSession *session = m_calls->call(m_activeLeg);
+  return session && session->connected;
+}
+
+void MainWindow::restoreActiveCallUi()
+{
+  if (m_activeLeg.isEmpty()) {
+    return;
+  }
+  if (m_demoMode) {
+    if (!m_callTracking.contains(m_activeLeg)) {
+      return;
+    }
+    const CallTracking &tracking = m_callTracking.value(m_activeLeg);
+    loadCallNotes(tracking.peer);
+    m_callWindow->setAvatarColor(m_client->chat()->peerColor(tracking.peer));
+    m_callWindow->setAvatarPixmap(m_client->chat()->peerAvatar(tracking.peer));
+    if (m_heldLeg == m_activeLeg) {
+      m_callWindow->showActive(tracking.peer, tracking.displayName);
+      m_callWindow->updateState(QStringLiteral("hold"), QStringLiteral("local"));
+      m_onHold = true;
+    } else if (tracking.connectedAtMs > 0) {
+      m_callWindow->showActive(tracking.peer, tracking.displayName);
+      m_callWindow->updateState(QStringLiteral("connected"), tracking.displayName);
+      m_onHold = false;
+    }
+    return;
+  }
+  const itl::CallSession *session = m_calls->call(m_activeLeg);
+  if (!session) {
+    return;
+  }
+  const QString peer = session->peer;
+  const QString name =
+      session->realName.isEmpty() ? displayNameForPeer(peer) : session->realName;
+  loadCallNotes(peer);
+  m_callWindow->setAvatarColor(m_client->chat()->peerColor(peer));
+  m_callWindow->setAvatarPixmap(m_client->chat()->peerAvatar(peer));
+  if (session->onHold || m_heldLeg == m_activeLeg) {
+    m_callWindow->showActive(peer, name);
+    m_callWindow->updateState(QStringLiteral("hold"), QStringLiteral("local"));
+    m_onHold = true;
+  } else if (session->connected) {
+    m_callWindow->showActive(peer, name);
+    m_callWindow->updateState(QStringLiteral("connected"), name);
+    m_onHold = false;
+  }
+}
+
 void MainWindow::onHangup()
 {
+  const auto *fromWindow = qobject_cast<CallWindow *>(sender());
+  const bool fromWaiting = fromWindow && fromWindow == m_waitingCallWindow;
+
+  if (fromWaiting) {
+    if (m_demoMode) {
+      if (!m_activeIncomingLeg.isEmpty()) {
+        dismissDemoWaitingIncoming();
+        return;
+      }
+      if (secondLineSessionActive()) {
+        const QString leg = m_activeLeg;
+        finalizeCallHistory(leg, QStringLiteral("ended"));
+        m_activeLeg = m_heldLeg;
+        m_heldLeg.clear();
+        m_onHold = false;
+        if (m_demoVoiceTimer) {
+          m_demoVoiceTimer->stop();
+        }
+        closeWaitingCallWindow();
+        restoreActiveCallUi();
+        itl::JabraHeadset::instance().showInCall();
+        startDemoVoiceSimulation();
+        return;
+      }
+      dismissDemoWaitingIncoming();
+      return;
+    }
+    if (!m_activeIncomingLeg.isEmpty()) {
+      const QString incomingLeg = m_activeIncomingLeg;
+      m_activeIncomingLeg.clear();
+      m_calls->rejectIncomingCall(incomingLeg);
+      closeWaitingCallWindow();
+      return;
+    }
+    if (secondLineSessionActive()) {
+      const QString leg = m_activeLeg;
+      m_activeLeg.clear();
+      m_calls->hangup(leg);
+      return;
+    }
+    closeWaitingCallWindow();
+    return;
+  }
+
   if (m_demoMode) {
-    const QString leg = !m_activeLeg.isEmpty() ? m_activeLeg : m_activeIncomingLeg;
+    if (!m_activeIncomingLeg.isEmpty()) {
+      dismissDemoWaitingIncoming();
+      if (!m_activeLeg.isEmpty()) {
+        restoreActiveCallUi();
+        return;
+      }
+      stopDemoCallSimulation();
+      m_callWindow->closeCall();
+      return;
+    }
+
+    const QString leg = secondLineSessionActive() ? m_heldLeg : m_activeLeg;
+    if (secondLineSessionActive() && leg == m_heldLeg) {
+      finalizeCallHistory(m_heldLeg, QStringLiteral("ended"));
+      m_heldLeg.clear();
+      m_onHold = false;
+      m_callWindow->closeCall();
+      return;
+    }
+    if (leg == QString(kDemoSecondCallLeg) && !m_heldLeg.isEmpty()) {
+      finalizeCallHistory(leg, QStringLiteral("ended"));
+      m_activeLeg = m_heldLeg;
+      m_heldLeg.clear();
+      m_onHold = false;
+      if (m_demoVoiceTimer) {
+        m_demoVoiceTimer->stop();
+      }
+      closeWaitingCallWindow();
+      restoreActiveCallUi();
+      itl::JabraHeadset::instance().showInCall();
+      startDemoVoiceSimulation();
+      return;
+    }
+
     const bool incomingRinging = m_activeLeg.isEmpty() && !m_activeIncomingLeg.isEmpty();
     stopDemoCallSimulation();
+    itl::JabraHeadset::instance().clear();
     m_activeLeg.clear();
     m_activeIncomingLeg.clear();
+    m_heldLeg.clear();
     m_onHold = false;
     if (!leg.isEmpty()) {
       finalizeCallHistory(leg, incomingRinging ? QStringLiteral("no-answer") : QStringLiteral("ended"));
@@ -3849,24 +4201,88 @@ void MainWindow::onHangup()
     return;
   }
 
-  m_calls->hangupAll();
+  // Reject only the ringing incoming leg; an ongoing call (if any) must survive.
+  if (!m_activeIncomingLeg.isEmpty()) {
+    const QString incomingLeg = m_activeIncomingLeg;
+    const itl::CallSession *session = m_calls->call(incomingLeg);
+    const bool ringing = session && !session->connected;
+    m_activeIncomingLeg.clear();
+    closeWaitingCallWindow();
+    if (ringing) {
+      m_calls->rejectIncomingCall(incomingLeg);
+    } else {
+      m_calls->hangup(incomingLeg);
+    }
+    if (!m_activeLeg.isEmpty()) {
+      restoreActiveCallUi();
+      return;
+    }
+    m_activeLeg.clear();
+    m_heldLeg.clear();
+    m_onHold = false;
+    m_callWindow->closeCall();
+    return;
+  }
+
+  const QString leg = secondLineSessionActive() ? m_heldLeg : m_activeLeg;
+  if (secondLineSessionActive()) {
+    const QString held = m_heldLeg;
+    m_heldLeg.clear();
+    m_onHold = false;
+    if (!held.isEmpty()) {
+      m_calls->hangup(held);
+    }
+    m_callWindow->closeCall();
+    return;
+  }
   m_activeLeg.clear();
-  m_activeIncomingLeg.clear();
+  m_heldLeg.clear();
   m_onHold = false;
+  if (!leg.isEmpty()) {
+    m_calls->hangup(leg);
+  }
+  if (m_calls->hasActiveCalls()) {
+    return;
+  }
+  closeWaitingCallWindow();
   m_callWindow->closeCall();
 }
 
 void MainWindow::onAnswer()
 {
-  if (m_demoMode && m_activeIncomingLeg == m_demoCallLeg && !m_demoCallLeg.isEmpty()) {
-    const QString displayName = m_callTracking.contains(m_demoCallLeg)
-                                    ? m_callTracking.value(m_demoCallLeg).displayName
-                                    : m_callWindow->peer();
+  if (m_demoMode && !m_activeIncomingLeg.isEmpty()) {
+    const QString incomingLeg = m_activeIncomingLeg;
+    const CallTracking tracking = m_callTracking.value(incomingLeg);
+    const QString displayName =
+        tracking.displayName.isEmpty() ? displayNameForPeer(tracking.peer) : tracking.displayName;
     m_calls->stopIncomingRingPlayback();
-    m_activeLeg = m_demoCallLeg;
+
+    if (secondLineWaitingUi()) {
+      m_heldLeg = m_activeLeg;
+      if (m_demoVoiceTimer) {
+        m_demoVoiceTimer->stop();
+      }
+      m_activeLeg = incomingLeg;
+      m_activeIncomingLeg.clear();
+      updateCallLegUi(m_heldLeg, QStringLiteral("hold"), QStringLiteral("local"));
+      updateCallLegUi(incomingLeg, QStringLiteral("connected"), displayName);
+      markCallConnected(incomingLeg);
+      itl::JabraHeadset::instance().showInCall();
+      if (CallWindow *win = callWindowForLeg(incomingLeg)) {
+        win->beginConversationTimer();
+      }
+      positionSecondCallWindow();
+      startDemoVoiceSimulation();
+      return;
+    }
+
+    m_activeLeg = incomingLeg;
     m_activeIncomingLeg.clear();
+    if (m_demoCallLeg.isEmpty()) {
+      m_demoCallLeg = incomingLeg;
+    }
     m_callWindow->updateState(QStringLiteral("connected"), displayName);
-    markCallConnected(m_demoCallLeg);
+    markCallConnected(incomingLeg);
     itl::JabraHeadset::instance().showInCall();
     m_callWindow->beginConversationTimer();
     startDemoVoiceSimulation();
@@ -3874,7 +4290,8 @@ void MainWindow::onAnswer()
   }
 
   if (!m_activeIncomingLeg.isEmpty()) {
-    const itl::CallSession *session = m_calls->call(m_activeIncomingLeg);
+    const QString incomingLeg = m_activeIncomingLeg;
+    const itl::CallSession *session = m_calls->call(incomingLeg);
     if (session && session->videoCall) {
       VideoSourceDialog sourceDialog(/*screensOnly=*/false, this);
       if (sourceDialog.exec() != QDialog::Accepted) {
@@ -3883,28 +4300,38 @@ void MainWindow::onAnswer()
       m_calls->setVideoSource(sourceDialog.cameraId(), sourceDialog.screenName(),
                               sourceDialog.screenSelected());
     }
-    m_calls->acceptIncomingCall(m_activeIncomingLeg);
-    m_activeLeg = m_activeIncomingLeg;
+    if (secondLineWaitingUi()) {
+      m_heldLeg = m_activeLeg;
+      updateCallLegUi(m_heldLeg, QStringLiteral("hold"), QStringLiteral("local"));
+    }
+    m_calls->acceptIncomingCall(incomingLeg);
+    m_activeLeg = incomingLeg;
+    m_activeIncomingLeg.clear();
   }
 }
 
 void MainWindow::onCallDtmf(const QString &digit)
 {
-  if (digit.isEmpty() || m_activeLeg.isEmpty() || m_demoMode) {
+  if (digit.isEmpty() || m_demoMode) {
     return;
   }
-  m_calls->sendDtmf(m_activeLeg, digit.at(0));
+  const QString leg = legForCallWindow(qobject_cast<CallWindow *>(sender()));
+  if (leg.isEmpty()) {
+    return;
+  }
+  m_calls->sendDtmf(leg, digit.at(0));
 }
 
 void MainWindow::onHold()
 {
-  if (m_activeLeg.isEmpty()) {
+  const QString leg = legForCallWindow(qobject_cast<CallWindow *>(sender()));
+  if (leg.isEmpty()) {
     return;
   }
 
   if (m_demoMode) {
     m_onHold = !m_onHold;
-    m_callWindow->updateState(m_onHold ? QStringLiteral("hold") : QStringLiteral("resumed"), {});
+    updateCallLegUi(leg, m_onHold ? QStringLiteral("hold") : QStringLiteral("resumed"), {});
     if (m_onHold) {
       itl::JabraHeadset::instance().showHold();
     } else {
@@ -3913,13 +4340,20 @@ void MainWindow::onHold()
     return;
   }
 
-  m_onHold = !m_onHold;
-  m_calls->setHold(m_activeLeg, m_onHold);
+  bool hold = true;
+  if (itl::CallSession *session = m_calls->call(leg)) {
+    hold = !session->onHold;
+  }
+  m_calls->setHold(leg, hold);
+  if (leg == m_activeLeg || leg == m_heldLeg) {
+    m_onHold = hold && leg == m_heldLeg;
+  }
 }
 
 void MainWindow::onTransfer()
 {
-  if (m_activeLeg.isEmpty() || !m_online) {
+  const QString leg = legForCallWindow(qobject_cast<CallWindow *>(sender()));
+  if (leg.isEmpty() || !m_online) {
     return;
   }
 
@@ -3946,7 +4380,6 @@ void MainWindow::onTransfer()
   const QString transferName = dlg.selectedDisplayName().isEmpty()
                                    ? displayNameForPeer(peer)
                                    : dlg.selectedDisplayName();
-  const QString leg = m_activeLeg;
 
   if (m_demoMode) {
     stopDemoCallSimulation();
@@ -4279,13 +4712,20 @@ void MainWindow::onCallStateChanged(const QString &leg, const QString &state, co
     }
     beginCallTracking(leg, incomingPeer, detail, true);
     const QString incomingName = detail.isEmpty() ? displayNameForPeer(incomingPeer) : detail;
-    m_callWindow->showIncoming(incomingPeer, incomingName, detailForPeer(incomingPeer));
-    if (itl::CallSession *session = m_calls->call(leg)) {
-      m_callWindow->setVideoCall(session->videoCall);
-      m_callWindow->setVideoSending(session->videoCall);
+    CallWindow *incomingWindow = m_callWindow;
+    if (secondLineWaitingUi()) {
+      incomingWindow = m_waitingCallWindow;
     }
-    m_callWindow->setAvatarColor(m_client->chat()->peerColor(incomingPeer));
-    m_callWindow->setAvatarPixmap(m_client->chat()->peerAvatar(incomingPeer));
+    incomingWindow->showIncoming(incomingPeer, incomingName, detailForPeer(incomingPeer));
+    if (itl::CallSession *session = m_calls->call(leg)) {
+      incomingWindow->setVideoCall(session->videoCall);
+      incomingWindow->setVideoSending(session->videoCall);
+    }
+    incomingWindow->setAvatarColor(m_client->chat()->peerColor(incomingPeer));
+    incomingWindow->setAvatarPixmap(m_client->chat()->peerAvatar(incomingPeer));
+    if (incomingWindow == m_waitingCallWindow) {
+      positionSecondCallWindow();
+    }
     return;
   }
   if (state == QStringLiteral("connecting") || state == QStringLiteral("dialing")
@@ -4302,16 +4742,46 @@ void MainWindow::onCallStateChanged(const QString &leg, const QString &state, co
     return;
   }
   if (state == QStringLiteral("connected")) {
-    m_activeLeg = leg;
     m_activeIncomingLeg.clear();
-    // Conversation duration / history "answered" start when remote audio arrives.
-    m_callWindow->updateState(state, detail.isEmpty() ? displayNameForPeer(m_callWindow->peer()) : detail);
+    m_activeLeg = leg;
+    if (secondLineSessionActive() && leg == m_activeLeg) {
+      m_onHold = false;
+      updateCallLegUi(leg, state, detail);
+      positionSecondCallWindow();
+      return;
+    }
+    closeWaitingCallWindow();
+    m_heldLeg.clear();
+    m_onHold = false;
+    updateCallLegUi(leg, state, detail);
     return;
   }
-  if (state == QStringLiteral("accepting") || state == QStringLiteral("media")
-      || state == QStringLiteral("hold") || state == QStringLiteral("resumed")) {
+  if (state == QStringLiteral("accepting") || state == QStringLiteral("media")) {
+    if (leg == m_activeLeg || leg == m_activeIncomingLeg) {
+      if (leg == m_activeLeg) {
+        updateCallLegUi(leg, state, detail);
+      } else if (CallWindow *win = callWindowForLeg(leg)) {
+        win->updateState(state, detail);
+      }
+    }
+    return;
+  }
+  if (state == QStringLiteral("hold")) {
+    if (leg != m_activeLeg && !m_activeLeg.isEmpty()) {
+      m_heldLeg = leg;
+      updateCallLegUi(leg, state, detail);
+      return;
+    }
+    m_onHold = true;
+    updateCallLegUi(leg, state, detail);
+    return;
+  }
+  if (state == QStringLiteral("resumed")) {
     m_activeLeg = leg;
-    m_callWindow->updateState(state, detail);
+    m_heldLeg.clear();
+    m_onHold = false;
+    closeWaitingCallWindow();
+    updateCallLegUi(leg, state, detail);
     return;
   }
   if (state == QStringLiteral("transferred")) {
@@ -4327,19 +4797,58 @@ void MainWindow::onCallStateChanged(const QString &leg, const QString &state, co
       stopDemoCallSimulation();
     } else {
       resumeExternalMediaIfIdle();
-      leaveCallPresence();
+      if (!hasActiveCallSession()) {
+        leaveCallPresence();
+      }
     }
+    closeWaitingCallWindow();
     m_callWindow->closeCall();
     return;
   }
   if (state == QStringLiteral("ended") || state == QStringLiteral("rejected")
       || state == QStringLiteral("error")) {
     finalizeCallHistory(leg, state);
-    if (m_activeLeg == leg || m_activeIncomingLeg == leg) {
-      m_activeLeg.clear();
+
+    if (leg == m_activeIncomingLeg) {
       m_activeIncomingLeg.clear();
-      m_onHold = false;
+      closeWaitingCallWindow();
+      if (!m_activeLeg.isEmpty() && m_calls->hasActiveCalls()) {
+        restoreActiveCallUi();
+        return;
+      }
     }
+
+    const bool wasActiveLeg = m_activeLeg == leg;
+    if (wasActiveLeg) {
+      m_activeLeg.clear();
+    }
+    if (leg == m_heldLeg) {
+      m_heldLeg.clear();
+      m_callWindow->closeCall();
+      if (m_calls->hasActiveCalls() || !m_activeLeg.isEmpty()) {
+        return;
+      }
+    }
+
+    if (!m_activeIncomingLeg.isEmpty()) {
+      return;
+    }
+
+    if (hasActiveCallSession() || (m_calls && m_calls->hasActiveCalls())) {
+      if (wasActiveLeg && !m_heldLeg.isEmpty()) {
+        closeWaitingCallWindow();
+      }
+      if (wasActiveLeg) {
+        m_onHold = false;
+      }
+      return;
+    }
+
+    m_activeLeg.clear();
+    m_activeIncomingLeg.clear();
+    m_heldLeg.clear();
+    m_onHold = false;
+    closeWaitingCallWindow();
     if (m_demoMode) {
       stopDemoCallSimulation();
     } else {
